@@ -42,12 +42,12 @@ class PcCountPair
     /** The Program Counter address */
     Addr pc;
     /** The count of the Program Counter address */
-    int count;
+    uint64_t count;
 
   public:
 
     /** Explicit constructor assigning the pc and count values */
-    explicit constexpr PcCountPair(Addr _pc, int _count) :
+    explicit constexpr PcCountPair(Addr _pc, uint64_t _count) :
         pc(_pc), count(_count) {}
 
     /** Default constructor for parameter classes */
@@ -56,7 +56,7 @@ class PcCountPair
     /** Returns the Program Counter address */
     constexpr Addr getPC() const { return pc; }
     /** Returns the count of the Program */
-    constexpr int getCount() const { return count; }
+    constexpr uint64_t getCount() const { return count; }
 
     /** Greater than comparison */
     constexpr bool
@@ -76,19 +76,22 @@ class PcCountPair
     std::string
     to_string() const
     {
-        std::string s = "(" + std::to_string(pc)
-                                    + "," + std::to_string(count) + ")";
+        char buffer [25];
+        sprintf(buffer, "0x%018lx", pc);
+        std::string s = "(";
+        s += buffer;
+        s += "," + std::to_string(count) + ")";
         return s;
     }
 
     /** Enable hashing for this parameter */
     struct HashFunction
     {
-        size_t operator()(const PcCountPair& item) const
+        uint64_t operator()(const PcCountPair& item) const
         {
-            size_t xHash = std::hash<int>()(item.pc);
-            size_t yHash = std::hash<int>()(item.count);
-            return xHash * 2 + yHash;
+            uint64_t xHash = std::hash<Addr>()(item.pc);
+            uint64_t yHash = std::hash<uint64_t>()(item.count);
+            return xHash ^ yHash;
         }
     };
 

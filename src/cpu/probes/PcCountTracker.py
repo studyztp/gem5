@@ -59,6 +59,19 @@ class PcCountTracker(ProbeListenerObject):
     cxx_header = "cpu/probes/pc_count_tracker.hh"
     cxx_class = "gem5::PcCountTracker"
 
+    cxx_exports = [
+        PyBindMethod("getInstCount"),
+        PyBindMethod("clearInstCount"),
+    ]
+
     targets = VectorParam.PcCountPair("the target PC Count pairs")
     core = Param.BaseCPU("the connected cpu")
     ptmanager = Param.PcCountTrackerManager("the PcCountTracker manager")
+    enableInstCount = Param.Bool(False, "if count valid inst")
+    instCountexcludeAddrRanges = VectorParam.AddrRange(
+        [], "for inst count. Don't count pc in this list"
+    )
+    instCountvalidAddrRange = Param.AddrRange(
+        AddrRange(start=0, end=0),
+        "for inst count. Only count pc in this range",
+    )
