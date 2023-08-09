@@ -32,6 +32,8 @@
 #include "arch/riscv/types.hh"
 #include "base/bitfield.hh"
 #include "debug/Decode.hh"
+#include "debug/LLSC.hh"
+
 
 namespace gem5
 {
@@ -119,6 +121,16 @@ Decoder::decode(ExtMachInst mach_inst, Addr addr)
     StaticInstPtr &si = instMap[mach_inst];
     if (!si)
         si = decodeInst(mach_inst);
+
+    if (si->isLoadReserve()) {
+        DPRINTF(LLSC, "LR:: Decoding instruction 0x%08x at address %#x\nIt is%s\n",
+            mach_inst.instBits, addr,si->getName());
+    }
+
+    if (si->isStoreConditional()) {
+        DPRINTF(LLSC, "SC:: Decoding instruction 0x%08x at address %#x\nIt is%s\n",
+            mach_inst.instBits, addr,si->getName());
+    }
 
     DPRINTF(Decode, "Decode: Decoded %s instruction: %#x\n",
             si->getName(), mach_inst);

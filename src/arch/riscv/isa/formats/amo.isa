@@ -241,6 +241,8 @@ def template LoadReservedExecute {{
         %(op_rd)s;
         %(ea_code)s;
 
+        DPRINTF(LLSC, "lr addr %lx\n", EA);
+
         if (!alignmentOk(xc, EA, sizeof(Mem))) {
             return std::make_shared<AddressFault>(EA, LOAD_ADDR_MISALIGNED);
         }
@@ -270,6 +272,8 @@ def template StoreCondExecute {{
         %(ea_code)s;
 
         %(memacc_code)s;
+        
+        DPRINTF(LLSC, "sc addr %lx\n", EA);
 
         if (!alignmentOk(xc, EA, sizeof(Mem))) {
             return std::make_shared<AddressFault>(EA, STORE_ADDR_MISALIGNED);

@@ -61,6 +61,8 @@ output header {{
 #include "cpu/static_inst.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
+#include "debug/LLSC.hh"
+#include "base/logging.hh"
 
 }};
 

@@ -766,11 +766,11 @@ ISA::handleLockedWrite(const RequestPtr &req, Addr cacheBlockMask)
     DPRINTF(LLSC, "[cid:%d]: load_reservation_addrs empty? %s.\n",
             req->contextId(),
             lr_addr_empty ? "yes" : "no");
-    if (!lr_addr_empty) {
+    if (lr_addr_empty) {
         DPRINTF(LLSC, "[cid:%d]: addr = %x.\n", req->contextId(),
                 req->getPaddr() & cacheBlockMask);
-        DPRINTF(LLSC, "[cid:%d]: last locked addr = %x.\n", req->contextId(),
-                load_reservation_addr & cacheBlockMask);
+        // DPRINTF(LLSC, "[cid:%d]: last locked addr = %x.\n", req->contextId(),
+        //         load_reservation_addr & cacheBlockMask);
     }
     if (lr_addr_empty ||
             (load_reservation_addr & cacheBlockMask)
