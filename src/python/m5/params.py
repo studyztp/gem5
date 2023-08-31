@@ -1034,6 +1034,12 @@ class AddrRange(ParamValue):
 
         return list([AddrRange(r.start(), r.end()) for r in pybind_include])
 
+    def get_start(self):
+        return int(self.start)
+
+    def get_end(self):
+        return int(self.end)
+
 
 # Boolean parameter type.  Python doesn't let you subclass bool, since
 # it doesn't want to let you create multiple instances of True and
