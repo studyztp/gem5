@@ -78,6 +78,9 @@ class LooppointAnalysis : public ProbeListenerObject
       int filteredKernelInstCount;
       int fileredUserInstCount;
 
+      std::unordered_map<Addr, int> filteredKernelInstCounter;
+      std::unordered_map<Addr, int> filteredUserInstCounter;
+
       bool ifFilterKernelInst;
 
     private:
@@ -173,6 +176,30 @@ class LooppointAnalysis : public ProbeListenerObject
       void
       clearFilteredUserInstCount() {
         fileredUserInstCount = 0;
+      }
+
+            std::unordered_map<Addr, int>
+      getFilteredUserInstCounter() const
+      {
+        return filteredUserInstCounter;
+      }
+
+      void
+      clearFilteredUserInstCounter()
+      {
+        filteredUserInstCounter.clear();
+      }
+
+      std::unordered_map<Addr, int>
+      getFilteredKernelInstCounter() const
+      {
+        return filteredKernelInstCounter;
+      }
+
+      void
+      clearFilteredKernelInstCounter()
+      {
+        filteredKernelInstCounter.clear();
       }
 
 };

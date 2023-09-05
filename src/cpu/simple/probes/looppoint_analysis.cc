@@ -151,6 +151,13 @@ LooppointAnalysis::checkPc(const std::pair<SimpleThread*, StaticInstPtr>& p) {
 
     if (ifFilterKernelInst && !thread->getIsaPtr()->inUserMode()) {
         filteredKernelInstCount ++;
+        if (filteredKernelInstCounter.find(
+                                pcstate.pc())!=filteredKernelInstCounter.end())
+        {
+            ++filteredKernelInstCounter.find(pcstate.pc())->second;
+        } else {
+            filteredKernelInstCounter.insert(std::make_pair(pcstate.pc(),1));
+        }
         return;
     }
 
@@ -160,6 +167,13 @@ LooppointAnalysis::checkPc(const std::pair<SimpleThread*, StaticInstPtr>& p) {
         // if the current instruction is not inside the Basic Block valid
         // address range, then ignore the current instruction
         fileredUserInstCount ++;
+        if (filteredUserInstCounter.find(
+                                pcstate.pc())!=filteredUserInstCounter.end())
+        {
+            ++filteredUserInstCounter.find(pcstate.pc())->second;
+        } else {
+            filteredUserInstCounter.insert(std::make_pair(pcstate.pc(),1));
+        }
         return;
     }
 
@@ -170,6 +184,14 @@ LooppointAnalysis::checkPc(const std::pair<SimpleThread*, StaticInstPtr>& p) {
                 // if the current instruction is inside the Basic Block
                 // excluded address range then ignore the current instruction
                 fileredUserInstCount ++;
+                if (filteredUserInstCounter.find(
+                                pcstate.pc())!=filteredUserInstCounter.end())
+                {
+                    ++filteredUserInstCounter.find(pcstate.pc())->second;
+                } else {
+                    filteredUserInstCounter.insert(
+                                            std::make_pair(pcstate.pc(),1));
+                }
                 return;
             }
         }
