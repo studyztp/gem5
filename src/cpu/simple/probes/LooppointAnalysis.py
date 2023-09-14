@@ -59,7 +59,7 @@ class LooppointAnalysis(ProbeListenerObject):
         PyBindMethod("getFilteredUserInstCounter"),
         PyBindMethod("clearFilteredUserInstCounter"),
         PyBindMethod("getFilteredKernelInstCounter"),
-        PyBindMethod("clearFilteredKernelInstCounter")
+        PyBindMethod("clearFilteredKernelInstCounter"),
     ]
 
     ptmanager = Param.LooppointAnalysisManager("the PcCountAnalsi manager")
@@ -103,7 +103,7 @@ class LooppointAnalysisManager(SimObject):
         PyBindMethod("getGlobalMostRecentPC"),
         PyBindMethod("enableRaisingExitEvent"),
         PyBindMethod("disableRaisingExitEvent"),
-        PyBindMethod("getFilteredInstDisassembly")
+        PyBindMethod("getFilteredInstDisassembly"),
     ]
 
     regionLen = Param.Int(100000000, "each region's instruction length")
