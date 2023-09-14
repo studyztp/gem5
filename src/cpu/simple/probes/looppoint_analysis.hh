@@ -83,6 +83,8 @@ class LooppointAnalysis : public ProbeListenerObject
 
       bool ifFilterKernelInst;
 
+      std::unordered_set<Addr> filtered_PC;
+
     private:
       int BBInstCounter;
       Addr BBstart;
@@ -178,7 +180,7 @@ class LooppointAnalysis : public ProbeListenerObject
         fileredUserInstCount = 0;
       }
 
-            std::unordered_map<Addr, int>
+      std::unordered_map<Addr, int>
       getFilteredUserInstCounter() const
       {
         return filteredUserInstCounter;
@@ -211,6 +213,7 @@ class LooppointAnalysisManager : public SimObject
     LooppointAnalysisManager(const LooppointAnalysisManagerParams &params);
     void countPc(Addr pc, int instCount);
     void updateBBinst(Addr BBstart, int inst);
+    void updateFilteredInstDisassembly(Addr pc, std::string disassembly);
 
   private:
     std::unordered_map<Addr, int> counter;
@@ -224,6 +227,8 @@ class LooppointAnalysisManager : public SimObject
     Addr mostRecentPC;
 
     bool ifRaiseExitEvent;
+
+    std::unordered_map<Addr, std::string> filteredInstDisassembly;
 
   public:
 
@@ -276,6 +281,12 @@ class LooppointAnalysisManager : public SimObject
     disableRaisingExitEvent()
     {
       ifRaiseExitEvent = false;
+    }
+
+    std::unordered_map<Addr, std::string>
+    getFilteredInstDisassembly()
+    {
+      return filteredInstDisassembly;
     }
 
 };

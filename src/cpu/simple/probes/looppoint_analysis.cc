@@ -158,6 +158,11 @@ LooppointAnalysis::checkPc(const std::pair<SimpleThread*, StaticInstPtr>& p) {
         } else {
             filteredKernelInstCounter.insert(std::make_pair(pcstate.pc(),1));
         }
+        if (filtered_PC.find(pcstate.pc())==filtered_PC.end())
+        {
+            filtered_PC.insert(pcstate.pc());
+            manager->updateFilteredInstDisassembly(pcstate.pc(), inst->disassemble(pcstate.pc()));
+        }
         return;
     }
 
@@ -173,6 +178,11 @@ LooppointAnalysis::checkPc(const std::pair<SimpleThread*, StaticInstPtr>& p) {
             ++filteredUserInstCounter.find(pcstate.pc())->second;
         } else {
             filteredUserInstCounter.insert(std::make_pair(pcstate.pc(),1));
+        }
+        if (filtered_PC.find(pcstate.pc())==filtered_PC.end())
+        {
+            filtered_PC.insert(pcstate.pc());
+            manager->updateFilteredInstDisassembly(pcstate.pc(), inst->disassemble(pcstate.pc()));
         }
         return;
     }
@@ -191,6 +201,11 @@ LooppointAnalysis::checkPc(const std::pair<SimpleThread*, StaticInstPtr>& p) {
                 } else {
                     filteredUserInstCounter.insert(
                                             std::make_pair(pcstate.pc(),1));
+                }
+                if (filtered_PC.find(pcstate.pc())==filtered_PC.end())
+                {
+                    filtered_PC.insert(pcstate.pc());
+                    manager->updateFilteredInstDisassembly(pcstate.pc(), inst->disassemble(pcstate.pc()));
                 }
                 return;
             }
@@ -287,6 +302,14 @@ LooppointAnalysisManager::updateBBinst(Addr BBstart, int inst)
 {
     if (BBinst.find(BBstart)==BBinst.end()) {
         BBinst.insert(std::make_pair(BBstart,inst));
+    }
+}
+
+void
+LooppointAnalysisManager::updateFilteredInstDisassembly(Addr pc, std::string disassembly)
+{
+    if (filteredInstDisassembly.find(pc)==filteredInstDisassembly.end()) {
+        filteredInstDisassembly.insert(std::make_pair(pc,disassembly));
     }
 }
 
