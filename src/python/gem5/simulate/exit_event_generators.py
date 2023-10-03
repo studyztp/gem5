@@ -32,6 +32,7 @@ from ..resources.resource import SimpointResource
 from gem5.resources.looppoint import Looppoint
 from m5.util import warn
 from pathlib import Path
+import json
 
 """
 In this package we store generators for simulation exit events.
@@ -211,3 +212,49 @@ def looppoint_save_checkpoint_generator(
         yield False
 
     yield True
+
+
+def looppoint_save_checkpoint_generator(
+    k: int, U: int, W: int, json_file_path: Path, processor: AbstractProcessor
+):
+    is_switchable = isinstance(processor, SwitchableProcessor)
+    detail_start = U * (k - 1)
+    warmup_start = detail_start - W
+    counter = 0
+    info_json = {}
+
+    while is_switchable:
+        info_json[counter] = {}
+        print("got to warmup simulation start\n")
+        print("now dump n reset stats and switch cpu to detailed core type\n")
+        m5.stats.dump()
+        m5.stats.reset()
+        print("fall back to simulation\n")
+        info_json[counter]["warmup-start-tick"] = m5.curTick()
+        yield processor.switch()
+        print("got to detail simulation start\n")
+        print("now dump and reset m5 stats\n")
+        m5.stats.dump()
+        m5.stats.reset()
+        print("now schedule the end of the detail simulation\n")
+        processor.get_cores()[0]._set_inst_stop_any_thread(U, True)
+        print("fall back to simulation\n")
+        info_json[counter]["detail-start-tick"] = m5.curTick()
+        yield False
+        print("got to end of detail simulation\n")
+        print("now dump and reset stats\n")
+        m5.stats.dump()
+        m5.stats.reset()
+        print(
+            "now schedule for next warmup start and detail simulation start\n"
+        )
+        processor.get_cores()[0]._set_inst_stop_any_thread(warmup_start, True)
+        processor.get_cores()[0]._set_inst_stop_any_thread(detail_start, True)
+        print("increase n counter\n")
+        info_json[counter]["detail-end-tick"] = m5.curTick()
+        with open(json_file_path.as_posix()) as file:
+            json.dump(info_json, file, indent=4)
+        counter += 1
+        print("switch core type to functional core type")
+        print("fall back to simulation\n")
+        yield processor.switch()

@@ -351,6 +351,13 @@ class Simulator:
             simpoint_start_insts, self._instantiated
         )
 
+    def schedule_smarts(self, k: int, U: int, W: int) -> None:
+        if self._board.get_processor().get_num_cores() > 1:
+            warn("SimPoints only work with one core")
+        self._board.get_processor().get_cores()[0]._set_smarts(
+            k=k, U=U, W=W, board_initialized=self._instantiated
+        )
+
     def schedule_max_insts(self, inst: int) -> None:
         """
         Schedule a MAX_INSTS exit event when any thread in any core reaches the

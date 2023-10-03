@@ -162,3 +162,10 @@ class AbstractCore(SubSystem):
         self, target_pair: List[PcCountPair], manager: PcCountTrackerManager
     ) -> None:
         raise NotImplementedError
+
+    abstractmethod
+
+    def _set_smarts(
+        self, k: int, U: int, W: int, j: int, board_initialized: bool
+    ) -> None:
+        raise NotImplementedError

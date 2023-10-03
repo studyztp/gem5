@@ -187,3 +187,17 @@ class BaseCPUCore(AbstractCore):
         pair_tracker.core = self.core
         pair_tracker.ptmanager = manager
         self.core.probeListener = pair_tracker
+
+    @overrides(AbstractCore)
+    def _set_smarts(
+        self, k: int, U: int, W: int, board_initialized: bool
+    ) -> None:
+        warmup_start = U * (k - 1) - W
+        detail_start = U * (k - 1)
+
+        list_stop = [warmup_start, detail_start]
+
+        if board_initialized:
+            self.core.scheduleSimpointsInstStop(sorted(set(list_stop)))
+        else:
+            self.core.simpoint_start_insts = sorted(set(list_stop))
