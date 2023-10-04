@@ -40,6 +40,7 @@ from gem5.utils.requires import requires
 from gem5.isas import ISA
 from .riscvmatched_cache import RISCVMatchedCacheHierarchy
 from .riscvmatched_processor import U74Processor
+from .riscvmatched_switch_processor import U74SwitchProcessor
 from gem5.isas import ISA
 
 import m5
@@ -111,6 +112,7 @@ class RISCVMatchedBoard(
         clk_freq: str = "1.2GHz",
         l2_size: str = "2MiB",
         is_fs: bool = False,
+        enable_switch_processor: bool = False,
     ) -> None:
         """
 
@@ -128,8 +130,10 @@ class RISCVMatchedBoard(
         cache_hierarchy = RISCVMatchedCacheHierarchy(l2_size=l2_size)
 
         memory = U74Memory()
-
-        processor = U74Processor(is_fs=is_fs)
+        if enable_switch_processor:
+            processor = U74SwitchProcessor(is_fs=is_fs)
+        else:
+            processor = U74Processor(is_fs=is_fs)
         super().__init__(
             clk_freq=clk_freq,  # real system is 1.0 to 1.5 GHz
             processor=processor,
