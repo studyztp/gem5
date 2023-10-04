@@ -214,7 +214,7 @@ def looppoint_save_checkpoint_generator(
     yield True
 
 
-def SMARTS_generator(
+def smarts_generator(
     k: int, U: int, W: int, json_file_path: Path, processor: AbstractProcessor
 ):
     """
@@ -242,9 +242,13 @@ def SMARTS_generator(
     warmup_start = U * (k - 1) - W
     warmup_plus_detailed = U + W
     counter = 0
-
-    with open(json_file_path.as_posix()) as file:
-        default_data = json.load(file)
+    last_warmup_start_inst_count = 0
+    last_detailed_start_inst_count = 0
+    if json_file_path.exists():
+        with open(json_file_path.as_posix()) as file:
+            default_data = json.load(file)
+    else:
+        default_data = {}
     default_data["sample-data"] = {}
     info_json = default_data["sample-data"]
 
@@ -257,26 +261,22 @@ def SMARTS_generator(
         # dump stats
         m5.stats.dump()
         info_json[counter]["warmup-start-tick"] = m5.curTick()
-        info_json[counter]["warmup-start-inst-count"] = processor.get_cores()[
-            0
-        ].core.totalInsts()
+        inst = processor.get_cores()[0].core.totalInsts()
+        info_json[counter]["warmup-start-inst-count"] = (
+            inst - last_warmup_start_inst_count
+        )
+        last_warmup_start_inst_count = inst
         # reset stats
         m5.stats.reset()
         print("switch core type")
         # switch core type
         processor.switch()
         print(
-            f"schedule for warmup end with switch core at {m5.curTick()+W}\n"
+            "now schedule for end of warmup and start of detailed simluation\n"
         )
         # schedule for warmup end
-        processor.get_cores()[0]._set_inst_stop_any_thread(W, True)
-        print(
-            f"schedule for detailed simulation end with switch core at {m5.curTick()+warmup_plus_detailed}\n"
-        )
         # schedule for detailed simulation end
-        processor.get_cores()[0]._set_inst_stop_any_thread(
-            warmup_plus_detailed, True
-        )
+        processor.get_cores()[0]._set_simpoint([W, warmup_plus_detailed], True)
         print("fall back to simulation\n")
         # fall back to simualtion
         yield False
@@ -288,9 +288,11 @@ def SMARTS_generator(
         # dump stats
         m5.stats.dump()
         info_json[counter]["detail-start-tick"] = m5.curTick()
-        info_json[counter]["detail-start-inst-count"] = processor.get_cores()[
-            0
-        ].core.totalInsts()
+        inst = processor.get_cores()[0].core.totalInsts()
+        info_json[counter]["detail-start-inst-count"] = (
+            inst - last_detailed_start_inst_count
+        )
+        last_detailed_start_inst_count = inst
         # reset stats
         m5.stats.reset()
         print("fall back to simulation\n")
@@ -304,10 +306,11 @@ def SMARTS_generator(
         # dump stats
         m5.stats.dump()
         info_json[counter]["detail-end-tick"] = m5.curTick()
-        info_json[counter]["detail-end-inst-count"] = processor.get_cores()[
-            0
-        ].core.totalInsts()
-        with open(json_file_path.as_posix()) as file:
+        inst = processor.get_cores()[0].core.totalInsts()
+        info_json[counter]["detail-end-inst-count"] = (
+            inst - last_detailed_start_inst_count
+        )
+        with open(json_file_path.as_posix(), "w") as file:
             json.dump(default_data, file, indent=4)
         # reset stats
         m5.stats.reset()
@@ -318,10 +321,8 @@ def SMARTS_generator(
             "now schedule for next warmup start and detail simulation start\n"
         )
         # schedule for the next start of warmup
-        print(
-            f"schedule for detailed simulation end with switch core at {m5.curTick()+warmup_start}\n"
-        )
-        processor.get_cores()[0]._set_inst_stop_any_thread(warmup_start, True)
+        print("schedule for the next start of warmup\n")
+        processor.get_cores()[0]._set_simpoint([warmup_start], True)
         print("increase n counter\n")
         # increment sample counter
         counter += 1
