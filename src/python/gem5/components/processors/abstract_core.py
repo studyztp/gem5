@@ -163,9 +163,8 @@ class AbstractCore(SubSystem):
     ) -> None:
         raise NotImplementedError
 
-    abstractmethod
-
+    @abstractmethod
     def _set_smarts(
-        self, k: int, U: int, W: int, j: int, board_initialized: bool
+        self, k: int, U: int, W: int, board_initialized: bool
     ) -> None:
         raise NotImplementedError

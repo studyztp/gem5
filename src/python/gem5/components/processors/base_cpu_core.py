@@ -193,11 +193,8 @@ class BaseCPUCore(AbstractCore):
         self, k: int, U: int, W: int, board_initialized: bool
     ) -> None:
         warmup_start = U * (k - 1) - W
-        detail_start = U * (k - 1)
-
-        list_stop = [warmup_start, detail_start]
 
         if board_initialized:
-            self.core.scheduleSimpointsInstStop(sorted(set(list_stop)))
+            self.core.scheduleSimpointsInstStop([warmup_start])
         else:
-            self.core.simpoint_start_insts = sorted(set(list_stop))
+            self.core.simpoint_start_insts = [warmup_start]

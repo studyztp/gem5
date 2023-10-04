@@ -40,7 +40,7 @@ from gem5.utils.requires import requires
 from gem5.isas import ISA
 from .riscvmatched_cache import RISCVMatchedCacheHierarchy
 from .riscvmatched_processor import U74Processor
-from gem5.isas import ISA
+from gem5.components.processors.cpu_types import CPUTypes
 
 import m5
 
@@ -112,6 +112,7 @@ class RISCVMatchedBoard(
         l2_size: str = "2MiB",
         is_fs: bool = False,
         enable_switch_processor: bool = False,
+        switch_processor_starting_core_type: CPUTypes = CPUTypes.ATOMIC,
     ) -> None:
         """
 
@@ -121,6 +122,11 @@ class RISCVMatchedBoard(
         default: 2MB
         :param is_fs: Whether the system is a full system or not,
         default: False (SE Mode)
+        :param enable_switch_processor: If using the U74SwitchProcessor
+        default: False
+        :param switch_processor_starting_core_type: What the start core type
+        should be for the U74SwitchProcessor
+        default: ATOMIC
 
         """
         requires(isa_required=ISA.RISCV)
@@ -129,12 +135,17 @@ class RISCVMatchedBoard(
         cache_hierarchy = RISCVMatchedCacheHierarchy(l2_size=l2_size)
 
         memory = U74Memory()
-        if enable_switch_processor:
+
+        if not enable_switch_processor:
+            processor = U74Processor(is_fs=is_fs)
+        else:
             from .riscvmatched_switch_processor import U74SwitchProcessor
 
-            processor = U74SwitchProcessor(is_fs=is_fs)
-        else:
-            processor = U74Processor(is_fs=is_fs)
+            processor = U74SwitchProcessor(
+                is_fs=is_fs,
+                starting_core_type=switch_processor_starting_core_type,
+            )
+
         super().__init__(
             clk_freq=clk_freq,  # real system is 1.0 to 1.5 GHz
             processor=processor,

@@ -352,8 +352,20 @@ class Simulator:
         )
 
     def schedule_smarts(self, k: int, U: int, W: int) -> None:
+        """
+        Schedule SIMPOINT_BEGION exit events
+        **Warning:** SMARTS only work with one core and SwitchableProcessor
+
+        :param k: the systematic sampling interval. Each interval simulation k*U
+        instructions. The interval includes the fastforwarding part, detailed
+        warmup part, and the detail simulation part.
+        :param U: sampling unit size. The instruction length in each unit.
+        :param W: the length of the detailed warmup part.
+        """
         if self._board.get_processor().get_num_cores() > 1:
             warn("SimPoints only work with one core")
+        if not isinstance(self._board.get_processor(), SwitchableProcessor):
+            raise Exception("SMARTS only works with SwitchableProcessor.")
         self._board.get_processor().get_cores()[0]._set_smarts(
             k=k, U=U, W=W, board_initialized=self._instantiated
         )

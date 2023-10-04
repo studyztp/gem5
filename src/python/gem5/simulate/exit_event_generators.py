@@ -214,47 +214,117 @@ def looppoint_save_checkpoint_generator(
     yield True
 
 
-def looppoint_save_checkpoint_generator(
+def SMARTS_generator(
     k: int, U: int, W: int, json_file_path: Path, processor: AbstractProcessor
 ):
+    """
+    :param k: the systematic sampling interval. Each interval simulation k*U
+    instructions. The interval includes the fastforwarding part, detailed
+    warmup part, and the detail simulation part.
+    :param U: sampling unit size. The instruction length in each unit.
+    :param W: the length of the detailed warmup part.
+
+    Each interval instruction length is k*U.
+    The warmup part starts at (k-1)*U-W
+    The detailed simulation part starts at (k-1)*U
+
+    This exit generator only works with SwitchableProcessor.
+    When it reaches to the start of the detailed warmup part, it dumps and
+    resets the stats; then it switchs the core type and schedule for the end
+    of the warmup part and the end of the interval.
+    When it reaches to the end of the detailed warmup part, it dumps and resets
+    the stats.
+    When it reaches to the end of the detailed simulation, it dumps and resets
+    the stats; then it switches the core type and schedule for the start of the
+    next detailed warmup part.
+    """
     is_switchable = isinstance(processor, SwitchableProcessor)
-    detail_start = U * (k - 1)
-    warmup_start = detail_start - W
+    warmup_start = U * (k - 1) - W
+    warmup_plus_detailed = U + W
     counter = 0
-    info_json = {}
+
+    with open(json_file_path.as_posix()) as file:
+        default_data = json.load(file)
+    default_data["sample-data"] = {}
+    info_json = default_data["sample-data"]
 
     while is_switchable:
+        # reached to the warmup start
         info_json[counter] = {}
-        print("got to warmup simulation start\n")
-        print("now dump n reset stats and switch cpu to detailed core type\n")
+        print(f"curTick is {m5.curTick()}")
+        print("got to warmup start\n")
+        print("now dump and reset stats\n")
+        # dump stats
         m5.stats.dump()
-        m5.stats.reset()
-        print("fall back to simulation\n")
         info_json[counter]["warmup-start-tick"] = m5.curTick()
-        yield processor.switch()
+        info_json[counter]["warmup-start-inst-count"] = processor.get_cores()[
+            0
+        ].core.totalInsts()
+        # reset stats
+        m5.stats.reset()
+        print("switch core type")
+        # switch core type
+        processor.switch()
+        print(
+            f"schedule for warmup end with switch core at {m5.curTick()+W}\n"
+        )
+        # schedule for warmup end
+        processor.get_cores()[0]._set_inst_stop_any_thread(W, True)
+        print(
+            f"schedule for detailed simulation end with switch core at {m5.curTick()+warmup_plus_detailed}\n"
+        )
+        # schedule for detailed simulation end
+        processor.get_cores()[0]._set_inst_stop_any_thread(
+            warmup_plus_detailed, True
+        )
+        print("fall back to simulation\n")
+        # fall back to simualtion
+        yield False
+
+        # reached warmup end
+        print(f"curTick is {m5.curTick()}")
         print("got to detail simulation start\n")
         print("now dump and reset m5 stats\n")
+        # dump stats
         m5.stats.dump()
-        m5.stats.reset()
-        print("now schedule the end of the detail simulation\n")
-        processor.get_cores()[0]._set_inst_stop_any_thread(U, True)
-        print("fall back to simulation\n")
         info_json[counter]["detail-start-tick"] = m5.curTick()
+        info_json[counter]["detail-start-inst-count"] = processor.get_cores()[
+            0
+        ].core.totalInsts()
+        # reset stats
+        m5.stats.reset()
+        print("fall back to simulation\n")
+        # fall back to simulation
         yield False
+
+        # reached end of detailed simulation
+        print(f"curTick is {m5.curTick()}")
         print("got to end of detail simulation\n")
         print("now dump and reset stats\n")
+        # dump stats
         m5.stats.dump()
+        info_json[counter]["detail-end-tick"] = m5.curTick()
+        info_json[counter]["detail-end-inst-count"] = processor.get_cores()[
+            0
+        ].core.totalInsts()
+        with open(json_file_path.as_posix()) as file:
+            json.dump(default_data, file, indent=4)
+        # reset stats
         m5.stats.reset()
+        # switch core type
+        print("switch core type\n")
+        processor.switch()
         print(
             "now schedule for next warmup start and detail simulation start\n"
         )
+        # schedule for the next start of warmup
+        print(
+            f"schedule for detailed simulation end with switch core at {m5.curTick()+warmup_start}\n"
+        )
         processor.get_cores()[0]._set_inst_stop_any_thread(warmup_start, True)
-        processor.get_cores()[0]._set_inst_stop_any_thread(detail_start, True)
         print("increase n counter\n")
-        info_json[counter]["detail-end-tick"] = m5.curTick()
-        with open(json_file_path.as_posix()) as file:
-            json.dump(info_json, file, indent=4)
+        # increment sample counter
         counter += 1
         print("switch core type to functional core type")
         print("fall back to simulation\n")
-        yield processor.switch()
+        yield False

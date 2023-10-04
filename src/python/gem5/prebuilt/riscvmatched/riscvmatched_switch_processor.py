@@ -32,7 +32,7 @@ from m5.util import warn
 from gem5.components.processors.base_cpu_processor import BaseCPUProcessor
 from gem5.components.processors.switchable_processor import SwitchableProcessor
 from gem5.components.processors.simple_core import SimpleCore
-from gem5.components.processors.cpu_types import CPUTypes
+from gem5.components.processors.cpu_types import CPUTypes, get_mem_mode
 from gem5.components.boards.abstract_board import AbstractBoard
 from gem5.isas import ISA
 from .riscvmatched_core import U74Core
@@ -43,14 +43,14 @@ class U74SwitchProcessor(SwitchableProcessor):
     A switchable U74Processor contains a number of cores of U74Core.
     """
 
-    def __init__(
-        self,
-        is_fs: bool,
-    ) -> None:
-        self._cpu_type = CPUTypes.ATOMIC
+    def __init__(self, is_fs: bool, starting_core_type: CPUTypes) -> None:
+        self._cpu_type = starting_core_type
         self._start_key = "start"
         self._switch_key = "switch"
         self._current_is_start = True
+        self._start_core_type = starting_core_type
+
+        self._mem_mode = get_mem_mode(starting_core_type)
 
         if is_fs:
             num_cores = 4
@@ -94,7 +94,7 @@ class U74SwitchProcessor(SwitchableProcessor):
             self._cpu_type = CPUTypes.MINOR
             self.switch_to_processor(self._switch_key)
         else:
-            self._cpu_type = CPUTypes.ATOMIC
+            self._cpu_type = self._start_core_type
             self.switch_to_processor(self._start_key)
 
         self._current_is_start = not self._current_is_start
