@@ -40,7 +40,6 @@ from gem5.utils.requires import requires
 from gem5.isas import ISA
 from .riscvmatched_cache import RISCVMatchedCacheHierarchy
 from .riscvmatched_processor import U74Processor
-from .riscvmatched_switch_processor import U74SwitchProcessor
 from gem5.isas import ISA
 
 import m5
@@ -131,6 +130,8 @@ class RISCVMatchedBoard(
 
         memory = U74Memory()
         if enable_switch_processor:
+            from .riscvmatched_switch_processor import U74SwitchProcessor
+
             processor = U74SwitchProcessor(is_fs=is_fs)
         else:
             processor = U74Processor(is_fs=is_fs)

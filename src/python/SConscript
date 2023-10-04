@@ -274,6 +274,8 @@ PySource('gem5.prebuilt.riscvmatched',
 PySource('gem5.prebuilt.riscvmatched',
     'gem5/prebuilt/riscvmatched/riscvmatched_processor.py')
 PySource('gem5.prebuilt.riscvmatched',
+    'gem5/prebuilt/riscvmatched/riscvmatched_switch_processor.py')
+PySource('gem5.prebuilt.riscvmatched',
     'gem5/prebuilt/riscvmatched/riscvmatched_core.py')
 PySource('gem5.resources', 'gem5/resources/__init__.py')
 PySource('gem5.resources', 'gem5/resources/client.py')

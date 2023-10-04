@@ -34,14 +34,13 @@ from gem5.components.processors.switchable_processor import SwitchableProcessor
 from gem5.components.processors.simple_core import SimpleCore
 from gem5.components.processors.cpu_types import CPUTypes
 from gem5.components.boards.abstract_board import AbstractBoard
-from gem5.components.boards.mem_mode import MemMode
 from gem5.isas import ISA
 from .riscvmatched_core import U74Core
 
 
 class U74SwitchProcessor(SwitchableProcessor):
     """
-    A U74Processor contains a number of cores of U74Core.
+    A switchable U74Processor contains a number of cores of U74Core.
     """
 
     def __init__(
