@@ -265,6 +265,24 @@ LooppointAnalysisManager::LooppointAnalysisManager(
 
 {
     DPRINTF(LooppointAnalysis, "The region length is %i\n", regionLength);
+    if (p.restoring) {
+        DPRINTF(LooppointAnalysis,
+        "Restoring with old PC counter and BBinst profile\n", regionLength);
+        for (int i = 0; i < p.oldPCcounter.size(); i++) {
+            counter.insert(
+                std::make_pair(
+                    p.oldPCcounter[i].getPC(),p.oldPCcounter[i].getCount()
+                )
+            );
+        }
+        for (int i = 0; i < p.oldBBinst.size(); i++) {
+            BBinst.insert(
+                std::make_pair(
+                    p.oldBBinst[i].getPC(),p.oldBBinst[i].getCount()
+                )
+            );
+        }
+    }
 }
 
 void

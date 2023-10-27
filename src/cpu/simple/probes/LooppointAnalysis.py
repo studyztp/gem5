@@ -114,3 +114,12 @@ class LooppointAnalysisManager(SimObject):
         " event when the global instruction count is higher "
         "than the region length",
     )
+
+    restoring = Param.Bool(
+        False,
+        "if we want to load old data into the PC counter and BBinst profile",
+    )
+
+    oldPCcounter = VectorParam.PcCountPair([], "old PC counter for restoring")
+
+    oldBBinst = VectorParam.PcCountPair([], "old BB inst for restoring")
