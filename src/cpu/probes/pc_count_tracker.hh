@@ -38,8 +38,8 @@
 namespace gem5
 {
 
-class PcCountTracker : public ProbeListenerObject
-{
+  class PcCountTracker : public ProbeListenerObject
+  {
   public:
     PcCountTracker(const PcCountTrackerParams &params);
 
@@ -52,7 +52,7 @@ class PcCountTracker : public ProbeListenerObject
      *
      * @param pc the targeting Program Counter address
      */
-    void checkPc(const Addr& pc);
+    void checkPc(const Addr &pc);
 
   private:
     /**
@@ -66,7 +66,49 @@ class PcCountTracker : public ProbeListenerObject
 
     /** the PcCounterTrackerManager */
     PcCountTrackerManager *manager;
-};
+
+    bool ifEnableInstCount;
+    uint64_t instCount;
+    std::vector<AddrRange> excludedAddrRanges;
+    AddrRange validAddrRange;
+
+    uint64_t
+    ifIncreaseInstCount(const Addr pc)
+    {
+      if (validAddrRange.end() > 0)
+      {
+        if (pc < validAddrRange.start() || pc > validAddrRange.end())
+        {
+          return 0;
+        }
+      }
+      if (excludedAddrRanges.size() > 0)
+      {
+        for (int i = 0; i < excludedAddrRanges.size(); i++)
+        {
+          if (pc >= excludedAddrRanges[i].start() &&
+              pc <= excludedAddrRanges[i].end())
+          {
+            return 0;
+          }
+        }
+      }
+      return 1;
+    }
+
+  public:
+    uint64_t
+    getInstCount()
+    {
+      return instCount;
+    }
+
+    void
+    clearInstCount()
+    {
+      instCount = 0;
+    }
+  };
 }
 
 #endif // __CPU_PROBES_PC_COUNT_TRACKER_HH__

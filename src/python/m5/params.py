@@ -976,6 +976,12 @@ class AddrRange(ParamValue):
         # Divide the size by the size of the interleaving slice
         return (int(self.end) - int(self.start)) >> self.intlvBits
 
+    def get_start(self):
+        return int(self.start)
+
+    def get_end(self):
+        return int(self.end)
+
     @classmethod
     def cxx_predecls(cls, code):
         Addr.cxx_predecls(code)

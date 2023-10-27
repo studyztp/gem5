@@ -34,65 +34,64 @@
 namespace gem5
 {
 
-class PcCountPair
-{
-
-  private:
-
-    /** The Program Counter address */
-    Addr pc;
-    /** The count of the Program Counter address */
-    int count;
-
-  public:
-
-    /** Explicit constructor assigning the pc and count values */
-    explicit constexpr PcCountPair(Addr _pc, int _count) :
-        pc(_pc), count(_count) {}
-
-    /** Default constructor for parameter classes */
-    PcCountPair() : pc(0), count(0) {}
-
-    /** Returns the Program Counter address */
-    constexpr Addr getPC() const { return pc; }
-    /** Returns the count of the Program */
-    constexpr int getCount() const { return count; }
-
-    /** Greater than comparison */
-    constexpr bool
-    operator>(const PcCountPair& cc) const
+    class PcCountPair
     {
-        return count > cc.getCount();
-    }
 
-    /** Equal comparison */
-    constexpr bool
-    operator==(const PcCountPair& cc) const
-    {
-        return (pc == cc.getPC() && count == cc.getCount());
-    }
+    private:
+        /** The Program Counter address */
+        Addr pc;
+        /** The count of the Program Counter address */
+        uint64_t count;
 
-    /** String format */
-    std::string
-    to_string() const
-    {
-        std::string s = "(" + std::to_string(pc)
-                                    + "," + std::to_string(count) + ")";
-        return s;
-    }
+    public:
+        /** Explicit constructor assigning the pc and count values */
+        explicit constexpr PcCountPair(Addr _pc, uint64_t _count) : pc(_pc), count(_count) {}
 
-    /** Enable hashing for this parameter */
-    struct HashFunction
-    {
-        size_t operator()(const PcCountPair& item) const
+        /** Default constructor for parameter classes */
+        PcCountPair() : pc(0), count(0) {}
+
+        /** Returns the Program Counter address */
+        constexpr Addr getPC() const { return pc; }
+        /** Returns the count of the Program */
+        constexpr uint64_t getCount() const { return count; }
+
+        /** Greater than comparison */
+        constexpr bool
+        operator>(const PcCountPair &cc) const
         {
-            size_t xHash = std::hash<int>()(item.pc);
-            size_t yHash = std::hash<int>()(item.count);
-            return xHash * 2 + yHash;
+            return count > cc.getCount();
         }
-    };
 
-};
+        /** Equal comparison */
+        constexpr bool
+        operator==(const PcCountPair &cc) const
+        {
+            return (pc == cc.getPC() && count == cc.getCount());
+        }
+
+        /** String format */
+        std::string
+        to_string() const
+        {
+            char buffer[25];
+            sprintf(buffer, "0x%018lx", pc);
+            std::string s = "(";
+            s += buffer;
+            s += "," + std::to_string(count) + ")";
+            return s;
+        }
+
+        /** Enable hashing for this parameter */
+        struct HashFunction
+        {
+            uint64_t operator()(const PcCountPair &item) const
+            {
+                uint64_t xHash = std::hash<Addr>()(item.pc);
+                uint64_t yHash = std::hash<uint64_t>()(item.count);
+                return xHash ^ yHash;
+            }
+        };
+    };
 
 } // namespace gem5
 

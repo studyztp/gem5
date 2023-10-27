@@ -40,8 +40,8 @@
 namespace gem5
 {
 
-
-class PcCountTrackerManager : public SimObject {
+  class PcCountTrackerManager : public SimObject
+  {
   public:
     PcCountTrackerManager(const PcCountTrackerManagerParams &params);
 
@@ -54,13 +54,14 @@ class PcCountTrackerManager : public SimObject {
     /** a counter that stores all the target PC addresses and the number
      * of times the target PC has been executed
      */
-    std::unordered_map<Addr, int> counter;
+    std::unordered_map<Addr, uint64_t> counter;
 
     /** a set that stores all the PC Count pairs that should raise an
      * exit event at
      */
     std::unordered_set<PcCountPair,
-                        PcCountPair::HashFunction> targetPair;
+                       PcCountPair::HashFunction>
+        targetPair;
 
     /** the current PC Count pair */
     PcCountPair currentPair;
@@ -73,7 +74,6 @@ class PcCountTrackerManager : public SimObject {
     bool ifListNotEmpty;
 
   public:
-
     /** this function returns the corresponding value of count for the
      * inputted Program Counter address. If the PC address does not
      * exist in the counter, then it returns a -1.
@@ -85,10 +85,11 @@ class PcCountTrackerManager : public SimObject {
     int
     getPcCount(Addr pc) const
     {
-        if (counter.find(pc) != counter.end()) {
-            return counter.find(pc)->second;
-        }
-        return -1;
+      if (counter.find(pc) != counter.end())
+      {
+        return counter.find(pc)->second;
+      }
+      return -1;
     }
 
     /** this function returns the current PC Count pair
@@ -98,7 +99,7 @@ class PcCountTrackerManager : public SimObject {
     PcCountPair
     getCurrentPcCountPair() const
     {
-        return currentPair;
+      return currentPair;
     }
 
     /** this function print all targets
@@ -108,16 +109,17 @@ class PcCountTrackerManager : public SimObject {
     std::string
     printAllTargets() const
     {
-        std::string s;
-        for(auto itr = targetPair.begin();
-            itr != targetPair.end();
-            ++itr) {
-            s += itr->to_string();
-            s += "\n";
-        }
-        return s;
+      std::string s;
+      for (auto itr = targetPair.begin();
+           itr != targetPair.end();
+           ++itr)
+      {
+        s += itr->to_string();
+        s += "\n";
+      }
+      return s;
     }
-};
+  };
 
 }
 
