@@ -33,7 +33,7 @@ from m5.util.pybind import *
 class LooppointAnalysis(ProbeListenerObject):
 
     type = "LooppointAnalysis"
-    cxx_header = "cpu/simple/probes/looppoint_analysis.hh"
+    cxx_header = "cpu/probes/looppoint_analysis.hh"
     cxx_class = "gem5::LooppointAnalysis"
 
     cxx_exports = [
@@ -91,7 +91,7 @@ class LooppointAnalysis(ProbeListenerObject):
 class LooppointAnalysisManager(SimObject):
 
     type = "LooppointAnalysisManager"
-    cxx_header = "cpu/simple/probes/looppoint_analysis.hh"
+    cxx_header = "cpu/probes/looppoint_analysis.hh"
     cxx_class = "gem5::LooppointAnalysisManager"
 
     cxx_exports = [
@@ -123,3 +123,10 @@ class LooppointAnalysisManager(SimObject):
     oldPCcounter = VectorParam.PcCountPair([], "old PC counter for restoring")
 
     oldBBinst = VectorParam.PcCountPair([], "old BB inst for restoring")
+
+
+class O3LooppointAnalysis(LooppointAnalysis):
+
+    type = "O3LooppointAnalysis"
+    cxx_header = "cpu/probes/looppoint_analysis.hh"
+    cxx_class = "gem5::O3LooppointAnalysis"

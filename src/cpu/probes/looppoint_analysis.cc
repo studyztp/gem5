@@ -26,7 +26,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "cpu/simple/probes/looppoint_analysis.hh"
+
+#include "cpu/probes/looppoint_analysis.hh"
+
+#include "cpu/o3/dyn_inst.hh"
 
 namespace gem5
 {
@@ -140,9 +143,8 @@ LooppointAnalysis::updateMostRecentPcCount(Addr npc) {
 }
 
 void
-LooppointAnalysis::checkPc(const std::pair<SimpleThread*, StaticInstPtr>& p) {
-    SimpleThread* thread = p.first;
-    const StaticInstPtr &inst = p.second;
+LooppointAnalysis::processPc(SimpleThread* thread, const StaticInstPtr& inst) {
+
     auto &pcstate =
                 thread->getTC()->pcState().as<GenericISA::PCStateWithNext>();
 
@@ -251,7 +253,13 @@ LooppointAnalysis::checkPc(const std::pair<SimpleThread*, StaticInstPtr>& p) {
 
     }
 
+}
 
+void
+LooppointAnalysis::checkPc(const std::pair<SimpleThread*, StaticInstPtr>& p) {
+    SimpleThread* thread = p.first;
+    const StaticInstPtr &inst = p.second;
+    processPc(thread, inst);
 }
 
 LooppointAnalysisManager::LooppointAnalysisManager(
@@ -334,5 +342,42 @@ LooppointAnalysisManager::updateFilteredInstDisassembly(
         filteredInstDisassembly.insert(std::make_pair(pc,disassembly));
     }
 }
+
+O3LooppointAnalysis::O3LooppointAnalysis(
+    const O3LooppointAnalysisParams &p)
+    : LooppointAnalysis(p)
+{
+    DPRINTF(LooppointAnalysis, "This is a O3 LoopPoint Analysis\n");
+}
+
+void
+O3LooppointAnalysis::checkPc(const o3::DynInstConstPtr& dynInstptr)
+{
+    processPc((SimpleThread*)dynInstptr->tcBase(),dynInstptr->staticInst);
+}
+
+void
+O3LooppointAnalysis::regProbeListeners()
+{
+    if (startListeningAtInit)
+    {
+        listeners.push_back(new O3LooppointAnalysisListener(this, "Commit",
+                                            &O3LooppointAnalysis::checkPc));
+        DPRINTF(LooppointAnalysis, "Start listening to the core\n");
+    }
+}
+
+void
+O3LooppointAnalysis::startListening()
+{
+    if (listeners.empty())
+    {
+        listeners.push_back(new O3LooppointAnalysisListener(this, "Commit",
+                                             &O3LooppointAnalysis::checkPc));
+    }
+    DPRINTF(LooppointAnalysis, "Current size of listener: %i\n",
+                                                    listeners.size());
+}
+
 
 }

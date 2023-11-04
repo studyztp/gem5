@@ -26,19 +26,21 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __CPU_SIMPLE_PROBES_LOOPPOINT_ANALYSIS_HH__
-#define __CPU_SIMPLE_PROBES_LOOPPOINT_ANALYSIS_HH__
+#ifndef __CPU_PROBES_LOOPPOINT_ANALYSIS_HH__
+#define __CPU_PROBES_LOOPPOINT_ANALYSIS_HH__
 
 #include <list>
 #include <unordered_map>
 #include <unordered_set>
 
 #include "arch/generic/pcstate.hh"
+#include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/probes/pc_count_pair.hh"
 #include "cpu/simple_thread.hh"
 #include "debug/LooppointAnalysis.hh"
 #include "params/LooppointAnalysis.hh"
 #include "params/LooppointAnalysisManager.hh"
+#include "params/O3LooppointAnalysis.hh"
 #include "sim/sim_exit.hh"
 
 namespace gem5
@@ -53,16 +55,18 @@ class LooppointAnalysis : public ProbeListenerObject
 
       void updateMostRecentPcCount(Addr pc);
 
+      void processPc(SimpleThread* thread, const StaticInstPtr& inst);
+
       void checkPc(const std::pair<SimpleThread*, StaticInstPtr>&);
 
       typedef ProbeListenerArg<LooppointAnalysis,
                                     std::pair<SimpleThread*,StaticInstPtr>>
                                     LooppointAnalysisListener;
 
-      void startListening();
+      virtual void startListening();
       void stopListening();
 
-    private:
+    protected:
       LooppointAnalysisManager *manager;
       AddrRange BBvalidAddrRange;
       AddrRange markerValidAddrRange ;
@@ -85,7 +89,7 @@ class LooppointAnalysis : public ProbeListenerObject
 
       std::unordered_set<Addr> filtered_PC;
 
-    private:
+    protected:
       int BBInstCounter;
       Addr BBstart;
 
@@ -290,6 +294,23 @@ class LooppointAnalysisManager : public SimObject
     }
 
 };
+
+class O3LooppointAnalysis : public LooppointAnalysis
+{
+  public:
+    O3LooppointAnalysis(const O3LooppointAnalysisParams &params);
+    void checkPc(const o3::DynInstConstPtr& dynInstptr);
+    void regProbeListeners() override;
+    void startListening() override;
+
+    typedef ProbeListenerArg<O3LooppointAnalysis,
+              o3::DynInstConstPtr>
+              O3LooppointAnalysisListener;
+
+};
+
+
 }
 
-#endif // __CPU_SIMPLE_PROBES_LOOPPOINT_ANALYSIS_HH__
+
+#endif // __CPU_PROBES_LOOPPOINT_ANALYSIS_HH__
