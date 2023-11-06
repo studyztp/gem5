@@ -356,6 +356,10 @@ class Execute : public Named
     /** Like the drain interface on SimObject */
     unsigned int drain();
     void drainResume();
+
+    ProbePointArg<std::pair<SimpleThread *, const StaticInstPtr>> *ppCommit;
+
+    void regProbePoints();
 };
 
 } // namespace minor

@@ -203,6 +203,8 @@ class MinorCPU : public BaseCPU
      *  enumeration Pipeline::StageId */
     void wakeupOnEvent(unsigned int stage_id);
     EventFunctionWrapper *fetchEventWrapper;
+
+    void regProbePoints() override;
 };
 
 } // namespace gem5

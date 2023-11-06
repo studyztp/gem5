@@ -331,4 +331,12 @@ MinorCPU::totalOps() const
     return ret;
 }
 
+void
+MinorCPU::regProbePoints()
+{
+    BaseCPU::regProbePoints();
+
+    pipeline->regProbePoints();
+}
+
 } // namespace gem5

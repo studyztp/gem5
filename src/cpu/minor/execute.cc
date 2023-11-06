@@ -882,6 +882,7 @@ Execute::doInstCommitAccounting(MinorDynInstPtr inst)
         inst->traceData->setCPSeq(thread->numOp);
 
     cpu.probeInstCommit(inst->staticInst, inst->pc->instAddr());
+    ppCommit->notify(std::make_pair(thread,inst->staticInst));
 }
 
 bool
@@ -1891,6 +1892,12 @@ Execute::getDcachePort()
 {
     return lsq.getDcachePort();
 }
+
+void
+Execute::regProbePoints()
+{
+    ppCommit = new ProbePointArg<std::pair<SimpleThread*, const StaticInstPtr>>
+                                (cpu.getProbeManager(), "Commit");}
 
 } // namespace minor
 } // namespace gem5

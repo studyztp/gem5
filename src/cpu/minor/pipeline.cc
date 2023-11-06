@@ -257,5 +257,11 @@ Pipeline::isDrained()
     return ret;
 }
 
+void
+Pipeline::regProbePoints()
+{
+    execute.regProbePoints();
+}
+
 } // namespace minor
 } // namespace gem5

@@ -347,7 +347,7 @@ O3LooppointAnalysis::O3LooppointAnalysis(
     const O3LooppointAnalysisParams &p)
     : LooppointAnalysis(p)
 {
-    DPRINTF(LooppointAnalysis, "This is a O3 LoopPoint Analysis\n");
+    DPRINTF(LooppointAnalysis, "This is a O3 CPU LoopPoint Analysis\n");
 }
 
 void
@@ -374,6 +374,46 @@ O3LooppointAnalysis::startListening()
     {
         listeners.push_back(new O3LooppointAnalysisListener(this, "Commit",
                                              &O3LooppointAnalysis::checkPc));
+    }
+    DPRINTF(LooppointAnalysis, "Current size of listener: %i\n",
+                                                    listeners.size());
+}
+
+MinorLooppointAnalysis::MinorLooppointAnalysis(
+    const MinorLooppointAnalysisParams &p)
+    : LooppointAnalysis(p)
+{
+    DPRINTF(LooppointAnalysis, "This is a Minor CPU LoopPoint Analysis\n");
+}
+
+void
+MinorLooppointAnalysis::checkPc(
+    const std::pair<SimpleThread*, StaticInstPtr>& p
+)
+{
+    SimpleThread* thread = p.first;
+    const StaticInstPtr &inst = p.second;
+    processPc(thread, inst);
+}
+
+void
+MinorLooppointAnalysis::regProbeListeners()
+{
+    if (startListeningAtInit)
+    {
+        listeners.push_back(new MinorLooppointAnalysisListener(this, "Commit",
+                                            &MinorLooppointAnalysis::checkPc));
+        DPRINTF(LooppointAnalysis, "Start listening to the core\n");
+    }
+}
+
+void
+MinorLooppointAnalysis::startListening()
+{
+    if (listeners.empty())
+    {
+        listeners.push_back(new MinorLooppointAnalysisListener(this, "Commit",
+                                        &MinorLooppointAnalysis::checkPc));
     }
     DPRINTF(LooppointAnalysis, "Current size of listener: %i\n",
                                                     listeners.size());

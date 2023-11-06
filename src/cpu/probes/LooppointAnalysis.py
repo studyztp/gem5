@@ -130,3 +130,10 @@ class O3LooppointAnalysis(LooppointAnalysis):
     type = "O3LooppointAnalysis"
     cxx_header = "cpu/probes/looppoint_analysis.hh"
     cxx_class = "gem5::O3LooppointAnalysis"
+
+
+class MinorLooppointAnalysis(LooppointAnalysis):
+
+    type = "MinorLooppointAnalysis"
+    cxx_header = "cpu/probes/looppoint_analysis.hh"
+    cxx_class = "gem5::MinorLooppointAnalysis"

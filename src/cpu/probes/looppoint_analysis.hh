@@ -40,6 +40,7 @@
 #include "debug/LooppointAnalysis.hh"
 #include "params/LooppointAnalysis.hh"
 #include "params/LooppointAnalysisManager.hh"
+#include "params/MinorLooppointAnalysis.hh"
 #include "params/O3LooppointAnalysis.hh"
 #include "sim/sim_exit.hh"
 
@@ -57,7 +58,7 @@ class LooppointAnalysis : public ProbeListenerObject
 
       void processPc(SimpleThread* thread, const StaticInstPtr& inst);
 
-      void checkPc(const std::pair<SimpleThread*, StaticInstPtr>&);
+      void checkPc(const std::pair<SimpleThread*, StaticInstPtr>& p);
 
       typedef ProbeListenerArg<LooppointAnalysis,
                                     std::pair<SimpleThread*,StaticInstPtr>>
@@ -306,6 +307,20 @@ class O3LooppointAnalysis : public LooppointAnalysis
     typedef ProbeListenerArg<O3LooppointAnalysis,
               o3::DynInstConstPtr>
               O3LooppointAnalysisListener;
+
+};
+
+class MinorLooppointAnalysis : public LooppointAnalysis
+{
+  public:
+    MinorLooppointAnalysis(const MinorLooppointAnalysisParams &params);
+    void checkPc(const std::pair<SimpleThread*, StaticInstPtr>& p);
+    void regProbeListeners() override;
+    void startListening() override;
+
+    typedef ProbeListenerArg<MinorLooppointAnalysis,
+              std::pair<SimpleThread*,StaticInstPtr>>
+              MinorLooppointAnalysisListener;
 
 };
 
