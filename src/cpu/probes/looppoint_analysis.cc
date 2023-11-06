@@ -353,7 +353,118 @@ O3LooppointAnalysis::O3LooppointAnalysis(
 void
 O3LooppointAnalysis::checkPc(const o3::DynInstConstPtr& dynInstptr)
 {
-    processPc((SimpleThread*)dynInstptr->tcBase(),dynInstptr->staticInst);
+
+    auto &pcstate =
+                dynInstptr->pcState().as<GenericISA::PCStateWithNext>();
+
+    if (dynInstptr->staticInst->isMicroop()
+                && !dynInstptr->staticInst->isLastMicroop())
+        return;
+
+    if (ifFilterKernelInst
+                && !dynInstptr->tcBase()->getIsaPtr()->inUserMode()) {
+        filteredKernelInstCount ++;
+        if (filteredKernelInstCounter.find(
+                                pcstate.pc())!=filteredKernelInstCounter.end())
+        {
+            ++filteredKernelInstCounter.find(pcstate.pc())->second;
+        } else {
+            filteredKernelInstCounter.insert(std::make_pair(pcstate.pc(),1));
+        }
+        if (filtered_PC.find(pcstate.pc())==filtered_PC.end())
+        {
+            filtered_PC.insert(pcstate.pc());
+            manager->updateFilteredInstDisassembly(
+            pcstate.pc(), dynInstptr->staticInst->disassemble(pcstate.pc()));
+        }
+        return;
+    }
+
+    if (BBvalidAddrRange.end()>0 && (pcstate.pc() < BBvalidAddrRange.start() ||
+        pcstate.pc() > BBvalidAddrRange.end()))
+    {
+        // if the current instruction is not inside the Basic Block valid
+        // address range, then ignore the current instruction
+        fileredUserInstCount ++;
+        if (filteredUserInstCounter.find(
+                                pcstate.pc())!=filteredUserInstCounter.end())
+        {
+            ++filteredUserInstCounter.find(pcstate.pc())->second;
+        } else {
+            filteredUserInstCounter.insert(std::make_pair(pcstate.pc(),1));
+        }
+        if (filtered_PC.find(pcstate.pc())==filtered_PC.end())
+        {
+            filtered_PC.insert(pcstate.pc());
+            manager->updateFilteredInstDisassembly(
+            pcstate.pc(), dynInstptr->staticInst->disassemble(pcstate.pc()));
+        }
+        return;
+    }
+
+    if (BBexcludedAddrRanges.size()>0) {
+        for (int i = 0; i < BBexcludedAddrRanges.size(); i++) {
+            if (pcstate.pc() >= BBexcludedAddrRanges[i].start() &&
+                pcstate.pc() <= BBexcludedAddrRanges[i].end()) {
+                // if the current instruction is inside the Basic Block
+                // excluded address range then ignore the current instruction
+                fileredUserInstCount ++;
+                if (filteredUserInstCounter.find(
+                                pcstate.pc())!=filteredUserInstCounter.end())
+                {
+                    ++filteredUserInstCounter.find(pcstate.pc())->second;
+                } else {
+                    filteredUserInstCounter.insert(
+                                            std::make_pair(pcstate.pc(),1));
+                }
+                if (filtered_PC.find(pcstate.pc())==filtered_PC.end())
+                {
+                    filtered_PC.insert(pcstate.pc());
+                    manager->updateFilteredInstDisassembly(
+                    pcstate.pc(),
+                    dynInstptr->staticInst->disassemble(pcstate.pc()));
+                }
+                return;
+            }
+        }
+    }
+
+    if (!BBInstCounter) {
+        BBstart = pcstate.pc();
+    }
+
+    localInstCounter ++;
+    BBInstCounter ++;
+
+    if (dynInstptr->staticInst->isControl()) {
+        if (BBfreq.find(BBstart)!=BBfreq.end()) {
+            ++BBfreq.find(BBstart)->second;
+        } else {
+            BBfreq.insert(std::make_pair(BBstart, 1));
+        }
+        if (encountered_PC.find(BBstart)==encountered_PC.end()) {
+            encountered_PC.insert(BBstart);
+            manager->updateBBinst(BBstart, BBInstCounter);
+        }
+        BBInstCounter = 0;
+
+        if (markerValidAddrRange.end()>0
+        && (pcstate.pc() < markerValidAddrRange.start()
+                            || pcstate.pc() > markerValidAddrRange.end()))
+        {
+            return;
+        }
+
+        if (dynInstptr->staticInst->isDirectCtrl()) {
+            if (pcstate.npc() < pcstate.pc()) {
+                updateMostRecentPcCount(pcstate.npc());
+                manager->countPc(pcstate.npc(), localInstCounter);
+                localInstCounter = 0;
+            }
+        }
+
+    }
+
 }
 
 void
