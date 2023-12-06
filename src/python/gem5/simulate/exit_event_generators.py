@@ -218,6 +218,7 @@ def looppoint_save_checkpoint_generator(
 
 
 def pFSA_generator(
+    fast_foward_length: int,
     functional_warmup_length: int,
     detailed_warmpup_length: int,
     detailed_simulation_length: int,
@@ -284,5 +285,9 @@ def pFSA_generator(
         else:
             children_pid.append(pid)
             counter += 1
-            global_counter.updateTargetInst(sample_region_length)
+            m5.stats.dump()
+            m5.stats.reset()
+            global_counter.updateTargetInst(
+                sample_region_length + fast_foward_length
+            )
             yield False
