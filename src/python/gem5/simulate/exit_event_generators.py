@@ -217,6 +217,7 @@ def pFSA_generator(
     functional_warmup_length: int,
     detailed_warmpup_length: int,
     detailed_simulation_length: int,
+    sample_region_length: int,
     output_path: Path,
     maximun_forks: int,
     processor: AbstractProcessor,
@@ -259,5 +260,5 @@ def pFSA_generator(
             m5.stats.reset()
             yield True
         else:
-            global_counter.updateTargetInst(functional_warmup_length)
+            global_counter.updateTargetInst(sample_region_length)
             yield False
