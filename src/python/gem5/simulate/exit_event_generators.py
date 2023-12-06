@@ -282,6 +282,7 @@ def pFSA_generator(
             m5.stats.reset()
             yield True
         else:
+            print(f"forked {pid} for {counter}\n")
             children_pid.append(pid)
             counter += 1
             m5.stats.dump()
