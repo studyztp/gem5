@@ -64,9 +64,9 @@ LocalInstCounter::startListening()
 {
     if (listeners.empty())
     {
-        listeners.push_back(new LooppointAnalysisListener(
-                                        this, "RetiredInstsPC",
-                                                &LocalInstCounter::countInst));
+        listeners.push_back(
+            new LocalInstCounterListener(this, "RetiredInstsPC",
+                                            &LocalInstCounter::countInst));
     }
 }
 
