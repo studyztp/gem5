@@ -33,6 +33,8 @@ from m5.util import warn
 
 import os
 import sys
+import time
+import signal
 from pathlib import Path
 from typing import Optional, List, Tuple, Dict, Generator, Union
 
@@ -508,3 +510,39 @@ class Simulator:
         will be saved.
         """
         m5.checkpoint(str(checkpoint_dir))
+
+    def fork(self, output_dir: Path, maximun_forks: int) -> int:
+        """
+        This function will fork a child process of the current process and
+        setup the m5.options.outdir to the output_dir/{fork count}-{pid}.
+
+        :param output_dir: The path to store the child's output.
+        :param maximun_forks: The maximun children it can have at the same time
+        """
+        if not self._if_setup_child_signal_handler:
+
+            def handler(sig, frame):
+                assert sig == signal.SIGCHLD
+                try:
+                    pid, status = os.wait()
+                    if status != 0:
+                        print(f"pid {pid} failed!")
+                        sys.exit(status)
+                    if pid in self._children_simulations:
+                        self._children_simulations.remove(pid)
+                except OSError:
+                    pass
+
+            signal.signal(signal.SIGCHLD, handler)
+
+        while len(self._children_simulations) >= maximun_forks:
+            time.sleep(1)
+
+        pid = m5.fork(simout=output_dir.as_posix())
+        if pid != 0:
+            self._children_simulations.append(pid)
+        return pid
+
+    def wait_for_children_to_finish(self) -> None:
+        while len(self._children_simulations) > 0:
+            time.sleep(1)

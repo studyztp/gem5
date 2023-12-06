@@ -49,3 +49,10 @@ if not env['CONF']['USE_NULL_ISA']:
     Source('looppoint_analysis.cc')
 
     DebugFlag("LooppointAnalysis")
+
+if not env['CONF']['USE_NULL_ISA']:
+    SimObject(
+        "GlobalInstCounter.py",
+        sim_objects=["GlobalInstCounter", "LocalInstCounter"],
+    )
+    Source("global_inst_counter.cc")
