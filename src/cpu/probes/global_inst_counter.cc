@@ -26,7 +26,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "cpu/probes/global_inst_tracker.hh"
+#include "cpu/probes/global_inst_counter.hh"
 
 namespace gem5
 {

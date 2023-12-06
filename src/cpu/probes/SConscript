@@ -34,9 +34,9 @@ Source("pc_count_tracker.cc")
 Source("pc_count_tracker_manager.cc")
 
 SimObject(
-    "GlobalInstTracker.py",
-    sim_objects=["GlobalInstTracker", "LocalInstTracker"],
+    "GlobalInstCounter.py",
+    sim_objects=["GlobalInstCounter", "LocalInstCounter"],
 )
-Source("global_inst_tracker.cc")
+Source("global_inst_counter.cc")
 
 DebugFlag("PcCountTracker")

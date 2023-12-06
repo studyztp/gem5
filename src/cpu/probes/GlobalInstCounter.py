@@ -38,7 +38,7 @@ class GlobalInstCounter(SimObject):
     """
 
     type = "GlobalInstCounter"
-    cxx_header = "cpu/probes/global_inst_tracker.cc"
+    cxx_header = "cpu/probes/global_inst_counter.cc"
     cxx_class = "gem5::GlobalInstCounter"
 
     cxx_exports = [
@@ -57,7 +57,7 @@ class LocalInstCounter(ProbeListenerObject):
     """
 
     type = "LocalInstCounter"
-    cxx_header = "cpu/probes/global_inst_tracker.hh"
+    cxx_header = "cpu/probes/global_inst_counter.hh"
     cxx_class = "gem5::LocalInstCounter"
 
     cxx_exports = [
@@ -67,8 +67,8 @@ class LocalInstCounter(ProbeListenerObject):
         PyBindMethod("stopListening"),
     ]
 
-    globalCounter = Param.GlobalInstCounter("the GlobalInstTracker")
+    globalCounter = Param.GlobalInstCounter("the GlobalInstCounter")
     updateThreshold = Param.UInt64(
-        100, "the update frequency to global tracker"
+        100, "the update frequency to the global counter"
     )
     ifListeningFromStart = Param.Bool(True, "if start listening at the start")

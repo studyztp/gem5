@@ -1,5 +1,5 @@
-#ifndef __GLOBAL_INST_TRACKER_HH__
-#define __GLOBAL_INST_TRACKER_HH__
+#ifndef __GLOBAL_INST_COUNTER_HH__
+#define __GLOBAL_INST_COUNTER_HH__
 
 #include "base/types.hh"
 #include "params/GlobalInstCounter.hh"
@@ -68,4 +68,4 @@ class LocalInstCounter: public ProbeListenerObject
 } // namespace gem5
 
 
-#endif // __GLOBAL_INST_TRACKER_HH__
+#endif // __GLOBAL_INST_COUNTER_HH__
