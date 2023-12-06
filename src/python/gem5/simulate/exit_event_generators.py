@@ -32,6 +32,10 @@ from ..resources.resource import SimpointResource
 from gem5.resources.looppoint import Looppoint
 from m5.util import warn
 from pathlib import Path
+import signal
+import time
+import os
+import sys
 
 """
 In this package we store generators for simulation exit events.
@@ -213,7 +217,6 @@ def looppoint_save_checkpoint_generator(
 
 
 def pFSA_generator(
-    simulator,
     functional_warmup_length: int,
     detailed_warmpup_length: int,
     detailed_simulation_length: int,
@@ -221,6 +224,7 @@ def pFSA_generator(
     output_path: Path,
     maximun_forks: int,
     processor: AbstractProcessor,
+    children_pid,
     global_counter,
     local_counter_list,
 ):
@@ -228,15 +232,32 @@ def pFSA_generator(
     current_inst = 0
     counter = 0
 
+    def handler(sig, frame):
+        assert sig == signal.SIGCHLD
+        try:
+            pid, status = os.wait()
+            if status != 0:
+                print(f"pid {pid} failed!")
+                sys.exit(status)
+            if pid in children_pid:
+                children_pid.remove(pid)
+        except OSError:
+            pass
+
+    signal.signal(signal.SIGCHLD, handler)
+
     while is_switchable:
         current_inst += global_counter.current_inst_count()
         global_counter.clearGlobalCount()
 
-        pid = simulator.fork(
-            output_dir=Path(output_path / f"{counter}-inst-{current_inst}"),
-            maximun_forks=maximun_forks,
+        while len(children_pid) >= maximun_forks:
+            time.sleep(1)
+
+        pid = m5.fork(
+            simout=Path(
+                output_path / f"{counter}-inst-{current_inst}"
+            ).as_posix(),
         )
-        counter += 1
 
         if pid == 0:
             m5.stats.dump()
@@ -260,5 +281,7 @@ def pFSA_generator(
             m5.stats.reset()
             yield True
         else:
+            children_pid.append(pid)
+            counter += 1
             global_counter.updateTargetInst(sample_region_length)
             yield False
