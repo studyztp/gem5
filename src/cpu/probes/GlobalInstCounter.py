@@ -38,7 +38,7 @@ class GlobalInstCounter(SimObject):
     """
 
     type = "GlobalInstCounter"
-    cxx_header = "cpu/probes/global_inst_counter.cc"
+    cxx_header = "cpu/probes/global_inst_counter.hh"
     cxx_class = "gem5::GlobalInstCounter"
 
     cxx_exports = [

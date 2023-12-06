@@ -60,8 +60,8 @@ class LocalInstCounter: public ProbeListenerObject
     void updateThreshold(uint64_t new_threshold) {
         update_threshold = new_threshold;
     };
-    void startListening();
-    void stopListening();
+    virtual void startListening();
+    virtual void stopListening();
 };
 
 
