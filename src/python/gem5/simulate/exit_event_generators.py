@@ -210,3 +210,54 @@ def looppoint_save_checkpoint_generator(
         yield False
 
     yield True
+
+
+def pFSA_generator(
+    simulator,
+    functional_warmup_length: int,
+    detailed_warmpup_length: int,
+    detailed_simulation_length: int,
+    output_path: Path,
+    maximun_forks: int,
+    processor: AbstractProcessor,
+    global_counter,
+    local_counter_list,
+):
+    is_switchable = isinstance(processor, SwitchableProcessor)
+    current_inst = 0
+    counter = 0
+
+    while is_switchable:
+        current_inst += global_counter.current_inst_count()
+        global_counter.clearGlobalCount()
+
+        pid = simulator.fork(
+            output_dir=Path(output_path / f"{counter}-inst-{current_inst}"),
+            maximun_forks=maximun_forks,
+        )
+        counter += 1
+
+        if pid == 0:
+            m5.stats.dump()
+            m5.stats.reset()
+            for counter in local_counter_list:
+                counter.clearLocalCount()
+            global_counter.updateTargetInst(functional_warmup_length)
+            yield False
+            global_counter.clearGlobalCount()
+            m5.stats.dump()
+            m5.stats.reset()
+            processor.switch()
+            global_counter.updateTargetInst(detailed_warmpup_length)
+            yield False
+            global_counter.clearGlobalCount()
+            m5.stats.dump()
+            m5.stats.reset()
+            global_counter.updateTargetInst(detailed_simulation_length)
+            yield False
+            m5.stats.dump()
+            m5.stats.reset()
+            yield True
+        else:
+            global_counter.updateTargetInst(functional_warmup_length)
+            yield False
