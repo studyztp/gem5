@@ -30,34 +30,35 @@ from m5.objects.Probe import ProbeListenerObject
 from m5.objects import SimObject
 
 
-class GlobalInstTracker(SimObject):
+class GlobalInstCounter(SimObject):
     """This class manages global PC-count pair tracking.
     It keeps the global counters for all target PC-count pairs and raises exit
     events when a PC executed a target number of times.
     It gets called every time a PcCountTracker encounters a target PC.
     """
 
-    type = "GlobalInstTracker"
+    type = "GlobalInstCounter"
     cxx_header = "cpu/probes/global_inst_tracker.cc"
-    cxx_class = "gem5::GlobalInstTracker"
+    cxx_class = "gem5::GlobalInstCounter"
 
     cxx_exports = [
         PyBindMethod("clearGlobalCount"),
         PyBindMethod("updateTargetInst"),
+        PyBindMethod("current_inst_count"),
     ]
 
     target = Param.UInt64("the target instruction number")
 
 
-class LocalInstTracker(ProbeListenerObject):
+class LocalInstCounter(ProbeListenerObject):
     """This probe listener tracks the number of times a particular pc has been
     executed. It needs to be connected to a manager to track the global
     information.
     """
 
-    type = "LocalInstTracker"
+    type = "LocalInstCounter"
     cxx_header = "cpu/probes/global_inst_tracker.hh"
-    cxx_class = "gem5::LocalInstTracker"
+    cxx_class = "gem5::LocalInstCounter"
 
     cxx_exports = [
         PyBindMethod("clearLocalCount"),
@@ -66,7 +67,7 @@ class LocalInstTracker(ProbeListenerObject):
         PyBindMethod("stopListening"),
     ]
 
-    globalCounter = Param.GlobalInstTracker("the GlobalInstTracker")
+    globalCounter = Param.GlobalInstCounter("the GlobalInstTracker")
     updateThreshold = Param.UInt64(
         100, "the update frequency to global tracker"
     )

@@ -30,6 +30,9 @@ class GlobalInstCounter : public SimObject
     void updateTargetInst(uint64_t new_target) {
         target_inst_count = new_target;
     };
+    uint64_t current_inst_count() {
+        return global_inst_count;
+    }
 };
 
 class LocalInstCounter: public ProbeListenerObject
