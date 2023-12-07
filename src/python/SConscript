@@ -256,6 +256,8 @@ PySource('gem5.components.processors',
 PySource('gem5.components.processors',
     'gem5/components/processors/simple_switchable_processor.py')
 PySource('gem5.components.processors',
+    'gem5/components/processors/simple_three_switch_processor.py')
+PySource('gem5.components.processors',
     'gem5/components/processors/switchable_processor.py')
 PySource('gem5.utils', 'gem5/utils/simpoint.py')
 PySource('gem5.components.processors',
