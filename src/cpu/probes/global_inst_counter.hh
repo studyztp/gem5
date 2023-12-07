@@ -18,12 +18,7 @@ class GlobalInstCounter : public SimObject
 
   public:
     GlobalInstCounter(const GlobalInstCounterParams &params);
-    void update_global_inst(uint64_t local_inst) {
-        global_inst_count += local_inst;
-        if (global_inst_count >= target_inst_count) {
-            exitSimLoopNow("simpoint starting point found");
-        }
-    };
+    void update_global_inst(uint64_t local_inst);
     void clearGlobalCount() {
         global_inst_count = 0;
     };
@@ -32,7 +27,7 @@ class GlobalInstCounter : public SimObject
     };
     uint64_t current_inst_count() {
         return global_inst_count;
-    }
+    };
 };
 
 class LocalInstCounter: public ProbeListenerObject
@@ -46,14 +41,8 @@ class LocalInstCounter: public ProbeListenerObject
 
   public:
     LocalInstCounter(const LocalInstCounterParams &params);
+    void countInst(const Addr& pc);
     virtual void regProbeListeners();
-    void countInst(const Addr& pc) {
-        local_counter += 1;
-        if (local_counter >= update_threshold) {
-            global_counter->update_global_inst(local_counter);
-            local_counter = 0;
-        }
-    };
     void clearLocalCount() {
         local_counter = 0;
     };
@@ -62,6 +51,9 @@ class LocalInstCounter: public ProbeListenerObject
     };
     virtual void startListening();
     virtual void stopListening();
+    uint64_t current_inst_count() {
+        return local_counter;
+    };
 };
 
 

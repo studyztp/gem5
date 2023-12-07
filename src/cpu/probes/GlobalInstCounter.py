@@ -65,6 +65,7 @@ class LocalInstCounter(ProbeListenerObject):
         PyBindMethod("updateThreshold"),
         PyBindMethod("startListening"),
         PyBindMethod("stopListening"),
+        PyBindMethod("current_inst_count"),
     ]
 
     globalCounter = Param.GlobalInstCounter("the GlobalInstCounter")

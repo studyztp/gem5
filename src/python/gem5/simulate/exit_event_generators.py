@@ -248,6 +248,9 @@ def pFSA_generator(
     signal.signal(signal.SIGCHLD, handler)
 
     while is_switchable:
+        if global_counter.current_inst_count() == 0:
+            # multiple core triggered exit event
+            yield False
         current_inst += global_counter.current_inst_count()
         global_counter.clearGlobalCount()
 
@@ -263,6 +266,7 @@ def pFSA_generator(
         if pid == 0:
             m5.stats.dump()
             m5.stats.reset()
+            processor.switch("simple")
             for counter in local_counter_list:
                 counter.clearLocalCount()
             global_counter.updateTargetInst(functional_warmup_length)
@@ -270,7 +274,7 @@ def pFSA_generator(
             global_counter.clearGlobalCount()
             m5.stats.dump()
             m5.stats.reset()
-            processor.switch()
+            processor.switch("detailed")
             global_counter.updateTargetInst(detailed_warmpup_length)
             yield False
             global_counter.clearGlobalCount()

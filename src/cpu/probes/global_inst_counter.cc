@@ -39,6 +39,14 @@ GlobalInstCounter::GlobalInstCounter(
 {
 }
 
+void
+GlobalInstCounter::update_global_inst(uint64_t local_inst) {
+    global_inst_count += local_inst;
+    if (global_inst_count >= target_inst_count) {
+        exitSimLoopNow("simpoint starting point found");
+    }
+}
+
 LocalInstCounter::LocalInstCounter(
     const LocalInstCounterParams &p)
     : ProbeListenerObject(p),
@@ -50,6 +58,15 @@ LocalInstCounter::LocalInstCounter(
 }
 
 void
+LocalInstCounter::countInst(const Addr& pc) {
+    local_counter += 1;
+    if (local_counter >= update_threshold) {
+        global_counter->update_global_inst(local_counter);
+        local_counter = 0;
+    }
+}
+
+void
 LocalInstCounter::regProbeListeners()
 {
     if (if_listen_from_start) {
@@ -58,6 +75,7 @@ LocalInstCounter::regProbeListeners()
                                             &LocalInstCounter::countInst));
     }
 }
+
 
 void
 LocalInstCounter::startListening()
