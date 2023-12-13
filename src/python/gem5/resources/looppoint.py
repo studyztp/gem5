@@ -70,6 +70,10 @@ class LooppointRegionPC:
         """Returns the PcCountPair for this Region PC value."""
         return PcCountPair(self.get_pc(), self.get_global())
 
+    def get_relative_pc_count_pair(self) -> PcCountPair:
+        """Returns the relative PcCountPair for this Region PC value."""
+        return PcCountPair(self.get_pc(), self.get_relative())
+
     def update_relative_count(self, manager: PcCountTrackerManager) -> None:
         """Updates the relative count."""
         self._relative = int(
@@ -164,6 +168,14 @@ class LooppointSimulation:
             self.get_end().get_pc_count_pair(),
         ]
 
+    def get_relative_pc_count_pairs(self) -> List[PcCountPair]:
+        """Returns the relative PC count pairs for the start and
+        end LoopointRegionPCs."""
+        return [
+            self.get_start().get_relative_pc_count_pair(),
+            self.get_end().get_relative_pc_count_pair(),
+        ]
+
     def update_relatives_counts(
         self, manager: PcCountTrackerManager, include_start: bool = False
     ) -> None:
@@ -229,6 +241,20 @@ class LooppointRegion:
             pc_count_pairs.extend(self.get_warmup().get_pc_count_pairs())
         return pc_count_pairs
 
+    def get_relative_pc_count_pairs(self) -> List[PcCountPair]:
+        """Returns the relative PC count pairs for this Looppoint region.
+        If the region has warmup region, then returns the relative PC count
+        pair of both start and end of the simulation region, otherwise,
+        only return the relative PC count pair of the end of the simulation
+        region."""
+        relative_pc_count_pairs = [
+            self.get_simulation().get_relative_pc_count_pairs()
+        ]
+
+        if not self.get_warmup():
+            return [relative_pc_count_pairs[1]]
+        return relative_pc_count_pairs
+
     def update_relatives_counts(self, manager: PcCountTrackerManager) -> None:
         """Updates the relative counds of this Looppoint region."""
         self.get_simulation().update_relatives_counts(
@@ -257,19 +283,23 @@ class LooppointRegion:
 class Looppoint:
     """Stores all the Looppoint information for a gem5 workload."""
 
-    def __init__(self, regions: Dict[Union[str, int], LooppointRegion]):
+    def __init__(self, regions: Dict[int, LooppointRegion]):
         """
         :param regions: A dictionary mapping the region_ids with the
         LooppointRegions.
         """
+        self._restore = False
         self._regions = regions
         self._manager = PcCountTrackerManager()
         self._manager.targets = self.get_targets()
 
-    def set_target_region_id(self, region_id: Union[str, int]) -> None:
+    def set_target_region_id(self, region_id: int) -> None:
         """There are use-cases where we want to obtain a looppoint data
         structure containing a single target region via its ID. This function
-        will remove all irrelevant regions."""
+        will remove all irrelevant regions. By doing this, we are setting the
+        Looppoint object into 'restore' mode for this region."""
+
+        self._restore = True
 
         if region_id not in self._regions:
             raise Exception(f"Region ID '{region_id}' cannot be found.")
@@ -345,10 +375,18 @@ class Looppoint:
     def get_targets(self) -> List[PcCountPair]:
         """Returns the complete list of target PcCountPairs. That is, the
         PcCountPairs each region starts with as well as the relevant warmup
-        intervals."""
+        intervals.
+        If it is restoring, it returns the relative PC Count pairs of the
+        simulation region."""
         targets = []
-        for rid in self.get_regions():
-            targets.extend(self.get_regions()[rid].get_pc_count_pairs())
+        if self._restore:
+            for rid in self.get_regions():
+                targets.extend(
+                    self.get_regions()[rid].get_relative_pc_count_pairs()
+                )
+        else:
+            for rid in self.get_regions():
+                targets.extend(self.get_regions()[rid].get_pc_count_pairs())
 
         return targets
 
@@ -491,6 +529,19 @@ class LooppointJsonLoader(Looppoint):
         with open(_path) as file:
             json_contents = json.load(file)
             for rid in json_contents:
+                if not isinstance(rid, int):
+                    if not isinstance(rid, str):
+                        raise Exception(
+                            f"Region ID '{rid}' is not a valid type. "
+                            "Must be either an int (or a str castable to an "
+                            "int)."
+                        )
+                    if not rid.isdigit():
+                        raise Exception(
+                            f"Region ID '{rid}' cannot be case to an int."
+                            "Region ID must either be an int (or a str "
+                            "castable to an int)."
+                        )
 
                 start_pc = int(json_contents[rid]["simulation"]["start"]["pc"])
                 start_globl = int(
@@ -535,7 +586,7 @@ class LooppointJsonLoader(Looppoint):
                     )
                     warmup = LooppointRegionWarmup(start=start, end=end)
 
-                regions[rid] = LooppointRegion(
+                regions[int(rid)] = LooppointRegion(
                     simulation=simulation, multiplier=multiplier, warmup=warmup
                 )
 
