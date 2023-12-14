@@ -32,7 +32,7 @@ import os
 import csv
 import json
 from pathlib import Path
-from typing import List, Optional, Dict, Union
+from typing import List, Optional, Dict, Union, Set
 
 
 class LooppointRegionPC:
@@ -354,12 +354,26 @@ class Looppoint:
         current_pair = self.get_current_pair()
         region_start_map = self.get_region_start_id_map()
         if current_pair in region_start_map:
+            print(
+                f"current region in region_start_map:{region_start_map[current_pair]}\n"
+            )
             return region_start_map[current_pair]
+        print("current pair not in region_start_map\n")
         return None
 
     def get_current_pair(self) -> PcCountPair:
         """This function returns the current PC Count pair."""
-        return self.get_manager().getCurrentPcCountPair()
+        current_pair = self.get_manager().getCurrentPcCountPair()
+        print(
+            f"current pair is {current_pair}\nit's type is {type(current_pair)}\n"
+        )
+        converted_pair = PcCountPair(
+            int(current_pair.get_pc()), int(current_pair.get_count())
+        )
+        print(
+            f"after converting the C++ pair to Python: {converted_pair}\nits's type is {type(converted_pair)}"
+        )
+        return converted_pair
 
     def get_region_start_id_map(self) -> Dict[PcCountPair, Union[int, str]]:
         """Returns the starting PcCountPairs mapped to the corresponding region
@@ -388,7 +402,7 @@ class Looppoint:
             for rid in self.get_regions():
                 targets.extend(self.get_regions()[rid].get_pc_count_pairs())
 
-        return targets
+        return list(set(targets))
 
     def to_json(self) -> Dict[Union[int, str], Dict]:
         """Returns this data-structure as a dictionary for serialization via

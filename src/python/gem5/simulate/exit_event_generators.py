@@ -203,6 +203,7 @@ def looppoint_save_checkpoint_generator(
 
     while total_pairs != 0:
         region = looppoint.get_current_region()
+        print(f"current region is {region}\n")
         # if it is a significant PC Count pair, then the get_current_region()
         # will return an integer greater than 0. By significant PC Count pair,
         # it means the PC Count pair that indicates where to take the
