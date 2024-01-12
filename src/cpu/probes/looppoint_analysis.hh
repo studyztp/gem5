@@ -47,16 +47,14 @@ namespace gem5
 class LooppointAnalysis : public ProbeListenerObject
 {
   public:
-    LooppointAnalysis(const LooppointAnalysisParams *p);
-
-    virtual void regProbeListeners();
-
-    void startListening();
-    void stopListening();
+    LooppointAnalysis(const LooppointAnalysisParams &p);
 
     void identifyPc(const std::pair<SimpleThread*, StaticInstPtr> &instPair);
+    void checkPc(const Addr& pc);
 
-    void checkPc(const Addr pc);
+    virtual void regProbeListeners();
+    void startListening();
+    void stopListening();
 
     typedef ProbeListenerArg<LooppointAnalysis,
                                 std::pair<SimpleThread*, StaticInstPtr>>
@@ -67,19 +65,19 @@ class LooppointAnalysis : public ProbeListenerObject
 
   private:
 
-    LooppointAnalysisManager *manager;
+    LooppointAnalysisManager *lpamanager;
     AddrRange BBvalidAddrRange;
     AddrRange markerValidAddrRange;
     std::vector<AddrRange> BBexcludedAddrRanges;
     bool ifListeningFromStart;
 
     uint64_t BBInstCounter;
-}
+};
 
 class LooppointAnalysisManager : public SimObject
 {
   public:
-    LooppointAnalysisManager(const LooppointAnalysisManagerParams *p);
+    LooppointAnalysisManager(const LooppointAnalysisManagerParams &p);
     void countPc(Addr pc);
     void updateBBV(Addr pc);
 
@@ -108,6 +106,7 @@ class LooppointAnalysisManager : public SimObject
         }
     };
 
+    bool
     ifPcValid(Addr pc) {
         if (validPc.find(pc) != validPc.end()) {
             return true;
@@ -116,6 +115,7 @@ class LooppointAnalysisManager : public SimObject
         }
     };
 
+    bool
     ifPcEncountered(Addr pc) {
         if (encounteredPc.find(pc) != encounteredPc.end()) {
             return true;
@@ -124,6 +124,7 @@ class LooppointAnalysisManager : public SimObject
         }
     };
 
+    bool
     ifPcBBEnd(Addr pc) {
         if (bbEnd.find(pc) != bbEnd.end()) {
             return true;
@@ -214,7 +215,7 @@ class LooppointAnalysisManager : public SimObject
         return counter;
     };
 
-}
+};
 
 } // namespace gem5
 

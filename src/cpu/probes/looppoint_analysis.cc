@@ -70,48 +70,12 @@ LooppointAnalysis::LooppointAnalysis(const LooppointAnalysisParams &p)
 }
 
 void
-LooppointAnalysis::regProbeListeners()
-{
-    if (ifListeningFromStart)
-    {
-        listeners.push_back(new LooppointAnalysisIdentifier(this, "Commit",
-                                            &LooppointAnalysis::identifyPc));
-        DPRINTF(LooppointAnalysis, "Start listening to the commit\n");
-
-        listeners.push_back(new LooppointAnalysisListener(this,
-                            "RetiredInstsPC", &LooppointAnalysis::checkPc));
-        DPRINTF(LooppointAnalysis, "Start listening to the RetiredInstsPC\n");
-    }
-}
-
-void
-LooppointAnalysis::startListening()
-{
-    if (listeners.size() == 0) {
-        listeners.push_back(new LooppointAnalysisIdentifier(this, "Commit",
-                                            &LooppointAnalysis::identifyPc));
-        DPRINTF(LooppointAnalysis, "Start listening to the commit\n");
-
-        listeners.push_back(new LooppointAnalysisListener(this,
-                            "RetiredInstsPC", &LooppointAnalysis::checkPc));
-        DPRINTF(LooppointAnalysis, "Start listening to the RetiredInstsPC\n");
-    }
-}
-
-void
-LooppointAnalysis::stopListening()
-{
-    listeners.clear();
-    DPRINTF(LooppointAnalysis, "Stop listening\n");
-}
-
-void
 LooppointAnalysis::identifyPc(
     const std::pair<SimpleThread*, StaticInstPtr> &instPair
 )
 {
-    SimpleThread* thread = p.first;
-    const StaticInstPtr &inst = p.second;
+    SimpleThread* thread = instPair.first;
+    const StaticInstPtr &inst = instPair.second;
     auto &pcstate =
                 thread->getTC()->pcState().as<GenericISA::PCStateWithNext>();
     Addr pc = pcstate.pc();
@@ -164,7 +128,7 @@ LooppointAnalysis::identifyPc(
 
         if (inst->isDirectCtrl()) {
             if (pcstate.npc() < pc) {
-                lpamanager->updateBackwardBranch(pc);
+                lpamanager->updateBackwardBranches(pc);
             }
         }
 
@@ -195,11 +159,47 @@ LooppointAnalysis::checkPc(const Addr& pc)
     }
 }
 
+void
+LooppointAnalysis::regProbeListeners()
+{
+    if (ifListeningFromStart)
+    {
+        listeners.push_back(new LooppointAnalysisIdentifier(this, "Commit",
+                                            &LooppointAnalysis::identifyPc));
+        DPRINTF(LooppointAnalysis, "Start listening to the commit\n");
+
+        listeners.push_back(new LooppointAnalysisListener(this,
+                            "RetiredInstsPC", &LooppointAnalysis::checkPc));
+        DPRINTF(LooppointAnalysis, "Start listening to the RetiredInstsPC\n");
+    }
+}
+
+void
+LooppointAnalysis::startListening()
+{
+    if (listeners.size() == 0) {
+        listeners.push_back(new LooppointAnalysisIdentifier(this, "Commit",
+                                            &LooppointAnalysis::identifyPc));
+        DPRINTF(LooppointAnalysis, "Start listening to the commit\n");
+
+        listeners.push_back(new LooppointAnalysisListener(this,
+                            "RetiredInstsPC", &LooppointAnalysis::checkPc));
+        DPRINTF(LooppointAnalysis, "Start listening to the RetiredInstsPC\n");
+    }
+}
+
+void
+LooppointAnalysis::stopListening()
+{
+    listeners.clear();
+    DPRINTF(LooppointAnalysis, "Stop listening\n");
+}
+
 LooppointAnalysisManager::LooppointAnalysisManager(
-    const LooppointAnalysisManagerParams *p
+    const LooppointAnalysisManagerParams &p
 )
     : SimObject(p),
-    regionLength(p->regionLen),
+    regionLength(p.regionLen),
     globalInstCounter(0),
     mostRecentPc(0)
 {

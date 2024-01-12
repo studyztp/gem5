@@ -70,7 +70,7 @@ class LooppointAnalysisManager(SimObject):
     cxx_exports = [
         PyBindMethod("getGlobalBBV"),
         PyBindMethod("clearGlobalBBV"),
-        PyBindMethod("getGlboalInst"),
+        PyBindMethod("getGlobalInst"),
         PyBindMethod("clearGlobalInst"),
         PyBindMethod("getGlobalMostRecentPc"),
         PyBindMethod("getBBInstMap"),
