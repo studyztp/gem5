@@ -148,6 +148,7 @@ LooppointAnalysis::checkPc(const Addr& pc)
     }
     else if (lpamanager->ifPcBBEnd(pc))
     {
+        BBInstCounter ++;
         lpamanager->increaseGlobalInst();
         lpamanager->updateBBInstMap(pc, BBInstCounter);
         lpamanager->updateBBV(pc);
