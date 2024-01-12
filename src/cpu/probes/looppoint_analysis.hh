@@ -205,6 +205,11 @@ class LooppointAnalysisManager : public SimObject
         return bbEnd;
     };
 
+    std::unordered_set<Addr>
+    getEncounteredPc() {
+        return encounteredPc;
+    };
+
     std::unordered_map<Addr, uint64_t>
     getBBInstMap() {
         return BBinstMap;
