@@ -49,8 +49,7 @@ class LooppointAnalysis : public ProbeListenerObject
   public:
     LooppointAnalysis(const LooppointAnalysisParams &p);
 
-    void identifyPc(const std::pair<SimpleThread*, StaticInstPtr> &instPair);
-    void checkPc(const Addr& pc);
+    void checkPc(const std::pair<SimpleThread*, StaticInstPtr> &instPair);
 
     virtual void regProbeListeners();
     void startListening();
@@ -58,9 +57,6 @@ class LooppointAnalysis : public ProbeListenerObject
 
     typedef ProbeListenerArg<LooppointAnalysis,
                                 std::pair<SimpleThread*, StaticInstPtr>>
-        LooppointAnalysisIdentifier;
-
-    typedef ProbeListenerArg<LooppointAnalysis, Addr>
         LooppointAnalysisListener;
 
   private:

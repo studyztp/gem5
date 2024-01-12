@@ -59,7 +59,13 @@ PcCountTracker::regProbeListeners()
 }
 
 void
-PcCountTracker::checkPc(const Addr& pc) {
+PcCountTracker::checkPc(
+    const std::pair<SimpleThread*, StaticInstPtr> &instPair
+) {
+    SimpleThread* thread = instPair.first;
+    auto &pcstate =
+                thread->getTC()->pcState().as<GenericISA::PCStateWithNext>();
+    Addr pc = pcstate.pc();
     if (targetPC.find(pc) != targetPC.end()) {
         // if the PC is one of the target PCs, then notify the
         // PcCounterTrackerManager by calling its `check_count` function

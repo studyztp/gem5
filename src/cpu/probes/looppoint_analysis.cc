@@ -70,7 +70,7 @@ LooppointAnalysis::LooppointAnalysis(const LooppointAnalysisParams &p)
 }
 
 void
-LooppointAnalysis::identifyPc(
+LooppointAnalysis::checkPc(
     const std::pair<SimpleThread*, StaticInstPtr> &instPair
 )
 {
@@ -82,15 +82,32 @@ LooppointAnalysis::identifyPc(
 
     if (lpamanager->ifPcEncountered(pc))
     {
+        if (lpamanager->ifPcValid(pc))
+        {
+            lpamanager->increaseGlobalInst();
+            BBInstCounter ++;
+        }
+        else if (lpamanager->ifPcBBEnd(pc))
+        {
+            BBInstCounter ++;
+            lpamanager->increaseGlobalInst();
+            lpamanager->updateBBInstMap(pc, BBInstCounter);
+            lpamanager->updateBBV(pc);
+            BBInstCounter = 0;
+            if (lpamanager->ifPcBackwardBranch(pc))
+            {
+                lpamanager->countPc(pc);
+            }
+        }
         return;
     }
+
+    lpamanager->updatePcEncountered(pc);
 
     if (inst->isMicroop() && !inst->isLastMicroop())
     {
         return;
     }
-
-    lpamanager->updatePcEncountered(pc);
 
     if (!thread->getIsaPtr()->inUserMode())
     {
@@ -114,10 +131,16 @@ LooppointAnalysis::identifyPc(
         }
     }
 
+    BBInstCounter ++;
+    lpamanager->increaseGlobalInst();
+
 
     if (inst->isControl())
     {
         lpamanager->updateBBEnd(pc);
+        lpamanager->updateBBInstMap(pc, BBInstCounter);
+        lpamanager->updateBBV(pc);
+        BBInstCounter = 0;
 
         if (markerValidAddrRange.end()>0
         && (pc < markerValidAddrRange.start()
@@ -129,6 +152,7 @@ LooppointAnalysis::identifyPc(
         if (inst->isDirectCtrl()) {
             if (pcstate.npc() < pc) {
                 lpamanager->updateBackwardBranches(pc);
+                lpamanager->countPc(pc);
             }
         }
 
@@ -139,38 +163,12 @@ LooppointAnalysis::identifyPc(
 }
 
 void
-LooppointAnalysis::checkPc(const Addr& pc)
-{
-    if (lpamanager->ifPcValid(pc))
-    {
-        lpamanager->increaseGlobalInst();
-        BBInstCounter ++;
-    }
-    else if (lpamanager->ifPcBBEnd(pc))
-    {
-        BBInstCounter ++;
-        lpamanager->increaseGlobalInst();
-        lpamanager->updateBBInstMap(pc, BBInstCounter);
-        lpamanager->updateBBV(pc);
-        BBInstCounter = 0;
-        if (lpamanager->ifPcBackwardBranch(pc))
-        {
-            lpamanager->countPc(pc);
-        }
-    }
-}
-
-void
 LooppointAnalysis::regProbeListeners()
 {
     if (ifListeningFromStart)
     {
-        listeners.push_back(new LooppointAnalysisIdentifier(this, "Commit",
-                                            &LooppointAnalysis::identifyPc));
-        DPRINTF(LooppointAnalysis, "Start listening to the commit\n");
-
         listeners.push_back(new LooppointAnalysisListener(this,
-                            "RetiredInstsPC", &LooppointAnalysis::checkPc));
+                            "Commit", &LooppointAnalysis::checkPc));
         DPRINTF(LooppointAnalysis, "Start listening to the RetiredInstsPC\n");
     }
 }
@@ -179,12 +177,9 @@ void
 LooppointAnalysis::startListening()
 {
     if (listeners.size() == 0) {
-        listeners.push_back(new LooppointAnalysisIdentifier(this, "Commit",
-                                            &LooppointAnalysis::identifyPc));
-        DPRINTF(LooppointAnalysis, "Start listening to the commit\n");
 
         listeners.push_back(new LooppointAnalysisListener(this,
-                            "RetiredInstsPC", &LooppointAnalysis::checkPc));
+                            "Commit", &LooppointAnalysis::checkPc));
         DPRINTF(LooppointAnalysis, "Start listening to the RetiredInstsPC\n");
     }
 }
