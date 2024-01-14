@@ -54,7 +54,8 @@ class PcCountTracker : public ProbeListenerObject
      *
      * @param pc the targeting Program Counter address
      */
-    void checkPc(const std::pair<SimpleThread*, StaticInstPtr> &instPair);
+    // void checkPc(const std::pair<SimpleThread*, StaticInstPtr> &instPair);
+    void checkPc(const Addr& pc);
 
   private:
     /**

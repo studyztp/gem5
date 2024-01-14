@@ -70,6 +70,19 @@ LooppointAnalysis::LooppointAnalysis(const LooppointAnalysisParams &p)
 }
 
 void
+LooppointAnalysis::updateLocalBBV(Addr pc) {
+
+    if (localBBV.find(pc) == localBBV.end())
+    {
+        localBBV.insert(std::make_pair(pc, 1));
+    }
+    else
+    {
+        localBBV.find(pc)->second++;
+    }
+}
+
+void
 LooppointAnalysis::checkPc(
     const std::pair<SimpleThread*, StaticInstPtr> &instPair
 )
@@ -92,6 +105,7 @@ LooppointAnalysis::checkPc(
             BBInstCounter ++;
             lpamanager->increaseGlobalInst();
             lpamanager->updateBBInstMap(pc, BBInstCounter);
+            updateLocalBBV(pc);
             lpamanager->updateBBV(pc);
             BBInstCounter = 0;
             if (lpamanager->ifPcBackwardBranch(pc))
@@ -139,6 +153,7 @@ LooppointAnalysis::checkPc(
     {
         lpamanager->updateBBEnd(pc);
         lpamanager->updateBBInstMap(pc, BBInstCounter);
+        updateLocalBBV(pc);
         lpamanager->updateBBV(pc);
         BBInstCounter = 0;
 

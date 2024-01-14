@@ -53,24 +53,38 @@ PcCountTracker::regProbeListeners()
     // corresponding core.
     // when "RetiredInstsPC" notifies the probe listener, then the function
     // 'check_pc' is automatically called
+    // typedef ProbeListenerArg<PcCountTracker,
+    // std::pair<SimpleThread*, StaticInstPtr>> PcCountTrackerListener;
+    // listeners.push_back(new PcCountTrackerListener(this, "Commit",
+    //                                         &PcCountTracker::checkPc));
     typedef ProbeListenerArg<PcCountTracker, Addr> PcCountTrackerListener;
     listeners.push_back(new PcCountTrackerListener(this, "RetiredInstsPC",
                                             &PcCountTracker::checkPc));
 }
 
+// void
+// PcCountTracker::checkPc(
+//     const std::pair<SimpleThread*, StaticInstPtr> &instPair
+// ) {
+//     SimpleThread* thread = instPair.first;
+//     auto &pcstate =
+//                thread->getTC()->pcState().as<GenericISA::PCStateWithNext>();
+//     Addr pc = pcstate.pc();
+//     if (targetPC.find(pc) != targetPC.end()) {
+//         // if the PC is one of the target PCs, then notify the
+//         // PcCounterTrackerManager by calling its `check_count` function
+//         manager->checkCount(pc);
+//     }
+// }
+
 void
-PcCountTracker::checkPc(
-    const std::pair<SimpleThread*, StaticInstPtr> &instPair
-) {
-    SimpleThread* thread = instPair.first;
-    auto &pcstate =
-                thread->getTC()->pcState().as<GenericISA::PCStateWithNext>();
-    Addr pc = pcstate.pc();
+PcCountTracker::checkPc(const Addr& pc) {
     if (targetPC.find(pc) != targetPC.end()) {
         // if the PC is one of the target PCs, then notify the
         // PcCounterTrackerManager by calling its `check_count` function
         manager->checkCount(pc);
     }
 }
+
 
 } // namespace gem5

@@ -68,6 +68,22 @@ class LooppointAnalysis : public ProbeListenerObject
     bool ifListeningFromStart;
 
     uint64_t BBInstCounter;
+
+    std::unordered_map<Addr, uint64_t> localBBV;
+
+    void updateLocalBBV(Addr pc);
+
+  public:
+
+    std::unordered_map<Addr, uint64_t>
+    getLocalBBV() {
+        return localBBV;
+    };
+
+    void
+    clearLocalBBV() {
+        localBBV.clear();
+    }
 };
 
 class LooppointAnalysisManager : public SimObject

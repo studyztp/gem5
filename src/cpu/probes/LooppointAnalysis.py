@@ -38,6 +38,8 @@ class LooppointAnalysis(ProbeListenerObject):
     cxx_exports = [
         PyBindMethod("startListening"),
         PyBindMethod("stopListening"),
+        PyBindMethod("getLocalBBV"),
+        PyBindMethod("clearLocalBBV"),
     ]
 
     lpmanager = Param.LooppointAnalysisManager("the PcCountAnalsi manager")
