@@ -1,4 +1,4 @@
-# Copyright (c) 2022 The Regents of the University of California
+# Copyright (c) 2024 The Regents of the University of California
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -24,21 +24,40 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-Import("*")
+from m5.objects.Probe import ProbeListenerObject
+from m5.params import *
+from m5.util.pybind import *
 
-SimObject(
-    "PcCountTracker.py",
-    sim_objects=["PcCountTracker", "PcCountTrackerManager"],
-)
-Source("pc_count_tracker.cc")
-Source("pc_count_tracker_manager.cc")
 
-DebugFlag("PcCountTracker")
+class DataMovementTracker(ProbeListenerObject):
+    """This probe listener tracks the number of times a particular pc has been
+    executed. It needs to be connected to a manager to track the global
+    information.
+    """
 
-SimObject(
-    "DataMovementTracker.py",
-    sim_objects=["DataMovementTracker"],
-)
-Source("data_movement.cc")
+    type = "DataMovementTracker"
+    cxx_header = "cpu/probes/data_movement.hh"
+    cxx_class = "gem5::DataMovementTracker"
 
-DebugFlag("DataMovementTracker")
+    cxx_exports = [
+        PyBindMethod("getReadvAddrpAddrCount"),
+        PyBindMethod("clearReadvAddrpAddrCount"),
+        PyBindMethod("getWritevAddrpAddrCount"),
+        PyBindMethod("clearWritevAddrpAddrCount"),
+        PyBindMethod("getReadvAddrPcCount"),
+        PyBindMethod("clearReadvAddrPcCount"),
+        PyBindMethod("getWritevAddrPcCount"),
+        PyBindMethod("clearWritevAddrPcCount"),
+        PyBindMethod("getvAddrMoveCount"),
+        PyBindMethod("clearvAddrMoveCount"),
+        PyBindMethod("getBasicBlockCount"),
+        PyBindMethod("clearBasicBlockCount"),
+        PyBindMethod("getBasicBlockInstProfile"),
+        PyBindMethod("getIntervalCount"),
+        PyBindMethod("clearIntervalCount"),
+        PyBindMethod("startListening"),
+        PyBindMethod("stopListening"),
+    ]
+
+    interval_length = Param.UInt64(1000000, "Interval length")
+    ifStart = Param.Bool(True, "if start listening from start of simulation")
