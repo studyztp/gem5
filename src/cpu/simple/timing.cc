@@ -885,7 +885,7 @@ TimingSimpleCPU::completeIfetch(PacketPtr pkt)
             countInst();
             if (!curStaticInst->isMicroop() || curStaticInst->isLastMicroop())
             {
-                if (!t_info.thread->->getIsaPtr()->inUserMode())
+                if (t_info.thread->getIsaPtr()->inUserMode())
                 {
                     ppPc->notify(std::make_pair<Addr, bool>(
                         t_info.thread->pcState().instAddr(),

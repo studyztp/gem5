@@ -36,7 +36,12 @@ DataMovementTracker::DataMovementTracker(const DataMovementTrackerParams &p)
     basicBlockInstCount(0),
     ifStartListening(p.ifStart)
 {
-    printf("DataMovementTracker constructor\n");
+    DPRINTF(DataMovementTracker,
+        "Got to DataMovementTracker constructor.\n");
+    DPRINTF(DataMovementTracker,
+        "intervalLength: %ld\n", intervalLength);
+    DPRINTF(DataMovementTracker,
+        "ifStartListening: %s\n", (ifStartListening? "true" : "false"));
 }
 
 void
@@ -45,6 +50,9 @@ DataMovementTracker::getReadRequest(const RequestPtr &req)
     Addr vAddr = req->getVaddr();
     Addr pAddr = req->getPaddr();
     Addr pc = req->getPC();
+
+    DPRINTF(DataMovementTracker,
+        "Got to getReadRequest.\n");
 
     if (readvAddrpAddrCount.find(createPair(vAddr, pAddr))
                                                 == readvAddrpAddrCount.end())
@@ -93,6 +101,9 @@ DataMovementTracker::getWriteRequest(const RequestPtr &req)
     Addr vAddr = req->getVaddr();
     Addr pAddr = req->getPaddr();
     Addr pc = req->getPC();
+
+    DPRINTF(DataMovementTracker,
+        "Got to getWriteRequest.\n");
 
     if (writevAddrpAddrCount.find(createPair(vAddr, pAddr))
                                                 == writevAddrpAddrCount.end())
@@ -157,6 +168,11 @@ DataMovementTracker::getPc(const std::pair<Addr, bool> &inst)
                                     std::make_pair<Addr, uint64_t>(
         std::forward<Addr>(pc),std::forward<uint64_t>(basicBlockInstCount)));
         }
+
+        DPRINTF(DataMovementTracker,
+            "intervalCount: %ld\n", intervalCount);
+
+
         basicBlockInstCount = 0;
         if (intervalCount >= intervalLength)
         {
@@ -169,6 +185,8 @@ void
 DataMovementTracker::regProbeListeners()
 {
     if (ifStartListening) {
+        DPRINTF(DataMovementTracker,
+            "start listening.\n");
         listeners.push_back(new ReadRequestListener(this, "ReadRequestProbe",
                     &DataMovementTracker::getReadRequest));
         listeners.push_back(new WriteRequestListener(this, "WriteRequestProbe",
@@ -181,15 +199,25 @@ DataMovementTracker::regProbeListeners()
 void
 DataMovementTracker::startListening()
 {
-    if (listeners.size() == 0)
+    if (listeners.size() <= 0)
     {
-        regProbeListeners();
+        DPRINTF(DataMovementTracker,
+            "start listening.\n");
+        listeners.push_back(new ReadRequestListener(this, "ReadRequestProbe",
+                    &DataMovementTracker::getReadRequest));
+        listeners.push_back(new WriteRequestListener(this, "WriteRequestProbe",
+                    &DataMovementTracker::getWriteRequest));
+        listeners.push_back(new PcListener(this, "PcProbe",
+                    &DataMovementTracker::getPc));
     }
 }
 
 void
 DataMovementTracker::stopListening()
 {
+
+    DPRINTF(DataMovementTracker,
+        "stop listening.\n");
     listeners.clear();
 }
 
