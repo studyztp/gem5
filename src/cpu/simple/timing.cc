@@ -76,7 +76,10 @@ TimingSimpleCPU::TimingCPUPort::TickEvent::schedule(PacketPtr _pkt, Tick t)
 TimingSimpleCPU::TimingSimpleCPU(const BaseTimingSimpleCPUParams &p)
     : BaseSimpleCPU(p), fetchTranslation(this), icachePort(this),
       dcachePort(this), ifetch_pkt(NULL), dcache_pkt(NULL), previousCycle(0),
-      fetchEvent([this]{ fetch(); }, name())
+      fetchEvent([this]{ fetch(); }, name()),
+      ppRead(nullptr),
+      ppWrite(nullptr),
+      ppPc(nullptr)
 {
     _status = Idle;
 }
@@ -320,6 +323,7 @@ TimingSimpleCPU::sendData(const RequestPtr &req, uint8_t *data, uint64_t *res,
         completeDataAccess(pkt);
     } else if (read) {
         handleReadPacket(pkt);
+        ppRead->notify(req);
     } else {
         bool do_access = true;  // flag to suppress cache access
 
@@ -334,6 +338,7 @@ TimingSimpleCPU::sendData(const RequestPtr &req, uint8_t *data, uint64_t *res,
         if (do_access) {
             dcache_pkt = pkt;
             handleWritePacket();
+            ppWrite->notify(req);
             threadSnoop(pkt, curThread);
         } else {
             _status = DcacheWaitResponse;
@@ -876,8 +881,19 @@ TimingSimpleCPU::completeIfetch(PacketPtr pkt)
         Fault fault = curStaticInst->execute(&t_info, traceData);
 
         // keep an instruction count
-        if (fault == NoFault)
+        if (fault == NoFault) {
             countInst();
+            if (!curStaticInst->isMicroop() || curStaticInst->isLastMicroop())
+            {
+                if (!t_info.thread->->getIsaPtr()->inUserMode())
+                {
+                    ppPc->notify(std::make_pair<Addr, bool>(
+                        t_info.thread->pcState().instAddr(),
+                        curStaticInst->isControl())
+                    );
+                }
+            }
+        }
         else if (traceData) {
             traceFault();
         }
@@ -1316,6 +1332,20 @@ TimingSimpleCPU::htmSendAbortSignal(ThreadID tid, uint64_t htm_uid,
     memcpy (data, &rc, size);
 
     sendData(req, data, nullptr, true);
+}
+
+void
+TimingSimpleCPU::regProbeListeners()
+{
+    BaseCPU::regProbePoints();
+
+    ppPc = new ProbePointArg<const std::pair<Addr, bool>>
+                                                (getProbeManager(), "PcProbe");
+    ppRead = new ProbePointArg<const RequestPtr>(getProbeManager(),
+                                                        "ReadRequestProbe");
+    ppWrite = new ProbePointArg<const RequestPtr>(getProbeManager(),
+                                                        "WriteRequestProbe");
+
 }
 
 } // namespace gem5

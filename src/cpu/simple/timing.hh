@@ -46,6 +46,7 @@
 #include "cpu/simple/exec_context.hh"
 #include "cpu/translation.hh"
 #include "params/BaseTimingSimpleCPU.hh"
+#include "sim/probe/probe.hh"
 
 namespace gem5
 {
@@ -373,6 +374,12 @@ class TimingSimpleCPU : public BaseSimpleCPU
      * @returns true if the CPU is drained, false otherwise.
      */
     bool tryCompleteDrain();
+
+    ProbePointArg<const RequestPtr> *ppRead;
+    ProbePointArg<const RequestPtr> *ppWrite;
+    ProbePointArg<const std::pair<Addr, bool>> *ppPc;
+
+    void regProbeListeners() override;
 };
 
 } // namespace gem5
