@@ -151,7 +151,8 @@ DataMovementTracker::getPc(const std::pair<StaticInstPtr,SimpleThread*> &inst)
                 thread->getTC()->pcState().as<GenericISA::PCStateWithNext>();
     Addr pc = pcstate.pc();
 
-    basicBlockInstCount++;
+    basicBlockInstCount ++;
+    intervalCount ++;
 
     if (staticInst->isControl()) {
         if (basicBlockCount.find(pc) == basicBlockCount.end()) {
@@ -167,6 +168,10 @@ DataMovementTracker::getPc(const std::pair<StaticInstPtr,SimpleThread*> &inst)
         std::forward<Addr>(pc),std::forward<uint64_t>(basicBlockInstCount)));
         }
         basicBlockInstCount = 0;
+        if (intervalCount >= intervalLength)
+        {
+            exitSimLoopNow("simpoint starting point found");
+        }
     }
 }
 
