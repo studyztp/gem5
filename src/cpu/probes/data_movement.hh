@@ -32,6 +32,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "cpu/simple_thread.hh"
 #include "cpu/static_inst.hh"
 #include "debug/DataMovementTracker.hh"
 #include "mem/request.hh"
@@ -51,16 +52,8 @@ class DataMovementTracker : public ProbeListenerObject
                                                         ReadRequestListener;
     typedef ProbeListenerArg<DataMovementTracker, RequestPtr>
                                                         WriteRequestListener;
-    typedef ProbeListenerArg<DataMovementTracker, std::pair<Addr,bool>>
-                                                        PcListener;
-
-    void getReadRequest(const RequestPtr &req);
-    void getWriteRequest(const RequestPtr &req);
-    void getPc(const std::pair<Addr,bool> &inst);
-
-    virtual void regProbeListeners();
-    void startListening();
-    void stopListening();
+    typedef ProbeListenerArg<DataMovementTracker,
+                      std::pair<StaticInstPtr,SimpleThread*>>PcListener;
 
     std::string addrToHex(Addr number) {
       std::stringstream ss;
@@ -88,6 +81,14 @@ class DataMovementTracker : public ProbeListenerObject
 
     std::unordered_map<Addr, uint64_t> basicBlockCount;
     std::unordered_map<Addr, uint64_t> basicBlockInstProfile;
+
+    void getReadRequest(const RequestPtr &req);
+    void getWriteRequest(const RequestPtr &req);
+    void getPc(const std::pair<StaticInstPtr,SimpleThread*> &inst);
+
+    virtual void regProbeListeners();
+    void startListening();
+    void stopListening();
 
     std::unordered_map<std::string, uint64_t>
     getReadvAddrpAddrCount() {

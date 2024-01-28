@@ -889,10 +889,9 @@ TimingSimpleCPU::completeIfetch(PacketPtr pkt)
             countInst();
             if (!curStaticInst->isMicroop() ||
                                             curStaticInst->isLastMicroop()) {
-                ppPc->notify(std::make_pair<Addr,bool>(
-                    t_info.thread->pcState().instAddr(),
-                    curStaticInst->isControl())
-                );
+                ppPc->notify(std::make_pair<StaticInstPtr,SimpleThread*>(
+                                    std::forward<StaticInstPtr>(curStaticInst),
+                                std::forward<SimpleThread*>(t_info.thread)));
             }
         }
         else if (traceData) {
@@ -1340,8 +1339,8 @@ TimingSimpleCPU::regProbeListeners()
 {
     BaseCPU::regProbePoints();
 
-    ppPc = new ProbePointArg<const std::pair<Addr,bool>>(getProbeManager(),
-                                                                    "PcProbe");
+    ppPc = new ProbePointArg<const std::pair<StaticInstPtr,SimpleThread*>>
+                                                (getProbeManager(), "PcProbe");
     ppRead = new ProbePointArg<const RequestPtr>(getProbeManager(),
                                                         "ReadRequestProbe");
     ppWrite = new ProbePointArg<const RequestPtr>(getProbeManager(),

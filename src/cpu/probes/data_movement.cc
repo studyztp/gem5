@@ -136,14 +136,24 @@ DataMovementTracker::getWriteRequest(const RequestPtr &req)
 }
 
 void
-DataMovementTracker::getPc(const std::pair<Addr,bool> &inst)
+DataMovementTracker::getPc(const std::pair<StaticInstPtr,SimpleThread*> &inst)
 {
-    Addr pc = inst.first;
-    bool isControl = inst.second;
+    SimpleThread* thread = inst.second;
+
+    if (!thread->getIsaPtr()->inUserMode())
+    {
+        return;
+    }
+
+    const StaticInstPtr& staticInst = inst.first;
+
+    auto &pcstate =
+                thread->getTC()->pcState().as<GenericISA::PCStateWithNext>();
+    Addr pc = pcstate.pc();
 
     basicBlockInstCount++;
 
-    if (isControl) {
+    if (staticInst->isControl()) {
         if (basicBlockCount.find(pc) == basicBlockCount.end()) {
             basicBlockCount.insert(std::make_pair<Addr, uint64_t>(
                                                 std::forward<Addr>(pc), 1));
@@ -154,8 +164,7 @@ DataMovementTracker::getPc(const std::pair<Addr,bool> &inst)
         if (basicBlockInstProfile.find(pc) == basicBlockInstProfile.end()) {
             basicBlockInstProfile.insert(
                                     std::make_pair<Addr, uint64_t>(
-                                std::forward<Addr>(pc),
-                                std::forward<uint64_t>(basicBlockInstCount)));
+        std::forward<Addr>(pc),std::forward<uint64_t>(basicBlockInstCount)));
         }
         basicBlockInstCount = 0;
     }

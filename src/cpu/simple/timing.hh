@@ -377,7 +377,7 @@ class TimingSimpleCPU : public BaseSimpleCPU
 
     ProbePointArg<const RequestPtr> *ppRead;
     ProbePointArg<const RequestPtr> *ppWrite;
-    ProbePointArg<const std::pair<Addr,bool>> *ppPc;
+    ProbePointArg<const std::pair<StaticInstPtr,SimpleThread*>> *ppPc;
 
     void regProbeListeners() override;
 
