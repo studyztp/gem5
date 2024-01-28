@@ -93,7 +93,9 @@ KvmDevice::setAttrPtr(uint32_t group, uint64_t attr, const void *data) const
     };
 
     if (ioctl(KVM_SET_DEVICE_ATTR, &dattr) == -1) {
-        panic("Failed to set attribute (group: %i, attr: %i, errno: %i)",
+        // panic("Failed to set attribute (group: %i, attr: %i, errno: %i)",
+        //       group, attr, errno);
+        printf("Failed to set attribute (group: %i, attr: %li, errno: %i)\n",
               group, attr, errno);
     }
 #else

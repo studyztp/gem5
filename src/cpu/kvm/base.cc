@@ -890,7 +890,9 @@ BaseKvmCPU::setOneReg(uint64_t id, const void *addr)
     reg.addr = (uint64_t)addr;
 
     if (ioctl(KVM_SET_ONE_REG, &reg) == -1) {
-        panic("KVM: Failed to set register (0x%x) value (errno: %i)\n",
+        // panic("KVM: Failed to set register (0x%x) value (errno: %i)\n",
+        //       id, errno);
+        printf("KVM: Failed to set register (0x%lx) value (errno: %i)\n",
               id, errno);
     }
 #else
