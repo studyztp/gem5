@@ -81,7 +81,10 @@ AtomicSimpleCPU::AtomicSimpleCPU(const BaseAtomicSimpleCPUParams &p)
       icachePort(name() + ".icache_port"),
       dcachePort(name() + ".dcache_port", this),
       dcache_access(false), dcache_latency(0),
-      ppCommit(nullptr)
+      ppCommit(nullptr),
+      ppRead(nullptr),
+      ppWrite(nullptr),
+      ppPc(nullptr)
 {
     _status = Idle;
     ifetch_req = std::make_shared<Request>();
@@ -399,6 +402,7 @@ AtomicSimpleCPU::readMem(Addr addr, uint8_t *data, unsigned size,
                 dcache_latency += req->localAccessor(thread->getTC(), &pkt);
             } else {
                 dcache_latency += sendPacket(dcachePort, &pkt);
+                ppRead->notify(req);
             }
             dcache_access = true;
 
@@ -500,6 +504,7 @@ AtomicSimpleCPU::writeMem(uint8_t *data, unsigned size, Addr addr,
                         req->localAccessor(thread->getTC(), &pkt);
                 } else {
                     dcache_latency += sendPacket(dcachePort, &pkt);
+                    ppWrite->notify(req);
 
                     // Notify other threads on this CPU of write
                     threadSnoop(&pkt, curThread);
@@ -687,6 +692,17 @@ AtomicSimpleCPU::tick()
                 if (fault == NoFault) {
                     countInst();
                     ppCommit->notify(std::make_pair(thread, curStaticInst));
+                    if (!curStaticInst->isMicroop() ||
+                                                curStaticInst->isLastMicroop())
+                    {
+                        if (thread->getIsaPtr()->inUserMode())
+                        {
+                            ppPc->notify(std::make_pair<Addr, bool>(
+                                thread->pcState().instAddr(),
+                                curStaticInst->isControl())
+                            );
+                        }
+                    }
                 } else if (traceData) {
                     traceFault();
                 }
@@ -763,6 +779,12 @@ AtomicSimpleCPU::regProbePoints()
 
     ppCommit = new ProbePointArg<std::pair<SimpleThread*, const StaticInstPtr>>
                                 (getProbeManager(), "Commit");
+    ppPc = new ProbePointArg<const std::pair<Addr, bool>>
+                                                (getProbeManager(), "PcProbe");
+    ppRead = new ProbePointArg<const RequestPtr>(getProbeManager(),
+                                                        "ReadRequestProbe");
+    ppWrite = new ProbePointArg<const RequestPtr>(getProbeManager(),
+                                                        "WriteRequestProbe");
 }
 
 void

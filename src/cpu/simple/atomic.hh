@@ -172,6 +172,9 @@ class AtomicSimpleCPU : public BaseSimpleCPU
 
     /** Probe Points. */
     ProbePointArg<std::pair<SimpleThread *, const StaticInstPtr>> *ppCommit;
+    ProbePointArg<const RequestPtr> *ppRead;
+    ProbePointArg<const RequestPtr> *ppWrite;
+    ProbePointArg<const std::pair<Addr, bool>> *ppPc;
 
   protected:
 
