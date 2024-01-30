@@ -76,7 +76,7 @@ class DataMovementTracker : public ProbeListenerObject
     std::unordered_map<std::string, uint64_t> writevAddrpAddrCount;
     std::unordered_map<std::string, uint64_t> readvAddrPcCount;
     std::unordered_map<std::string, uint64_t> writevAddrPcCount;
-    std::unordered_map<Addr, Addr> curvAddrpAddr;
+    // std::unordered_map<Addr, Addr> curvAddrpAddr;
     std::unordered_map<Addr, uint64_t> vAddrMoveCount;
 
     std::unordered_map<Addr, uint64_t> basicBlockCount;

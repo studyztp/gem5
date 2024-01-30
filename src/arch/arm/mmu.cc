@@ -269,6 +269,9 @@ MMU::translateSe(const RequestPtr &req, ThreadContext *tc, Mode mode,
     } else {
         req->setPaddr(pte->paddr + p->pTable->pageOffset(vaddr));
 
+        req->setVPNnPPN((vaddr - p->pTable->pageOffset(vaddr)),
+                        pte->paddr);
+
         if (pte->flags & EmulationPageTable::Uncacheable)
             req->setFlags(Request::UNCACHEABLE);
 

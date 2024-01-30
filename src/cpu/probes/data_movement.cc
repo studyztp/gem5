@@ -47,8 +47,9 @@ DataMovementTracker::DataMovementTracker(const DataMovementTrackerParams &p)
 void
 DataMovementTracker::getReadRequest(const RequestPtr &req)
 {
-    Addr vAddr = req->getVaddr();
-    Addr pAddr = req->getPaddr();
+    std::pair<Addr, Addr> pair = req->getVPNnPPN();
+    Addr vAddr = pair.first;
+    Addr pAddr = pair.second;
     Addr pc = req->getPC();
 
     DPRINTF(DataMovementTracker,
@@ -76,30 +77,31 @@ DataMovementTracker::getReadRequest(const RequestPtr &req)
         readvAddrPcCount.find(createPair(vAddr, pc))->second++;
     }
 
-    if (curvAddrpAddr.find(vAddr) == curvAddrpAddr.end()) {
-        curvAddrpAddr.insert(std::make_pair<Addr, Addr>(req->getVaddr(),
-                                                            req->getPaddr()));
-    }
-    else {
-        if (curvAddrpAddr.find(vAddr)->second != pAddr) {
-            curvAddrpAddr.find(vAddr)->second = pAddr;
-            if (vAddrMoveCount.find(vAddr) == vAddrMoveCount.end()) {
-                vAddrMoveCount.insert(
-                                    std::make_pair<Addr, uint64_t>(
-                                        req->getVaddr(), 0));
-            }
-            else {
-                vAddrMoveCount.find(vAddr)->second++;
-            }
-        }
-    }
+    // if (curvAddrpAddr.find(vAddr) == curvAddrpAddr.end()) {
+    //     curvAddrpAddr.insert(std::make_pair<Addr, Addr>(req->getVaddr(),
+    //                                                       req->getPaddr()));
+    // }
+    // else {
+    //     if (curvAddrpAddr.find(vAddr)->second != pAddr) {
+    //         curvAddrpAddr.find(vAddr)->second = pAddr;
+    //         if (vAddrMoveCount.find(vAddr) == vAddrMoveCount.end()) {
+    //             vAddrMoveCount.insert(
+    //                                 std::make_pair<Addr, uint64_t>(
+    //                                     req->getVaddr(), 0));
+    //         }
+    //         else {
+    //             vAddrMoveCount.find(vAddr)->second++;
+    //         }
+    //     }
+    // }
 }
 
 void
 DataMovementTracker::getWriteRequest(const RequestPtr &req)
 {
-    Addr vAddr = req->getVaddr();
-    Addr pAddr = req->getPaddr();
+    std::pair<Addr, Addr> pair = req->getVPNnPPN();
+    Addr vAddr = pair.first;
+    Addr pAddr = pair.second;
     Addr pc = req->getPC();
 
     DPRINTF(DataMovementTracker,
@@ -127,23 +129,23 @@ DataMovementTracker::getWriteRequest(const RequestPtr &req)
         writevAddrPcCount.find(createPair(vAddr, pc))->second++;
     }
 
-    if (curvAddrpAddr.find(vAddr) == curvAddrpAddr.end()) {
-        curvAddrpAddr.insert(std::make_pair<Addr, Addr>(
-                                    req->getVaddr(), req->getPaddr()));
-    }
-    else {
-        if (curvAddrpAddr.find(vAddr)->second != pAddr) {
-            curvAddrpAddr.find(vAddr)->second = pAddr;
-            if (vAddrMoveCount.find(vAddr) == vAddrMoveCount.end()) {
-                vAddrMoveCount.insert(
-                                    std::make_pair<Addr, uint64_t>(
-                                                    req->getVaddr(), 0));
-            }
-            else {
-                vAddrMoveCount.find(vAddr)->second++;
-            }
-        }
-    }
+    // if (curvAddrpAddr.find(vAddr) == curvAddrpAddr.end()) {
+    //     curvAddrpAddr.insert(std::make_pair<Addr, Addr>(
+    //                                 req->getVaddr(), req->getPaddr()));
+    // }
+    // else {
+    //     if (curvAddrpAddr.find(vAddr)->second != pAddr) {
+    //         curvAddrpAddr.find(vAddr)->second = pAddr;
+    //         if (vAddrMoveCount.find(vAddr) == vAddrMoveCount.end()) {
+    //             vAddrMoveCount.insert(
+    //                                 std::make_pair<Addr, uint64_t>(
+    //                                                 req->getVaddr(), 0));
+    //         }
+    //         else {
+    //             vAddrMoveCount.find(vAddr)->second++;
+    //         }
+    //     }
+    // }
 }
 
 void

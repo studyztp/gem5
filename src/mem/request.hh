@@ -470,6 +470,10 @@ class Request : public Extensible<Request>
     /** The cause for HTM transaction abort */
     HtmFailureFaultCause _htmAbortCause = HtmFailureFaultCause::INVALID;
 
+    Addr _VPN;
+    Addr _PPN;
+    bool _setVPNnPPN = false;
+
   public:
 
     /**
@@ -598,6 +602,28 @@ class Request : public Extensible<Request>
     {
         _paddr = paddr;
         privateFlags.set(VALID_PADDR);
+    }
+
+    /*
+    * Set the VPN and PPN
+    */
+    void
+    setVPNnPPN(Addr vpn, Addr ppn) {
+        _VPN = vpn;
+        _PPN = ppn;
+        _setVPNnPPN = true;
+    }
+
+    bool
+    hasVPNnPPN() {
+        return _setVPNnPPN;
+    }
+
+    std::pair<Addr, Addr>
+    getVPNnPPN() {
+        assert(hasVPNnPPN());
+        return std::make_pair<Addr, Addr>(std::forward<Addr>(_VPN),
+                                                    std::forward<Addr>(_PPN));
     }
 
     /**
