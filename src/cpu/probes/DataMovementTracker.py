@@ -61,3 +61,4 @@ class DataMovementTracker(ProbeListenerObject):
 
     interval_length = Param.UInt64(1000000, "Interval length")
     ifStart = Param.Bool(True, "if start listening from start of simulation")
+    ifStore = Param.Bool(True, "if store the data movement information")

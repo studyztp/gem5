@@ -71,6 +71,7 @@ class DataMovementTracker : public ProbeListenerObject
     uint64_t intervalCount;
     uint64_t basicBlockInstCount;
     bool ifStartListening;
+    bool ifStoringData;
 
     std::unordered_map<std::string, uint64_t> readvAddrpAddrCount;
     std::unordered_map<std::string, uint64_t> writevAddrpAddrCount;
