@@ -52,9 +52,11 @@ DataMovementTracker::getReadRequest(const RequestPtr &req)
 {
     if (ifStoringData)
     {
-        std::pair<Addr, Addr> pair = req->getVPNnPPN();
-        Addr vAddr = pair.first;
-        Addr pAddr = pair.second;
+        // assume that all pages are 4KB
+        Addr vAddr = req->getVaddr();
+        vAddr = vAddr & 0xfffffffffffff000;
+        Addr pAddr = req->getPaddr();
+        pAddr = pAddr & 0xfffffffffffff000;
         Addr pc = req->getPC();
 
         DPRINTF(DataMovementTracker,
@@ -89,9 +91,10 @@ DataMovementTracker::getWriteRequest(const RequestPtr &req)
 {
     if (ifStoringData)
     {
-        std::pair<Addr, Addr> pair = req->getVPNnPPN();
-        Addr vAddr = pair.first;
-        Addr pAddr = pair.second;
+        Addr vAddr = req->getVaddr();
+        vAddr = vAddr & 0xfffffffffffff000;
+        Addr pAddr = req->getPaddr();
+        pAddr = pAddr & 0xfffffffffffff000;
         Addr pc = req->getPC();
 
         DPRINTF(DataMovementTracker,
