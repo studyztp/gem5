@@ -97,6 +97,7 @@ class LooppointAnalysisManager : public SimObject
     std::unordered_map<Addr, uint64_t> counter;
     std::unordered_map<Addr, uint64_t> globalBBV;
     std::unordered_map<Addr, uint64_t> BBinstMap;
+    std::unordered_map<Addr, std::string> BackBranchDisassembly;
 
     uint64_t regionLength;
     uint64_t globalInstCounter;
@@ -156,8 +157,9 @@ class LooppointAnalysisManager : public SimObject
     };
 
     void
-    updateBackwardBranches(Addr pc) {
+    updateBackwardBranches(Addr pc, std::string disassembly) {
         backwardBranches.insert(pc);
+        BackBranchDisassembly.insert(std::make_pair(pc, disassembly));
     };
 
     void
@@ -230,6 +232,11 @@ class LooppointAnalysisManager : public SimObject
     std::unordered_map<Addr, uint64_t>
     getCounter() {
         return counter;
+    };
+
+    std::unordered_map<Addr, std::string>
+    getBackBranchDisassembly() {
+        return BackBranchDisassembly;
     };
 
 };

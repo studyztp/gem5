@@ -148,7 +148,6 @@ LooppointAnalysis::checkPc(
     BBInstCounter ++;
     lpamanager->increaseGlobalInst();
 
-
     if (inst->isControl())
     {
         lpamanager->updateBBEnd(pc);
@@ -166,7 +165,7 @@ LooppointAnalysis::checkPc(
 
         if (inst->isDirectCtrl()) {
             if (pcstate.npc() < pc) {
-                lpamanager->updateBackwardBranches(pc);
+                lpamanager->updateBackwardBranches(pc, inst->disassemble());
                 lpamanager->countPc(pc);
             }
         }
@@ -218,7 +217,7 @@ LooppointAnalysisManager::LooppointAnalysisManager(
 }
 
 void
-LooppointAnalysisManager::countPc(Addr pc)
+LooppointAnalysisManager::countPc(Addr pc, std::string disassembly)
 {
     if (counter.find(pc) == counter.end())
     {
