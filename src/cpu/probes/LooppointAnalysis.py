@@ -82,6 +82,8 @@ class LooppointAnalysisManager(SimObject):
         PyBindMethod("getValidPc"),
         PyBindMethod("getBBEnd"),
         PyBindMethod("getEncounteredPc"),
+        PyBindMethod("clearCaller"),
+        PyBindMethod("getCaller"),
     ]
 
     regionLen = Param.Int(100000000, "the length of the region")

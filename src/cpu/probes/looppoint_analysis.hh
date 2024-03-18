@@ -102,6 +102,7 @@ class LooppointAnalysisManager : public SimObject
     uint64_t regionLength;
     uint64_t globalInstCounter;
     Addr mostRecentPc;
+    bool caller;
 
     std::unordered_set<Addr> backwardBranches;
     std::unordered_set<Addr> validPc;
@@ -237,6 +238,16 @@ class LooppointAnalysisManager : public SimObject
     std::unordered_map<Addr, std::string>
     getBackBranchDisassembly() {
         return BackBranchDisassembly;
+    };
+
+    void
+    clearCaller() {
+        caller = false;
+    };
+
+    bool
+    getCaller() {
+        return caller;
     };
 
 };

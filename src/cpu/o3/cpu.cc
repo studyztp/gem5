@@ -330,6 +330,9 @@ CPU::regProbePoints()
         std::pair<DynInstPtr, PacketPtr>>(
                 getProbeManager(), "DataAccessComplete");
 
+    ppCommit = new ProbePointArg<std::pair<SimpleThread*, const StaticInstPtr>>
+                                                (getProbeManager(), "Commit");
+
     fetch.regProbePoints();
     rename.regProbePoints();
     iew.regProbePoints();
@@ -1154,6 +1157,10 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
     commitStats[tid]->numOpsNotNOP++;
 
     probeInstCommit(inst->staticInst, inst->pcState().instAddr());
+    ppCommit->notify(
+        std::make_pair(
+            dynamic_cast<SimpleThread*>(
+                thread[tid]->getTC()), inst->staticInst));
 }
 
 void

@@ -175,6 +175,7 @@ class CPU : public BaseCPU
 
     ProbePointArg<PacketPtr> *ppInstAccessComplete;
     ProbePointArg<std::pair<DynInstPtr, PacketPtr> > *ppDataAccessComplete;
+    ProbePointArg<std::pair<SimpleThread *, const StaticInstPtr>> *ppCommit;
 
     /** Register probe points. */
     void regProbePoints() override;

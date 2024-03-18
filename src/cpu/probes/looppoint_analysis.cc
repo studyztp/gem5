@@ -211,7 +211,8 @@ LooppointAnalysisManager::LooppointAnalysisManager(
     : SimObject(p),
     regionLength(p.regionLen),
     globalInstCounter(0),
-    mostRecentPc(0)
+    mostRecentPc(0),
+    caller(false)
 {
     DPRINTF(LooppointAnalysis, "regionLength = %i\n", regionLength);
 }
@@ -232,6 +233,7 @@ LooppointAnalysisManager::countPc(Addr pc)
 
     if (globalInstCounter >= regionLength)
     {
+        caller = true;
         exitSimLoopNow("simpoint starting point found");
     }
 }
