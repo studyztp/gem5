@@ -34,3 +34,11 @@ Source("pc_count_tracker.cc")
 Source("pc_count_tracker_manager.cc")
 
 DebugFlag("PcCountTracker")
+
+SimObject(
+    'LooppointAnalysis.py',
+    sim_objects=['LooppointAnalysis','LooppointAnalysisManager']
+)
+Source('looppoint_analysis.cc')
+
+DebugFlag("LooppointAnalysis")
