@@ -35,8 +35,8 @@ void
 UserInstCounter::startListening()
 {
     if (listeners.size() == 0) {
-        typedef ProbeListenerArg<UserInstCounter, const bool> U
-                                                serInstCounterProbeListener;
+        typedef ProbeListenerArg<UserInstCounter, const bool>
+                                                UserInstCounterProbeListener;
         ifStartListening = true;
         listeners.push_back(new UserInstCounterProbeListener(this,
                             "CommitUserInst", &UserInstCounter::checkInst));
