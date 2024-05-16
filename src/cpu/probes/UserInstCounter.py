@@ -22,6 +22,11 @@ class UserInstCounter(ProbeListenerObject):
     cxx_header = "cpu/probes/user_inst_counter.hh"
     cxx_class = "gem5::UserInstCounter"
 
+    cxx_exports = [
+        PyBindMethod("startListening"),
+        PyBindMethod("stopListening"),
+    ]
+
     if_start_listening = Param.Bool(True, "Start listening to instructions")
     counter_manager = Param.UserInstCounterManager(
         "The UserInstCounter manager"
