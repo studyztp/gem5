@@ -34,3 +34,9 @@ Source("pc_count_tracker.cc")
 Source("pc_count_tracker_manager.cc")
 
 DebugFlag("PcCountTracker")
+
+SimObject(
+    "UserInstCounter.py",
+    sim_objects=["UserInstCounter", "UserInstCounterManager"],
+)
+Source("user_inst_counter.cc")

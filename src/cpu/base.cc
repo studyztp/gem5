@@ -384,10 +384,14 @@ BaseCPU::regProbePoints()
 
     ppSleeping = new ProbePointArg<bool>(this->getProbeManager(),
                                          "Sleeping");
+
+    ppCommitUserInst = new ProbePointArg<bool>(this->getProbeManager(),
+                                               "CommitUserInst");
 }
 
 void
-BaseCPU::probeInstCommit(const StaticInstPtr &inst, Addr pc)
+BaseCPU::probeInstCommit(const StaticInstPtr &inst, Addr pc,
+                                                        const bool isUserInst)
 {
     if (!inst->isMicroop() || inst->isLastMicroop()) {
         ppRetiredInsts->notify(1);
@@ -402,6 +406,8 @@ BaseCPU::probeInstCommit(const StaticInstPtr &inst, Addr pc)
 
     if (inst->isControl())
         ppRetiredBranches->notify(1);
+
+    ppCommitUserInst->notify(isUserInst);
 }
 
 BaseCPU::

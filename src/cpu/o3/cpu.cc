@@ -1153,7 +1153,8 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
     thread[tid]->threadStats.numOps++;
     commitStats[tid]->numOpsNotNOP++;
 
-    probeInstCommit(inst->staticInst, inst->pcState().instAddr());
+    probeInstCommit(inst->staticInst, inst->pcState().instAddr(),
+                                    inst->tcBase()->getIsaPtr()->inUserMode());
 }
 
 void

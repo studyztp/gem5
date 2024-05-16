@@ -881,7 +881,8 @@ Execute::doInstCommitAccounting(MinorDynInstPtr inst)
     if (inst->traceData)
         inst->traceData->setCPSeq(thread->numOp);
 
-    cpu.probeInstCommit(inst->staticInst, inst->pc->instAddr());
+    cpu.probeInstCommit(inst->staticInst, inst->pc->instAddr(),
+                                            thread->getIsaPtr()->inUserMode());
 }
 
 bool

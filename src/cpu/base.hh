@@ -498,7 +498,8 @@ class BaseCPU : public ClockedObject
      * @param inst Instruction that just committed
      * @param pc PC of the instruction that just committed
      */
-    virtual void probeInstCommit(const StaticInstPtr &inst, Addr pc);
+    virtual void probeInstCommit(const StaticInstPtr &inst, Addr pc,
+                                                        const bool isUserInst);
 
    protected:
     /**
@@ -545,6 +546,7 @@ class BaseCPU : public ClockedObject
      */
     ProbePointArg<bool> *ppSleeping;
     /** @} */
+    ProbePointArg<bool> *ppCommitUserInst;
 
     enum CPUState
     {
