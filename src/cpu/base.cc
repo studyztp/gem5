@@ -396,6 +396,7 @@ BaseCPU::probeInstCommit(const StaticInstPtr &inst, Addr pc,
     if (!inst->isMicroop() || inst->isLastMicroop()) {
         ppRetiredInsts->notify(1);
         ppRetiredInstsPC->notify(pc);
+        ppCommitUserInst->notify(isUserInst);
     }
 
     if (inst->isLoad())
@@ -407,7 +408,6 @@ BaseCPU::probeInstCommit(const StaticInstPtr &inst, Addr pc,
     if (inst->isControl())
         ppRetiredBranches->notify(1);
 
-    ppCommitUserInst->notify(isUserInst);
 }
 
 BaseCPU::
