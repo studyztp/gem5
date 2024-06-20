@@ -44,8 +44,15 @@ class PcCountTrackerManager(SimObject):
     cxx_exports = [
         PyBindMethod("getPcCount"),
         PyBindMethod("getCurrentPcCountPair"),
+        PyBindMethod("getLoopCount"),
+        PyBindMethod("getLoopTimestamp"),
+        PyBindMethod("getInstructionCount"),
+        PyBindMethod("getInstructionCountThreshold"),
+        PyBindMethod("resetInstructionCount"),
+        PyBindMethod("setInstructionCountThreshold"),
     ]
 
+    threshold = Param.Int(0, "the threshold for the target PC")
     targets = VectorParam.PcCountPair("the target PC Count pairs")
 
 

@@ -56,6 +56,12 @@ PcCountTracker::regProbeListeners()
     typedef ProbeListenerArg<PcCountTracker, Addr> PcCountTrackerListener;
     listeners.push_back(new PcCountTrackerListener(this, "RetiredInstsPC",
                                             &PcCountTracker::checkPc));
+    typedef ProbeListenerArg<PcCountTracker, std::pair<SimpleThread*,
+                                                       StaticInstPtr>>
+            PcCountTrackerListenerForLoop;
+    listeners.push_back(new PcCountTrackerListenerForLoop(this,
+                                            "ppCommit",
+                                            &PcCountTracker::checkPCForLoop));
 }
 
 void
@@ -65,6 +71,33 @@ PcCountTracker::checkPc(const Addr& pc) {
         // PcCounterTrackerManager by calling its `check_count` function
         manager->checkCount(pc);
     }
+}
+
+void PcCountTracker::checkPCForLoop(
+                    const std::pair<SimpleThread*, StaticInstPtr> &instPair) {
+
+    SimpleThread* thread = instPair.first;
+    const StaticInstPtr &inst = instPair.second;
+    auto &pcstate =
+                thread->getTC()->pcState().as<GenericISA::PCStateWithNext>();
+    Addr pc = pcstate.pc();
+
+    if (inst->isMicroop() && !inst->isLastMicroop())
+    {
+        return;
+    }
+
+    if (thread->getIsaPtr()->inUserMode()) {
+        // notify manager for inst count
+        manager->countPC();
+        if (inst->isDirectCtrl()) {
+            if (pcstate.npc() < pc) {
+                // notify manger for loop count
+                manager->countLoopPC(pc);
+            }
+        }
+    }
+
 }
 
 } // namespace gem5

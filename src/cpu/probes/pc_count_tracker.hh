@@ -32,6 +32,7 @@
 #include <unordered_set>
 
 #include "cpu/probes/pc_count_tracker_manager.hh"
+#include "cpu/simple_thread.hh"
 #include "params/PcCountTracker.hh"
 #include "sim/probe/probe.hh"
 
@@ -53,6 +54,8 @@ class PcCountTracker : public ProbeListenerObject
      * @param pc the targeting Program Counter address
      */
     void checkPc(const Addr& pc);
+    void checkPCForLoop(const std::pair<SimpleThread*, StaticInstPtr>
+                                                                    &instPair);
 
   private:
     /**

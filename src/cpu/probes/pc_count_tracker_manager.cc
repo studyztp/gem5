@@ -33,7 +33,8 @@ namespace gem5
 
 PcCountTrackerManager::PcCountTrackerManager(
     const PcCountTrackerManagerParams &p)
-    : SimObject(p)
+    : SimObject(p),
+    insturctionCountThreshold(p.threshold)
 {
     currentPair = PcCountPair(0,0);
     ifListNotEmpty = true;
@@ -85,4 +86,28 @@ PcCountTrackerManager::checkCount(Addr pc)
     }
 }
 
+void
+PcCountTrackerManager::countPC()
+{
+    instructionCount ++;
+}
+
+void
+PcCountTrackerManager::countLoopPC(Addr pc)
+{
+    if (loopCounter.find(pc) != loopCounter.end()) {
+        loopCounter.find(pc)->second ++;
+        loopTimestamp.find(pc)->second = curTick();
+    } else {
+        loopCounter.insert(std::make_pair(pc,1));
+        loopTimestamp.insert(std::make_pair(pc,curTick()));
+    }
+
+    if (insturctionCountThreshold != 0 &&
+                instructionCount >= insturctionCountThreshold) {
+        DPRINTF(PcCountTracker,
+                "instruction count: %i\n", instructionCount);
+
+        exitSimLoopNow("simpoint starting point found");
+    }
 }

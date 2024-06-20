@@ -49,12 +49,18 @@ class PcCountTrackerManager : public SimObject {
      * PC
      */
     void checkCount(Addr pc);
+    void countPC();
+    void countLoopPC(const Addr pc);
 
   private:
     /** a counter that stores all the target PC addresses and the number
      * of times the target PC has been executed
      */
     std::unordered_map<Addr, int> counter;
+    int instructionCount = 0;
+    int insturctionCountThreshold = 0;
+    std::unordered_map<Addr, int> loopCounter;
+    std::unordered_map<Addr, Tick> loopTimestamp;
 
     /** a set that stores all the PC Count pairs that should raise an
      * exit event at
@@ -116,6 +122,36 @@ class PcCountTrackerManager : public SimObject {
             s += "\n";
         }
         return s;
+    }
+
+    std::unordered_map<Addr, int> getLoopCount() const
+    {
+        return loopCounter;
+    }
+
+    std::unordered_map<Addr, Tick> getLoopTimestamp() const
+    {
+        return loopTimestamp;
+    }
+
+    int getInstructionCount() const
+    {
+        return instructionCount;
+    }
+
+    int getInstructionCountThreshold() const
+    {
+        return insturctionCountThreshold;
+    }
+
+    void resetInstructionCount()
+    {
+        instructionCount = 0;
+    }
+
+    void setInstructionCountThreshold(int threshold)
+    {
+        insturctionCountThreshold = threshold;
     }
 };
 
