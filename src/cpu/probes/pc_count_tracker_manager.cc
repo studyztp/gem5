@@ -111,3 +111,4 @@ PcCountTrackerManager::countLoopPC(Addr pc)
         exitSimLoopNow("simpoint starting point found");
     }
 }
+} // namespace gem5
