@@ -44,6 +44,10 @@ class PcCountTrackerManager(SimObject):
     cxx_exports = [
         PyBindMethod("getPcCount"),
         PyBindMethod("getCurrentPcCountPair"),
+        PyBindMethod("eraseCounter"),
+        PyBindMethod("eraseTarget"),
+        PyBindMethod("updateTarget"),
+        PyBindMethod("printAllTargets"),
     ]
 
     targets = VectorParam.PcCountPair("the target PC Count pairs")
@@ -58,6 +62,12 @@ class PcCountTracker(ProbeListenerObject):
     type = "PcCountTracker"
     cxx_header = "cpu/probes/pc_count_tracker.hh"
     cxx_class = "gem5::PcCountTracker"
+
+    cxx_exports = [
+        PyBindMethod("updateTarget"),
+        PyBindMethod("removeTarget"),
+        PyBindMethod("getTargets"),
+    ]
 
     targets = VectorParam.PcCountPair("the target PC Count pairs")
     core = Param.BaseCPU("the connected cpu")

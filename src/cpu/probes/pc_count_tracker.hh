@@ -66,6 +66,21 @@ class PcCountTracker : public ProbeListenerObject
 
     /** the PcCounterTrackerManager */
     PcCountTrackerManager *manager;
+  public:
+    void updateTarget(Addr pc)
+    {
+        targetPC.insert(pc);
+    }
+
+    void removeTarget(Addr pc)
+    {
+        targetPC.erase(pc);
+    }
+
+    std::unordered_set<Addr> getTargets()
+    {
+        return targetPC;
+    }
 };
 }
 

@@ -56,32 +56,23 @@ void
 PcCountTrackerManager::checkCount(Addr pc)
 {
 
-    if(ifListNotEmpty) {
-        int count = ++counter.find(pc)->second;
-        // increment the counter of the encountered PC address by 1
+    int count = ++counter.find(pc)->second;
+    // increment the counter of the encountered PC address by 1
 
-        currentPair = PcCountPair(pc,count);
-        // update the current PC Count pair
-        if(targetPair.find(currentPair) != targetPair.end()) {
-            // if the current PC Count pair is one of the target pairs
-            DPRINTF(PcCountTracker,
-                "pc:%s encountered\n", currentPair.to_string());
+    currentPair = PcCountPair(pc,count);
+    // update the current PC Count pair
+    if (targetPair.find(currentPair) != targetPair.end()){
+        // if the current PC Count pair is one of the target pairs
+        DPRINTF(PcCountTracker,
+            "pc:%s encountered\n", currentPair.to_string());
 
-            exitSimLoopNow("simpoint starting point found");
-            // raise the SIMPOINT_BEGIN exit event
+        exitSimLoopNow("simpoint starting point found");
+        // raise the SIMPOINT_BEGIN exit event
 
-            targetPair.erase(currentPair);
-            // erase the encountered PC Count pair from the target pairs
-            DPRINTF(PcCountTracker,
-                "There are %i targets remained\n", targetPair.size());
-        }
-
-        if(targetPair.empty()) {
-            // if all target PC Count pairs are encountered
-            DPRINTF(PcCountTracker,
-                    "all targets are encountered.\n");
-            ifListNotEmpty = false;
-        }
+        targetPair.erase(currentPair);
+        // erase the encountered PC Count pair from the target pairs
+        DPRINTF(PcCountTracker,
+            "There are %i targets remained\n", targetPair.size());
     }
 }
 

@@ -117,6 +117,28 @@ class PcCountTrackerManager : public SimObject {
         }
         return s;
     }
+
+    void eraseTarget(Addr pc, uint64_t count)
+    {
+        targetPair.erase(PcCountPair(pc, count));
+    }
+
+    void
+    eraseCounter(Addr pc)
+    {
+        counter.find(pc)->second = 0;
+    }
+
+    void
+    updateTarget(Addr pc, uint64_t count)
+    {
+        targetPair.insert(PcCountPair(pc, count));
+        if (counter.find(pc) == counter.end()) {
+            counter.insert(std::make_pair(pc, 0));
+        } else {
+            counter.find(pc)->second = 0;
+        }
+    }
 };
 
 }
