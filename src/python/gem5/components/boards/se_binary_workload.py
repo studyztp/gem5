@@ -245,7 +245,9 @@ class SEBinaryWorkload:
         assert isinstance(looppoint, Looppoint)
         self._looppoint_object = looppoint
         if region_id:
-            self._looppoint_object.set_target_region_id(region_id=region_id)
+            self._looppoint_object.set_target_region_id(
+                region_id=int(region_id)
+            )
         self._looppoint_object.setup_processor(self.get_processor())
 
         # Call set_se_binary_workload after LoopPoint setup is complete

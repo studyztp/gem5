@@ -38,6 +38,7 @@ from typing import (
 import m5
 from m5.objects import PcCountTrackerManager
 from m5.params import PcCountPair
+from m5.util import warn
 
 
 class LooppointRegionPC:
@@ -76,6 +77,12 @@ class LooppointRegionPC:
     def get_pc_count_pair(self) -> PcCountPair:
         """Returns the PcCountPair for this Region PC value."""
         return PcCountPair(self.get_pc(), self.get_global())
+
+    def get_relative_pc_count_pair(self) -> Optional[PcCountPair]:
+        if self.get_relative() is None:
+            warn(f"relative count of {self.get_pc} cannot be found.")
+            return None
+        return PcCountPair(self.get_pc(), self.get_relative())
 
     def update_relative_count(self, manager: PcCountTrackerManager) -> None:
         """Updates the relative count."""
@@ -175,6 +182,21 @@ class LooppointSimulation:
             self.get_end().get_pc_count_pair(),
         ]
 
+    def get_relative_pc_count_pairs(self) -> List[PcCountPair]:
+        """Returns the PC count pairs for the start and end
+        LoopointRegionPCs."""
+        if self.get_end().get_relative() is None:
+            warn(
+                f"Relative count of the end marker {self.get_end().get_pc()} "
+                "cannot be found."
+            )
+        if self.get_start().get_relative() is None:
+            return [self.get_end().get_relative_pc_count_pair()]
+        return [
+            self.get_start().get_relative_pc_count_pair(),
+            self.get_end().get_relative_pc_count_pair(),
+        ]
+
     def update_relatives_counts(
         self, manager: PcCountTrackerManager, include_start: bool = False
     ) -> None:
@@ -242,6 +264,9 @@ class LooppointRegion:
             pc_count_pairs.extend(self.get_warmup().get_pc_count_pairs())
         return pc_count_pairs
 
+    def get_relative_pc_count_pairs(self) -> List[PcCountPair]:
+        return self.get_simulation().get_relative_pc_count_pairs()
+
     def update_relatives_counts(self, manager: PcCountTrackerManager) -> None:
         """Updates the relative counds of this LoopPoint region."""
         self.get_simulation().update_relatives_counts(
@@ -270,16 +295,19 @@ class LooppointRegion:
 class Looppoint:
     """Stores all the LoopPoint information for a gem5 workload."""
 
-    def __init__(self, regions: Dict[Union[str, int], LooppointRegion]):
+    def __init__(self, regions: Dict[int, LooppointRegion]):
         """
         :param regions: A dictionary mapping the ``region_ids`` with the
                         LoopPointRegions.
         """
+        self._use_global_count = True
         self._regions = regions
         self._manager = PcCountTrackerManager()
         self._manager.targets = self.get_targets()
 
-    def set_target_region_id(self, region_id: Union[str, int]) -> None:
+    def set_target_region_id(
+        self, region_id: int, use_global_count: bool = False
+    ) -> None:
         """There are use-cases where we want to obtain a LoopPoint data
         structure containing a single target region via its ID. This function
         will remove all irrelevant regions."""
@@ -291,6 +319,8 @@ class Looppoint:
         for rid in to_remove:
             del self._regions[rid]
 
+        self._use_global_count = use_global_count
+
         self._manager.targets = self.get_targets()
 
     def get_manager(self) -> PcCountTrackerManager:
@@ -298,7 +328,7 @@ class Looppoint:
         structure."""
         return self._manager
 
-    def get_regions(self) -> Dict[Union[int, str], LooppointRegion]:
+    def get_regions(self) -> Dict[int, LooppointRegion]:
         """Returns the regions for this Looppoint data structure."""
         return self._regions
 
@@ -329,7 +359,7 @@ class Looppoint:
                 manager=self.get_manager()
             )
 
-    def get_current_region(self) -> Optional[Union[str, int]]:
+    def get_current_region(self) -> Optional[int]:
         """Returns the region id if the current PC Count pair if significant
         (e.g. beginning of the checkpoint), otherwise, it returns ``None`` to
         indicate the current PC Count pair is not significant.
@@ -342,7 +372,8 @@ class Looppoint:
 
     def get_current_pair(self) -> PcCountPair:
         """This function returns the current PC Count pair."""
-        return self.get_manager().getCurrentPcCountPair()
+        current_pc = self.get_manager().getCurrentPcCountPair()
+        return PcCountPair(current_pc.get_pc(), current_pc.get_count())
 
     def get_region_start_id_map(self) -> Dict[PcCountPair, Union[int, str]]:
         """Returns the starting PcCountPairs mapped to the corresponding region
@@ -355,17 +386,27 @@ class Looppoint:
 
         return regions
 
+    def get_relative_targets(self) -> List[PcCountPair]:
+        targets = []
+        for rid in self.get_regions():
+            targets.extend(
+                self.get_regions()[rid].get_relative_pc_count_pairs()
+            )
+        return targets
+
     def get_targets(self) -> List[PcCountPair]:
         """Returns the complete list of target PcCountPairs. That is, the
         PcCountPairs each region starts with as well as the relevant warmup
         intervals."""
-        targets = []
-        for rid in self.get_regions():
-            targets.extend(self.get_regions()[rid].get_pc_count_pairs())
-
+        if self._use_global_count:
+            targets = []
+            for rid in self.get_regions():
+                targets.extend(self.get_regions()[rid].get_pc_count_pairs())
+        else:
+            targets = self.get_relative_targets()
         return targets
 
-    def to_json(self) -> Dict[Union[int, str], Dict]:
+    def to_json(self) -> Dict[int, Dict]:
         """Returns this data-structure as a dictionary for serialization via
         the ``output_json_file`` function."""
         to_return = {}
@@ -395,7 +436,7 @@ class LooppointCsvLoader(Looppoint):
     def __init__(
         self,
         pinpoints_file: Union[Path, str],
-        region_id: Optional[Union[str, int]] = None,
+        region_id: Optional[int] = None,
     ):
         """
         :params pinpoints_file: The pinpoints file in which the data is to be
@@ -484,7 +525,7 @@ class LooppointJsonLoader(Looppoint):
     def __init__(
         self,
         looppoint_file: Union[str, Path],
-        region_id: Optional[Union[str, int]] = None,
+        region_id: Optional[int] = None,
     ) -> None:
         """
         :param looppoint_file: A json file generated by gem5 that has all the
@@ -546,7 +587,7 @@ class LooppointJsonLoader(Looppoint):
                         json_contents[rid]["warmup"]["end"]["count"],
                     )
                     warmup = LooppointRegionWarmup(start=start, end=end)
-
+                rid = int(rid)
                 regions[rid] = LooppointRegion(
                     simulation=simulation, multiplier=multiplier, warmup=warmup
                 )
