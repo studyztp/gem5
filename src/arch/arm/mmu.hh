@@ -57,7 +57,7 @@ namespace ArmISA {
 
 class TableWalker;
 class TLB;
-class TlbEntry;
+struct TlbEntry;
 class TLBIOp;
 class TlbTestInterface;
 
@@ -275,6 +275,8 @@ class MMU : public BaseMMU
     Fault translateSe(const RequestPtr &req, ThreadContext *tc, Mode mode,
             Translation *translation, bool &delay, bool timing,
             CachedState &state);
+
+    Addr getValidAddr(Addr vaddr, ThreadContext *tc, Mode mode) override;
 
     Fault translateComplete(const RequestPtr &req, ThreadContext *tc,
             Translation *translation, Mode mode, ArmTranslationType tran_type,
