@@ -66,6 +66,30 @@ class PcCountTracker : public ProbeListenerObject
 
     /** the PcCounterTrackerManager */
     PcCountTrackerManager *manager;
+
+    bool ifListening;
+
+  public:
+    /**
+     * this function is called when the probelistener starts listening
+     */
+    void startListening()
+    {
+        ifListening = true;
+        // temporarily printing the notification
+        printf("Start Listening\n");
+        DPRINTF(PcCountTracker, "Start listening to RetiredInstsPC\n");
+    };
+
+    /**
+     * this function is called when the probelistener stops listening
+     */
+    void stopListening()
+    {
+        ifListening = false;
+        printf("Stop Listening\n");
+        DPRINTF(PcCountTracker, "Stop listening to RetiredInstsPC\n");
+    };
 };
 }
 

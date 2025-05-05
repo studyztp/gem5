@@ -59,6 +59,14 @@ class PcCountTracker(ProbeListenerObject):
     cxx_header = "cpu/probes/pc_count_tracker.hh"
     cxx_class = "gem5::PcCountTracker"
 
+    cxx_exports = [
+        PyBindMethod("startListening"),
+        PyBindMethod("stopListening"),
+    ]
+
     targets = VectorParam.PcCountPair("the target PC Count pairs")
     core = Param.BaseCPU("the connected cpu")
     ptmanager = Param.PcCountTrackerManager("the PcCountTracker manager")
+    if_listening = Param.Bool(
+        True, "if the PcCountTracker is listening to the probe point"
+    )
