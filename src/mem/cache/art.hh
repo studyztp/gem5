@@ -23,6 +23,8 @@ class ART : public Cache
     ART(const CacheParams &p);
 
     enum class ARTPrefetcherState {
+        // States of the ART prefetcher to track its lifecycle and trigger
+        // events appropriately
         EMPTY,
         INITIAL,
         WAITING,
@@ -31,8 +33,8 @@ class ART : public Cache
         READY
     };
 
-    // Simple ART buffer - just one entry
     struct ARTPrefetchBuffer {
+        // Simple ART buffer - just one entry
         Addr addr;
         std::vector<uint8_t> data;
         unsigned size;
@@ -41,6 +43,7 @@ class ART : public Cache
 
         ARTPrefetchBuffer(unsigned blk_size) : 
           addr(0), valid(false), fetchTime(0) {
+            // Initialize buffer to block size, block size in bytes
             size = blk_size;
             data.resize(size);
         }
@@ -54,6 +57,7 @@ class ART : public Cache
         
         void invalidate() { valid = false; }
         bool matches(Addr _addr) const {
+            // If the buffer contains the block for the given address
             Addr blk_addr = _addr & ~(size - 1);  // Block align the address
             return valid && (addr == blk_addr);
         }
@@ -79,13 +83,14 @@ class ART : public Cache
         public QueueEntry,
         public Printable
     {
+        // In order to avoid implicit conversions, create an ART prefetcher
+        // entry to define the prefetcher state and related methods so we can
+        // use the QueueEntry mechanisms that gem5 BaseCache provides.
         template<typename Entry>
 
       public:
         using QueueEntry::Target;
 
-        // C++ specifier that disables implicit conversions for a constructor 
-        // or conversion operator
         explicit ARTPrefetcherEntry(const std::string &name)
           : QueueEntry(name) {}
 
@@ -97,7 +102,6 @@ class ART : public Cache
         bool matchBlockAddr(PacketPtr pkt) const override;
         bool conflictAddr(const QueueEntry* entry) const override;
 
-        // Lifecycle
         void allocate(Addr blk_addr, unsigned blk_size, PacketPtr orig_pkt,
                       Tick when_ready, Counter order);
         void deallocate();
