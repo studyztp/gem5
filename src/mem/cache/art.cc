@@ -9,7 +9,8 @@ ART::ART(const ARTCacheParams& p)
     bypassPrefetch(p.bypass_prefetch),
     pfBlkSize(p.pf_blk_size),
     prefetchBuffer(pfBlkSize),
-    currentBuffer(pfBlkSize)
+    currentBuffer(pfBlkSize),
+    artPfEntry("ART Prefetch Entry", pfBlkSize)
 {
     DPRINTF(ARTCache, 
         "ART Cache created with bypassCache=%s, bypassPrefetch=%s\n",
@@ -61,20 +62,27 @@ void ART::recvTimingReq(PacketPtr pkt) {
             DPRINTF(ARTCache, "Prefetch buffer miss for address: %s\n",
                     addrToString(pkt->getAddr()));
         }
-        currentBuffer.copyFrom(prefetchBuffer);
-        // transfer the data and addr from prefetchBuffer to currentBuffer
-        prefetchBuffer.invalidate();
-        // invalidate prefetchBuffer
         nextPfAddr = getNextSequentialAddr(pkt->getAddr());
         // calculate the next sequential address to prefetch
         DPRINTF(ARTCache, "Next sequential address to prefetch: %s\n",
                 addrToString(nextPfAddr));
+        
+        // TODO: check if prefetch buffer hits
+        
+        // Check if we can issue a prefetch request
+        if (!artPfEntry.inService()) {
+            // Allocate the prefetch entry
+            artPfEntry.allocate(
+                nextPfAddr,
+                
+            )
+        }
+        
     }
 
     if(prefetch_hit) {
         return;
     }
-
 
     return Cache::recvTimingReq(pkt);
 }
@@ -82,6 +90,28 @@ void ART::recvTimingReq(PacketPtr pkt) {
 void ART::recvTimingResp(PacketPtr pkt) {
     // Continue with normal processing
     Cache::recvTimingResp(pkt);
+}
+
+bool
+ART::sendARTPrefetchPacket(ARTPfQueueEntry* entry) {
+    assert (entry);
+    assert (entry->ready());
+    // Make sure the entry is ready to be sent
+    RequestPtr req = makeARTPrefetchRequest(entry->blkAddr, entry->blkSize);
+    PacketPtr pkt = makeARTPrefetchPacket(req, entry);
+    assert (pkt);
+    if (!memSidePort.sendTimingReq(pkt)) {
+        DPRINTF(ARTCache, "Failed to send prefetch packet for address: %s\n",
+                addrToString(entry->blkAddr));
+        delete pkt;
+        // Failed to send the packet, return true then it will try again later
+        return true;
+    } else {
+        entry->markInService();
+        DPRINTF(ARTCache, "Sent prefetch packet for address: %s\n",
+                addrToString(entry->blkAddr));
+    }
+    return false;
 }
 
 } // namespace gem5
