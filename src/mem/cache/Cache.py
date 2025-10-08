@@ -184,3 +184,20 @@ class NoncoherentCache(BaseCache):
     # This is typically a last level cache and any clean
     # writebacks would be unnecessary traffic to the main memory.
     writeback_clean = False
+
+class ARTCache(Cache):
+    type = "ARTCache"
+    cxx_header = "mem/cache/art.hh"
+    cxx_class = "gem5::ART"
+
+    bypass_prefetch = Param.Bool(
+        False, "Whether to enable instruction prefetching"
+    )
+    bypass_cache = Param.Bool(
+        False, "Whether this is an instruction cache"
+    )
+    pf_blk_size = Param.Int(
+        8, "The block size (in bytes) for prefetching"
+    )
+
+    # ART specific parameters can be added here
