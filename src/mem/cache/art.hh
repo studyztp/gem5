@@ -30,9 +30,10 @@ class ART : public Cache
     bool bypassPrefetch;
     unsigned pfBlkSize;
     bool prefetch_hit;
+    Counter artPrefetchOrder;
 
   protected:
-    QueueEntry* getNextQueueEntry();
+    QueueEntry* getNextQueueEntry() override;
     void recvTimingReq(PacketPtr pkt) override;
     void recvTimingResp(PacketPtr pkt) override;
     bool ifDataInCache(PacketPtr pkt);
@@ -86,6 +87,10 @@ class ART : public Cache
 
         void invalidate() {
             valid = false;
+        }
+
+        bool isValid() const {
+            return valid;
         }
 
         void copyFrom(const ARTPrefetchBuffer& other) {
@@ -149,12 +154,12 @@ class ART : public Cache
                       Counter _order)
         {
             blkAddr = blk_addr;
-            isSecure = target->isSecure();
+            isSecure = false;
             order = _order;
             readyTime = when_ready;
             assert(target);
             inService = false;
-            _isUncacheable = target->req->isUncacheable();
+            _isUncacheable = false;
             pfTarget = std::make_shared<Target>(target, when_ready, _order);
             hasTarget = true;
         }
@@ -167,7 +172,7 @@ class ART : public Cache
         }
 
         bool ready() const { return hasTarget&&!inService; }
-
+        bool ifHasTarget() const { return hasTarget; }
         bool markInService()
         {
             if (!hasTarget || inService) {
@@ -176,6 +181,8 @@ class ART : public Cache
             inService = true;
             return true;
         }
+
+        bool ifInService() const { return inService; }
 
         Target *getTarget() override
         {
@@ -220,7 +227,6 @@ class ART : public Cache
     PacketPtr makeARTPrefetchPacket(const RequestPtr &request,
         Packet::SenderState *sender_state) {
             PacketPtr ret = Packet::createRead(request);
-            assert(sender_state);
             ret->pushSenderState(sender_state);
             ret->allocate();
             return ret;

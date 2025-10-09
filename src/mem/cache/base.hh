@@ -636,7 +636,7 @@ class BaseCache : public ClockedObject
      * something from the prefetcher. This function is responsible
      * for prioritizing among those sources on the fly.
      */
-    QueueEntry* getNextQueueEntry();
+    virtual QueueEntry* getNextQueueEntry();
 
     /**
      * Insert writebacks into the write buffer

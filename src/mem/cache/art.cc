@@ -8,6 +8,8 @@ ART::ART(const ARTCacheParams& p)
     bypassCache(p.bypass_cache), 
     bypassPrefetch(p.bypass_prefetch),
     pfBlkSize(p.pf_blk_size),
+    prefetch_hit(false),
+    artPrefetchOrder(0),
     prefetchBuffer(pfBlkSize),
     currentBuffer(pfBlkSize),
     artPfEntry("ART Prefetch Entry", pfBlkSize)
@@ -21,7 +23,12 @@ ART::ART(const ARTCacheParams& p)
 }
 
 QueueEntry* ART::getNextQueueEntry() {
-    return Cache::getNextQueueEntry();
+    DPRINTF(ARTCache, "ART getNextQueueEntry called\n");
+    if (artPfEntry.ready()) {
+        DPRINTF(ARTCache, "ART getNextQueueEntry: returning prefetch entry\n");
+        return &artPfEntry;
+    }
+    return BaseCache::getNextQueueEntry();
 }
 
 bool ART::ifDataInCache(PacketPtr pkt) {
@@ -47,7 +54,7 @@ void ART::recvTimingReq(PacketPtr pkt) {
     // If bypassPrefetch is true, we fall back to normal cache behavior
     // otherwise, we check the prefetch buffer first
     prefetch_hit = false;
-    if (!bypassPrefetch) {
+    if (!bypassPrefetch && !pkt->isSecure()) {
         // for now, let's assume the address request is always aligned with the
         // instruction line size, which is the prefetch block size
         if (currentBuffer.isHit(pkt->getAddr())) {
@@ -68,14 +75,39 @@ void ART::recvTimingReq(PacketPtr pkt) {
                 addrToString(nextPfAddr));
         
         // TODO: check if prefetch buffer hits
+
+        // Hit or not, we need to clear the current buffer
+        currentBuffer.invalidate();
         
         // Check if we can issue a prefetch request
-        if (!artPfEntry.inService()) {
-            // Allocate the prefetch entry
+        // This is the only place where the prefetch request is issued because
+        // this is the only place where the current buffer is updated
+        if (!artPfEntry.ifInService()) {
+            if (prefetchBuffer.isValid()) {
+                // If the prefetch buffer is valid, move it to current buffer
+                currentBuffer.copyFrom(prefetchBuffer);
+                prefetchBuffer.invalidate();
+            }
+            if (artPfEntry.ifHasTarget()) {
+                // If there is a target in the entry, we should make sure to
+                // delete it first
+                delete artPfEntry.getTarget()->pkt;
+                artPfEntry.deallocate();
+            }
+            // TODO: we assume that there is only one CPU here
+            RequestPtr req = makeARTPrefetchRequest(nextPfAddr, pfBlkSize);
+            // The packet is created inside makeARTPrefetchPacket()
+            // The packet is deleted when the response is received
+            PacketPtr pf_pkt = makeARTPrefetchPacket(req, &artPfEntry);
+            assert(pf_pkt);
             artPfEntry.allocate(
-                nextPfAddr,
-                
-            )
+                nextPfAddr, pf_pkt, clockEdge(Cycles(1)), artPrefetchOrder++);
+            schedMemSideSendEvent(clockEdge());
+            DPRINTF(ARTCache, "Scheduled prefetch for address: %s\n",
+                    addrToString(nextPfAddr));
+            assert(artPfEntry.ready());
+        } else {
+            DPRINTF(ARTCache, "Prefetch request already in service, skip.\n");
         }
         
     }
@@ -88,6 +120,29 @@ void ART::recvTimingReq(PacketPtr pkt) {
 }
 
 void ART::recvTimingResp(PacketPtr pkt) {
+    if (artPfEntry.ifInService()) {
+        DPRINTF(ARTCache, "Received timing response while prefetch in service.\n");
+        ARTPfQueueEntry* entry =
+            dynamic_cast<ARTPfQueueEntry*>(
+                pkt->findNextSenderState<ARTPfQueueEntry>());
+        if (entry) {
+            assert(entry == &artPfEntry);
+            assert(entry->ifInService());
+            DPRINTF(ARTCache, "Received prefetch response for address: %s\n",
+                    addrToString(entry->blkAddr));
+            // Store the data in the prefetch buffer
+            assert(pkt->hasRespData());
+            prefetchBuffer.storeData(
+                entry->blkAddr, pkt->getPtr<uint8_t>()
+            );
+            DPRINTF(ARTCache, "Stored data in prefetch buffer for address: %s\n",
+                    addrToString(entry->blkAddr));
+            delete pkt;
+            entry->deallocate();
+            return;
+        }
+    }
+
     // Continue with normal processing
     Cache::recvTimingResp(pkt);
 }
@@ -96,9 +151,7 @@ bool
 ART::sendARTPrefetchPacket(ARTPfQueueEntry* entry) {
     assert (entry);
     assert (entry->ready());
-    // Make sure the entry is ready to be sent
-    RequestPtr req = makeARTPrefetchRequest(entry->blkAddr, entry->blkSize);
-    PacketPtr pkt = makeARTPrefetchPacket(req, entry);
+    PacketPtr pkt = new Packet(*(entry->getTarget()->pkt));
     assert (pkt);
     if (!memSidePort.sendTimingReq(pkt)) {
         DPRINTF(ARTCache, "Failed to send prefetch packet for address: %s\n",
