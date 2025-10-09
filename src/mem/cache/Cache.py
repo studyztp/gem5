@@ -185,7 +185,7 @@ class NoncoherentCache(BaseCache):
     # writebacks would be unnecessary traffic to the main memory.
     writeback_clean = False
 
-class ARTCache(Cache):
+class ARTCache(NoncoherentCache):
     type = "ARTCache"
     cxx_header = "mem/cache/art.hh"
     cxx_class = "gem5::ART"

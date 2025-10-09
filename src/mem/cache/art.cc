@@ -4,7 +4,7 @@ namespace gem5
 {
 
 ART::ART(const ARTCacheParams& p)
-  : Cache(p), 
+  : NoncoherentCache(p), 
     bypassCache(p.bypass_cache), 
     bypassPrefetch(p.bypass_prefetch),
     pfBlkSize(p.pf_blk_size),
@@ -54,6 +54,7 @@ void ART::recvTimingReq(PacketPtr pkt) {
     // If bypassPrefetch is true, we fall back to normal cache behavior
     // otherwise, we check the prefetch buffer first
     prefetch_hit = false;
+
     if (!bypassPrefetch && !pkt->isSecure()) {
         // for now, let's assume the address request is always aligned with the
         // instruction line size, which is the prefetch block size
@@ -61,7 +62,8 @@ void ART::recvTimingReq(PacketPtr pkt) {
             DPRINTF(ARTCache, "Prefetch buffer hit for address: %s\n",
                     addrToString(pkt->getAddr()));
             // Serve data from prefetch buffer
-            pkt->setDataFromBlock(currentBuffer.data.data(), currentBuffer.blk_size);
+            pkt->setDataFromBlock(
+                currentBuffer.data.data(), currentBuffer.blk_size);
             pkt->makeTimingResponse();
             cpuSidePort.schedTimingResp(pkt, clockEdge(Cycles(1)));
             prefetch_hit = true;
@@ -114,9 +116,19 @@ void ART::recvTimingReq(PacketPtr pkt) {
 
     if(prefetch_hit) {
         return;
+    } else {
+        if (bypassCache) {
+            DPRINTF(ARTCache, "Bypassing cache for address: %s\n",
+                    addrToString(pkt->getAddr()));
+            // Forward the request to memory directly
+            // We assume that the memory side port is always available
+            pkt->req->setFlags(Request::UNCACHEABLE);
+            assert(memSidePort.sendTimingReq(pkt));
+            return;
+        }
     }
 
-    return Cache::recvTimingReq(pkt);
+    return NoncoherentCache::recvTimingReq(pkt);
 }
 
 void ART::recvTimingResp(PacketPtr pkt) {
@@ -131,7 +143,7 @@ void ART::recvTimingResp(PacketPtr pkt) {
             DPRINTF(ARTCache, "Received prefetch response for address: %s\n",
                     addrToString(entry->blkAddr));
             // Store the data in the prefetch buffer
-            assert(pkt->hasRespData());
+            // assert(pkt->hasRespData());
             prefetchBuffer.storeData(
                 entry->blkAddr, pkt->getPtr<uint8_t>()
             );
@@ -143,20 +155,24 @@ void ART::recvTimingResp(PacketPtr pkt) {
         }
     }
 
+    if (pkt->req->isUncacheable() && bypassCache) {
+        DPRINTF(ARTCache, "Received timing response for bypassed request.\n");
+        return;
+    }
+
     // Continue with normal processing
-    Cache::recvTimingResp(pkt);
+    NoncoherentCache::recvTimingResp(pkt);
 }
 
 bool
 ART::sendARTPrefetchPacket(ARTPfQueueEntry* entry) {
     assert (entry);
     assert (entry->ready());
-    PacketPtr pkt = new Packet(*(entry->getTarget()->pkt));
+    PacketPtr pkt = entry->getTarget()->pkt;
     assert (pkt);
     if (!memSidePort.sendTimingReq(pkt)) {
         DPRINTF(ARTCache, "Failed to send prefetch packet for address: %s\n",
                 addrToString(entry->blkAddr));
-        delete pkt;
         // Failed to send the packet, return true then it will try again later
         return true;
     } else {

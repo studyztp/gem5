@@ -6,7 +6,7 @@
 #include "base/types.hh"
 #include "debug/Cache.hh"
 #include "debug/ARTCache.hh"
-#include "mem/cache/cache.hh"          // for Cache
+#include "mem/cache/noncoherent_cache.hh"          // for Cache
 #include "mem/cache/queue_entry.hh"    // for QueueEntry
 #include "mem/packet.hh"
 #include "mem/request.hh"
@@ -20,7 +20,7 @@
 namespace gem5
 {
 
-class ART : public Cache
+class ART : public NoncoherentCache
 {
   public:
     ART(const ARTCacheParams &p);
@@ -226,7 +226,7 @@ class ART : public Cache
 
     PacketPtr makeARTPrefetchPacket(const RequestPtr &request,
         Packet::SenderState *sender_state) {
-            PacketPtr ret = Packet::createRead(request);
+            PacketPtr ret = new Packet(request,MemCmd::ReadReq);
             ret->pushSenderState(sender_state);
             ret->allocate();
             return ret;
