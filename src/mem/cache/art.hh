@@ -122,6 +122,8 @@ class ART : public NoncoherentCache
             assert(blk_size != 0);
             blkSize = blk_size;
             hasTarget = false;
+            cpuWaiting = false;
+            cpuPtr = nullptr;
             // initialize other members if needed
         }
        
@@ -184,6 +186,26 @@ class ART : public NoncoherentCache
 
         bool ifInService() const { return inService; }
 
+        bool setCPUWaiting(PacketPtr pkt) {
+            if (cpuWaiting) {
+                return false;
+            }
+            cpuWaiting = true;
+            cpuPtr = pkt;
+            return true;
+        }
+
+        bool clearCPUWaiting() {
+            if (!cpuWaiting) {
+                return false;
+            }
+            cpuWaiting = false;
+            cpuPtr = nullptr;
+            return true;
+        }
+
+        bool ifCPUWaiting() const { return cpuWaiting; }
+
         Target *getTarget() override
         {
             assert(hasTarget);
@@ -217,6 +239,11 @@ class ART : public NoncoherentCache
         std::shared_ptr<Target> pfTarget;
         // TODO: think about if making this a unique_ptr is better
         bool hasTarget;
+        bool cpuWaiting;
+
+      public:
+        //   Keep it public for easy access for now
+        PacketPtr cpuPtr;
 
     };
 
