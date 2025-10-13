@@ -6,8 +6,8 @@
 #include "base/types.hh"
 #include "debug/Cache.hh"
 #include "debug/ARTCache.hh"
-#include "mem/cache/noncoherent_cache.hh"          // for Cache
-#include "mem/cache/queue_entry.hh"    // for QueueEntry
+#include "mem/cache/noncoherent_cache.hh" // for NoncoherentCache
+#include "mem/cache/queue_entry.hh"       // for QueueEntry
 #include "mem/packet.hh"
 #include "mem/request.hh"
 #include "sim/cur_tick.hh"
@@ -126,6 +126,7 @@ class ART : public NoncoherentCache
             hasTarget = false;
             cpuWaiting = false;
             cpuPtr = nullptr;
+            retrying = false;
             // initialize other members if needed
         }
        
@@ -283,7 +284,7 @@ class ART : public NoncoherentCache
       public: 
         BypassCacheEntry(const std::string &name)
             : QueueEntry(name), hasByPassTarget(false),
-              hasWaitingTarget(false), bypassTarget(nullptr), 
+              hasWaitingTarget(false), retrying(false), bypassTarget(nullptr),
               waitingTarget(nullptr) {}
 
         bool matchBlockAddr(const PacketPtr pkt) const override
