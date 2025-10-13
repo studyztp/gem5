@@ -268,6 +268,92 @@ class ART : public NoncoherentCache
         req->setFlags(Request::PREFETCH);
         return req;
     }
+
+    // Because we may bypass the cache, we need to handel the packets that
+    // might require retry
+    class BypassCacheEntry : public QueueEntry
+    {
+      public: 
+        BypassCacheEntry(const std::string &name)
+            : QueueEntry(name), hasByPassTarget(false),
+              hasWaitingTarget(false), bypassTarget(nullptr), 
+              waitingTarget(nullptr) {}
+
+        bool matchBlockAddr(const PacketPtr pkt) const override
+        {
+            return false; // Bypass entry does not match any block address
+        }
+
+        bool matchBlockAddr(
+            const Addr addr,
+            const bool is_secure) const override
+        {
+            return false; // Bypass entry does not match any block address
+        }
+
+        bool conflictAddr(const QueueEntry* entry) const override
+        {
+            return false; // Bypass entry does not conflict with any block address
+        }
+
+        bool sendPacket(BaseCache &cache) override
+        {
+            ART* artCache = dynamic_cast<ART*>(&cache);
+            assert(artCache);
+            return artCache->sendBypassPacket(this);
+        }
+
+        void allocate(PacketPtr target, Tick when_ready, Counter _order)
+        {
+            assert(target);
+            order = _order;
+            readyTime = when_ready;
+            inService = false;
+            _isUncacheable = false;
+            target->pushSenderState(this);
+            // We use sender state to see which packet is associated with
+            // this bypass entry
+            bypassTarget = new Target(target, when_ready, _order);
+            hasByPassTarget = true;
+        }
+
+        void deallocate()
+        {   
+            delete waitingTarget;
+            waitingTarget = nullptr;
+            inService = false;
+            hasWaitingTarget = false;
+        }
+
+        Target *getTarget() override
+        {
+            return bypassTarget;
+        }
+
+        void markInService()
+        {
+            assert(!hasWaitingTarget&&hasByPassTarget);
+            inService = true;
+            waitingTarget = bypassTarget;
+            bypassTarget = nullptr;
+            hasByPassTarget = false;
+            hasWaitingTarget = true;
+        }
+
+        bool ifTargetOpen() const { return !hasByPassTarget; }
+        bool ifInService() const { return inService; }
+        bool ready() const { return hasByPassTarget&&!inService; }
+
+      private:
+        bool hasByPassTarget;
+        bool hasWaitingTarget;
+        Target* bypassTarget;
+        Target* waitingTarget;
+    };
+
+    BypassCacheEntry bypassCacheEntry;
+
+    bool sendBypassPacket(BypassCacheEntry* entry);
 };
 } // namespace gem5
 #endif // __MEM_CACHE_ART_HH__
