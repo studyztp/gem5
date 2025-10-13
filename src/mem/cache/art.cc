@@ -10,6 +10,8 @@ ART::ART(const ARTCacheParams& p)
     pfBlkSize(p.pf_blk_size),
     prefetch_hit(false),
     artPrefetchOrder(0),
+    ifPrefetchScheduled(false),
+    scheduleForOverlappedPrefetch(false),
     prefetchBuffer(pfBlkSize),
     currentBuffer(pfBlkSize),
     artPfEntry("ART Prefetch Entry", pfBlkSize),
@@ -24,15 +26,12 @@ ART::ART(const ARTCacheParams& p)
 }
 
 QueueEntry* ART::getNextQueueEntry() {
-    if (bypassCacheEntry.ready()) {
+    if (bypassCacheEntry.ifRetrying() || 
+                    (bypassCacheEntry.ready() && !artPfEntry.ifRetrying())) {
+        // bypassCache has higher priority than prefetch entry if both are 
+        // ready but if the prefetch entry is retrying, we should not starve it
+        // by always picking the bypass entry
         DPRINTF(ARTCache, "ART getNextQueueEntry: returning bypass entry\n");
-        if (artPfEntry.ready()) {
-            // If both bypass entry and prefetch entry are ready, it means that
-            // the bypass entry has higher priority, so we need to reschedule
-            // the prefetch entry to avoid starvation
-            DPRINTF(ARTCache, "Rescheduling prefetch entry due to bypass\n");
-            schedMemSideSendEvent(clockEdge());
-        }
         return &bypassCacheEntry;
     }
     if (artPfEntry.ready()) {
@@ -60,6 +59,7 @@ void ART::recvTimingReq(PacketPtr pkt) {
     // If bypassPrefetch is true, we fall back to normal cache behavior
     // otherwise, we check the prefetch buffer first
     prefetch_hit = false;
+    ifPrefetchScheduled = false;
 
     if (!bypassPrefetch && !pkt->isSecure()) {
         // for now, let's assume the address request is always aligned with the
@@ -131,6 +131,7 @@ void ART::recvTimingReq(PacketPtr pkt) {
             artPfEntry.allocate(
                 nextPfAddr, pf_pkt, clockEdge(Cycles(1)), artPrefetchOrder++);
             schedMemSideSendEvent(clockEdge());
+            ifPrefetchScheduled = true;
             DPRINTF(ARTCache, "Scheduled prefetch for address: %s\n",
                     addrToString(nextPfAddr));
             assert(artPfEntry.ready());
@@ -163,7 +164,15 @@ void ART::recvTimingReq(PacketPtr pkt) {
             // Create a new target for the bypass entry
             bypassCacheEntry.allocate(
                 pkt, clockEdge(Cycles(1)), artPrefetchOrder++);
-            schedMemSideSendEvent(clockEdge());
+            if (ifPrefetchScheduled) {
+                // If there is prefetch scheduled above, we are overlapping
+                // the prefetch with the bypass request, so we need to make
+                // sure to schedule for the prefetch again after the
+                // bypass request is sent
+                scheduleForOverlappedPrefetch = true;
+            } else {
+                schedMemSideSendEvent(clockEdge());
+            }
             return;
         }
     }
@@ -275,10 +284,12 @@ ART::sendARTPrefetchPacket(ARTPfQueueEntry* entry) {
     if (!memSidePort.sendTimingReq(pkt)) {
         DPRINTF(ARTCache, "Failed to send prefetch packet for address: %s\n",
                 addrToString(entry->blkAddr));
+        entry->markRetrying();
         // Failed to send the packet, return true then it will try again later
         return true;
     } else {
         entry->markInService();
+        entry->clearRetrying();
         DPRINTF(ARTCache, "Sent prefetch packet for address: %s\n",
                 addrToString(entry->blkAddr));
     }
@@ -294,11 +305,22 @@ ART::sendBypassPacket(BypassCacheEntry* entry) {
         DPRINTF(ARTCache, "Failed to send bypass packet for address: %s\n",
                 addrToString(pkt->getAddr()));
         // Failed to send the packet, return true then it will try again later
+        entry->markRetrying();
         return true;
     } else {
         entry->markInService();
+        entry->clearRetrying();
         DPRINTF(ARTCache, "Sent bypass packet for address: %s\n",
                 addrToString(pkt->getAddr()));
+        if (scheduleForOverlappedPrefetch) {
+            // If the prefetch event was scheduled to overlap with a bypass
+            // request, we need to make sure to schedule it again after the
+            // bypass request is sent here
+            DPRINTF(ARTCache, 
+                        "Scheduling overlapped prefetch after bypass send.\n");
+            schedMemSideSendEvent(clockEdge());
+            scheduleForOverlappedPrefetch = false;
+        }
     }
     return false;
 }

@@ -31,6 +31,8 @@ class ART : public NoncoherentCache
     unsigned pfBlkSize;
     bool prefetch_hit;
     Counter artPrefetchOrder;
+    bool ifPrefetchScheduled;
+    bool scheduleForOverlappedPrefetch;
 
   protected:
     QueueEntry* getNextQueueEntry() override;
@@ -235,11 +237,16 @@ class ART : public NoncoherentCache
             return str.str();
         }
 
+        bool ifRetrying() const { return retrying; }
+        void markRetrying() { retrying = true; }
+        void clearRetrying() { retrying = false; }
+
       private:
         std::shared_ptr<Target> pfTarget;
         // TODO: think about if making this a unique_ptr is better
         bool hasTarget;
         bool cpuWaiting;
+        bool retrying;
 
       public:
         //   Keep it public for easy access for now
@@ -344,9 +351,14 @@ class ART : public NoncoherentCache
         bool ifInService() const { return inService; }
         bool ready() const { return hasByPassTarget&&!inService; }
 
+        bool ifRetrying() const { return retrying; }
+        void markRetrying() { retrying = true; }
+        void clearRetrying() { retrying = false; }
+
       private:
         bool hasByPassTarget;
         bool hasWaitingTarget;
+        bool retrying;
         Target* bypassTarget;
         Target* waitingTarget;
     };
