@@ -10,8 +10,6 @@ ART::ART(const ARTCacheParams& p)
     pfBlkSize(p.pf_blk_size),
     prefetch_hit(false),
     artPrefetchOrder(0),
-    ifPrefetchScheduled(false),
-    scheduleForOverlappedPrefetch(false),
     prefetchBuffer(pfBlkSize),
     currentBuffer(pfBlkSize),
     artPfEntry("ART Prefetch Entry", pfBlkSize),
@@ -26,31 +24,52 @@ ART::ART(const ARTCacheParams& p)
 }
 
 QueueEntry* ART::getNextQueueEntry() {
-    if (scheduleForOverlappedPrefetch) {
-        scheduleForOverlappedPrefetch = false;
-        DPRINTF(ARTCache, 
-            "ART::getNextQueueEntry: scheduling memory side send event at " 
-            "%llu due to scheduleForOverlappedPrefetch\n", clockEdge());
-        schedMemSideSendEvent(clockEdge());
-    }
-    // bypassCache target always has higher priority than Prefetch target
-    // because bypassCache target is for certain that it is needed by CPU.
-    // However, if the prefetch target is already retrying, we should not
-    // interrupt it with a new bypassCache target.
-    if (bypassCacheEntry.ifRetrying() || 
+    if (bypassCache) {
+        // bypassCache target always has higher priority than Prefetch target
+        // because bypassCache target is for certain that it is needed by CPU.
+        // However, if the prefetch target is already retrying, we should not
+        // interrupt it with a new bypassCache target.
+        if (bypassCacheEntry.ifRetrying() || 
                     (bypassCacheEntry.ready() && !artPfEntry.ifRetrying())) {
 
-        DPRINTF(ARTCache, 
+            DPRINTF(ARTCache, 
                     "ART::getNextQueueEntry: returning BypassCache entry\n");
-        return &bypassCacheEntry;
+            return &bypassCacheEntry;
+        }
+    } else {
+        // BaseCache always having the higher priority because if there is a
+        // cache miss or access, it is more urgent than prefetch.
+        QueueEntry* baseEntry = BaseCache::getNextQueueEntry();
+        if (baseEntry) {
+            DPRINTF(ARTCache, 
+                "ART::getNextQueueEntry: returning BaseCache entry\n");
+            return baseEntry;
+        }
     }
+
     if (artPfEntry.ready()) {
         DPRINTF(ARTCache, "ART::getNextQueueEntry: returning Prefetch "
                                                                     "entry\n");
         return &artPfEntry;
     }
-    // Fall back to normal cache behavior
-    return BaseCache::getNextQueueEntry();
+
+    DPRINTF(ARTCache, "ART::getNextQueueEntry: no entry ready\n");
+    return nullptr;
+}
+
+Tick ART::nextQueueReadyTime() const {
+    Tick next_time = BaseCache::nextQueueReadyTime();
+    if (bypassCacheEntry.ready() && next_time == MaxTick) {
+        next_time = curTick();
+        DPRINTF(ARTCache, "ART::nextQueueReadyTime:[BypassCache] "
+                                                "BypassCache entry ready\n");
+    }
+    if (artPfEntry.ready() && next_time == MaxTick) {
+        next_time = curTick();
+        DPRINTF(ARTCache, "ART::nextQueueReadyTime:[Prefetch] "
+                                                "Prefetch entry ready\n");
+    }
+    return next_time;
 }
 
 bool ART::ifDataInCache(PacketPtr pkt) {
@@ -69,13 +88,9 @@ void ART::recvTimingReq(PacketPtr pkt) {
     DPRINTF(ARTCache, "ART::recvTimingReq: request packet address: %s\n",
                                                 addrToString(pkt->getAddr()));
     
-    // Check if 1) the request can be served from current buffer or the
-    // prefetch buffer (including currently prefetching line when data not in
-    // ICache).
-    // 2) if there is an event scheduled here in the memory side port for 
-    // prefetching.
+    // Check if the request can be served from current buffer or the prefetch 
+    // buffer (including currently prefetching line when data not in ICache).
     prefetch_hit = false;
-    ifPrefetchScheduled = false;
     
     // Only handle prefetch if it is enabled.
     // TODO: we don't deal with secure requests for now.
@@ -210,7 +225,6 @@ void ART::recvTimingReq(PacketPtr pkt) {
                 "memory side port for address %s at %llu\n", 
                                         addrToString(nextPfAddr), clockEdge());
             schedMemSideSendEvent(clockEdge());
-            ifPrefetchScheduled = true;
             panic_if(!artPfEntry.ready(), "Prefetch entry is not ready after "
                                     "allocation in ART::recvTimingReq().\n");
         } else {
@@ -247,17 +261,6 @@ void ART::recvTimingReq(PacketPtr pkt) {
                                                 "skipping cache access.\n");
         return;
     } else {
-        // Scheduling event to memory port side here can be tricky because it
-        // can overlap with the scheduled event for the prefetch request above.
-        // We need to make sure if that is the case, we should not schedule 
-        // again and in the future, there will be an event scheduled for the
-        // prefetch request if other entries take over the schedule.
-        // No memory side port event will be scheduled if the cache hits so we 
-        // only need to handle the miss case here.
-        if (ifPrefetchScheduled && !ifDataInCache(pkt)) {
-            scheduleForOverlappedPrefetch = true;
-        }
-
         // Since ART allows us to bypass the ICache, we should also model it.
         // If the request address is not in cache, we can bypass the cache
         // and send it directly to memory. 
@@ -281,15 +284,13 @@ void ART::recvTimingReq(PacketPtr pkt) {
             panic_if(!bypassCacheEntry.ready(),
                 "Bypass cache entry is not ready after allocation in "
                                                     "ART::recvTimingReq().\n");
-            // If nothing is scheduled yet, we should schedule it here.
-            // Otherwise, we take over the scheduled event.
-            if (!ifPrefetchScheduled) {
-                DPRINTF(ARTCache, 
-                    "ART::recvTimingReq:[BypassCache]: Schedule bypass cache "
-                    "request to memory side port for address %s at %llu\n", 
-                                    addrToString(pkt->getAddr()), clockEdge());
-                schedMemSideSendEvent(clockEdge());
-            }
+
+            DPRINTF(ARTCache, 
+                "ART::recvTimingReq:[BypassCache]: Schedule bypass cache "
+                "request to memory side port for address %s at %llu\n", 
+                                addrToString(pkt->getAddr()), clockEdge());
+            schedMemSideSendEvent(clockEdge());
+
             return;
         }
     }

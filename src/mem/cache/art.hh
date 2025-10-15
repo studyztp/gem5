@@ -15,6 +15,7 @@
 
 #include <string>
 #include <vector>
+#include <queue>
 #include <sstream>
 
 namespace gem5
@@ -31,11 +32,10 @@ class ART : public NoncoherentCache
     unsigned pfBlkSize;
     bool prefetch_hit;
     Counter artPrefetchOrder;
-    bool ifPrefetchScheduled;
-    bool scheduleForOverlappedPrefetch;
 
   protected:
     QueueEntry* getNextQueueEntry() override;
+    Tick nextQueueReadyTime() const override;
     void recvTimingReq(PacketPtr pkt) override;
     void recvTimingResp(PacketPtr pkt) override;
     bool ifDataInCache(PacketPtr pkt);

@@ -884,7 +884,7 @@ class BaseCache : public ClockedObject
     /**
      * Find next request ready time from among possible sources.
      */
-    Tick nextQueueReadyTime() const;
+    virtual Tick nextQueueReadyTime() const;
 
     /** Block size of this cache */
     const unsigned blkSize;
