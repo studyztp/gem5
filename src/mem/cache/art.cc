@@ -220,11 +220,18 @@ void ART::recvTimingReq(PacketPtr pkt) {
                                                                 "entry.\n");
             artPfEntry.allocate(
                 nextPfAddr, pf_pkt, clockEdge(Cycles(1)), artPrefetchOrder++);
-            DPRINTF(ARTCache, 
-                "ART::recvTimingReq:[Prefetch]: Schedule prefetch request to "
-                "memory side port for address %s at %llu\n", 
+            if (prefetch_hit) {
+                DPRINTF(ARTCache, 
+                    "ART::recvTimingReq:[Prefetch]: Schedule prefetch request "
+                        "to memory side port for address %s at %llu\n", 
                                         addrToString(nextPfAddr), clockEdge());
-            schedMemSideSendEvent(clockEdge());
+                schedMemSideSendEvent(clockEdge());
+            } else {
+                DPRINTF(ARTCache,
+                    "ART::recvTimingReq:[Prefetch]: Prefetch request will be "
+                    "scheduled after cache event.\n"
+                );
+            }
             panic_if(!artPfEntry.ready(), "Prefetch entry is not ready after "
                                     "allocation in ART::recvTimingReq().\n");
         } else {
