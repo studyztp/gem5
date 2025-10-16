@@ -64,8 +64,10 @@ class PrivateL1CacheHierarchy(AbstractClassicCacheHierarchy):
 
     def __init__(
         self,
+        tags,
         l1d_size: str,
         l1i_size: str,
+        assoc: int,
         membus: Optional[BaseXBar] = None,
     ) -> None:
         """
@@ -82,6 +84,8 @@ class PrivateL1CacheHierarchy(AbstractClassicCacheHierarchy):
         self.membus = membus if membus else self._get_default_membus()
         self._l1d_size = l1d_size
         self._l1i_size = l1i_size
+        self._assoc = assoc
+        self._tags = tags
 
     @overrides(AbstractClassicCacheHierarchy)
     def get_mem_side_port(self) -> Port:
@@ -100,12 +104,12 @@ class PrivateL1CacheHierarchy(AbstractClassicCacheHierarchy):
             self.membus.mem_side_ports = port
 
         self.l1icaches = [
-            L1ICache(size=self._l1i_size)
+            L1ICache(size=self._l1i_size, assoc=self._assoc, tags=self._tags)
             for i in range(board.get_processor().get_num_cores())
         ]
 
         self.l1dcaches = [
-            L1DCache(size=self._l1d_size)
+            L1DCache(size=self._l1d_size, assoc=self._assoc, tags=self._tags)
             for i in range(board.get_processor().get_num_cores())
         ]
         # ITLB Page walk caches

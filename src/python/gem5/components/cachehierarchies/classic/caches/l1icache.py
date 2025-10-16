@@ -45,6 +45,7 @@ class L1ICache(Cache):
 
     def __init__(
         self,
+        tags,
         size: str,
         assoc: int = 8,
         tag_latency: int = 1,
@@ -65,3 +66,4 @@ class L1ICache(Cache):
         self.tgts_per_mshr = tgts_per_mshr
         self.writeback_clean = writeback_clean
         self.prefetcher = PrefetcherCls()
+        self.tags = tags
