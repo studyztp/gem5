@@ -636,7 +636,7 @@ class BaseCache : public ClockedObject
      * something from the prefetcher. This function is responsible
      * for prioritizing among those sources on the fly.
      */
-    QueueEntry* getNextQueueEntry();
+    virtual QueueEntry* getNextQueueEntry();
 
     /**
      * Insert writebacks into the write buffer
@@ -884,7 +884,7 @@ class BaseCache : public ClockedObject
     /**
      * Find next request ready time from among possible sources.
      */
-    Tick nextQueueReadyTime() const;
+    virtual Tick nextQueueReadyTime() const;
 
     /** Block size of this cache */
     const unsigned blkSize;
