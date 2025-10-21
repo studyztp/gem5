@@ -60,7 +60,7 @@ namespace gem5
 {
 
 NoncoherentCache::NoncoherentCache(const NoncoherentCacheParams &p)
-    : BaseCache(p, p.system->cacheLineSize())
+    : BaseCache(p, p.blk_size ? p.blk_size : p.system->cacheLineSize())
 {
     assert(p.tags);
     assert(p.replacement_policy);
