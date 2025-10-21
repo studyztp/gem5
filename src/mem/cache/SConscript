@@ -40,9 +40,10 @@
 Import('*')
 
 SimObject('Cache.py', sim_objects=[
-    'WriteAllocator', 'BaseCache', 'Cache', 'NoncoherentCache'],
+    'WriteAllocator', 'BaseCache', 'Cache', 'NoncoherentCache', 'ARTCache'],
     enums=['Clusivity'])
 
+Source('art.cc')
 Source('base.cc')
 Source('cache.cc')
 Source('cache_blk.cc')
@@ -62,10 +63,11 @@ DebugFlag('HWPrefetch')
 DebugFlag('MSHR')
 DebugFlag('HWPrefetchQueue')
 DebugFlag('PartitionPolicy')
+DebugFlag('ARTCache')
 
 # CacheTags is so outrageously verbose, printing the cache's entire tag
 # array on each timing access, that you should probably have to ask for
 # it explicitly even above and beyond CacheAll.
 CompoundFlag('CacheAll', ['Cache', 'CacheComp', 'CachePort', 'CacheRepl',
                           'CacheVerbose', 'HWPrefetch', 'MSHR',
-                          'PartitionPolicy'])
+                          'PartitionPolicy', 'ARTCache'])
