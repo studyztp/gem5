@@ -136,7 +136,7 @@ class SectorTags(BaseTags):
     num_blocks_per_sector = Param.Int(1, "Number of sub-sectors per sector")
 
     # The indexing entry now is a sector block
-    entry_size = Parent.cache_line_size * Self.num_blocks_per_sector
+    entry_size = Self.block_size * Self.num_blocks_per_sector
 
     # Get replacement policy from the parent (cache)
     replacement_policy = Param.BaseReplacementPolicy(

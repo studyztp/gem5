@@ -185,6 +185,9 @@ class NoncoherentCache(BaseCache):
     # writebacks would be unnecessary traffic to the main memory.
     writeback_clean = False
 
+    blk_size = Param.Int(0, "Block size in bytes")
+
+
 class ARTCache(NoncoherentCache):
     type = "ARTCache"
     cxx_header = "mem/cache/art.hh"
@@ -193,11 +196,10 @@ class ARTCache(NoncoherentCache):
     bypass_prefetch = Param.Bool(
         False, "Whether to enable instruction prefetching"
     )
-    bypass_cache = Param.Bool(
-        False, "Whether this is an instruction cache"
-    )
-    pf_blk_size = Param.Int(
-        8, "The block size (in bytes) for prefetching"
-    )
+    bypass_cache = Param.Bool(False, "Whether this is an instruction cache")
+    pf_blk_size = Param.Int(8, "The block size (in bytes) for prefetching")
+    cache_blk_size = Param.Int(8, "The block size (in bytes) for caching")
+
+    blk_size = Self.cache_blk_size
 
     # ART specific parameters can be added here
