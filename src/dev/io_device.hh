@@ -66,6 +66,13 @@ class PioPort : public SimpleTimingPort
     /** The device that this port serves. */
     Device *device;
 
+    std::string addrToString(Addr addr) const
+    {
+        std::stringstream ss;
+        ss << std::hex << addr;
+        return ss.str();
+    };
+
     Tick
     recvAtomic(PacketPtr pkt) override
     {
@@ -76,7 +83,10 @@ class PioPort : public SimpleTimingPort
 
         const Tick delay =
             pkt->isRead() ? device->read(pkt) : device->write(pkt);
-        assert(pkt->isResponse() || pkt->isError());
+        panic_if(
+          !(pkt->isResponse() || pkt->isError() || !pkt->needsResponse()),
+          "pkt address is %s cmd is %s", addrToString(pkt->getAddr()).c_str(),
+                                                          pkt->cmd.toString());
         return delay + receive_delay;
     }
 

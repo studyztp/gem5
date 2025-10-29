@@ -29,15 +29,18 @@
 Import('*')
 
 SimObject('Device.py', sim_objects=[
-    'PioDevice', 'BasicPioDevice', 'DmaDevice', 'DmaVirtDevice', 'IsaFake'])
+    'PioDevice', 'BasicPioDevice', 'DmaDevice', 'DmaVirtDevice', 'IsaFake',
+    'DummySPI'])
 Source('io_device.cc')
 Source('isa_fake.cc')
 Source('dma_device.cc')
 Source('dma_virt_device.cc')
+Source('dummy_spi.cc')
 
 DebugFlag('IntPin')
 DebugFlag('IsaFake')
 DebugFlag('DMA')
+DebugFlag('DummySPI')
 
 SimObject('Platform.py', sim_objects=['Platform'])
 Source('platform.cc')

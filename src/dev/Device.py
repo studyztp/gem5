@@ -156,3 +156,21 @@ class IsaFake(BasicPioDevice):
 class BadAddr(IsaFake):
     pio_addr = 0
     ret_bad_addr = Param.Bool(True, "Return pkt status bad address on access")
+
+class DummySPI(DmaDevice):
+    type = "DummySPI"
+    cxx_header = "dev/dummy_spi.hh"
+    cxx_class = "gem5::DummySPI"
+
+    target_address = Param.Addr("Target address for SPI communication")
+    target_cpu = Param.BaseMinorCPU("CPU this device will interrupt")
+    interrupt_thread_id = Param.UInt16(1, "Interrupt thread ID")
+    move_delay_cycles = Param.Int("10", "Delay for each robot move operation")
+    grid_width = Param.UInt64(10, "Width of the robot grid")
+    grid_height = Param.UInt64(10, "Height of the robot grid")
+    start_x = Param.UInt64(0, "Starting X position of the robot")
+    start_y = Param.UInt64(0, "Starting Y position of the robot")
+    pio_addr = Param.Addr("PIO address for the DummySPI device")
+    pio_size = Param.Addr("Size of the PIO address range")
+    pio_latency = Param.Latency("100ns", "PIO latency for the DummySPI device")
+
