@@ -1,0 +1,52 @@
+src/arch/arm/linux/se_workload.cc:73: warn: Unknown operating system; assuming Linux.
+src/arch/arm/linux/se_workload.cc:73: warn: Unknown operating system; assuming Linux.
+src/base/statistics.hh:279: warn: One of the stats is a legacy stat. Legacy stat is a stat that does not belong to any statistics::Group. Legacy stat is deprecated.
+src/base/statistics.hh:279: warn: One of the stats is a legacy stat. Legacy stat is a stat that does not belong to any statistics::Group. Legacy stat is deprecated.
+src/cpu/minor/execute.cc:164: warn: No functional unit for OpClass SimdBf16Add
+src/cpu/minor/execute.cc:164: warn: No functional unit for OpClass SimdBf16Cmp
+src/cpu/minor/execute.cc:164: warn: No functional unit for OpClass SimdBf16Cvt
+src/cpu/minor/execute.cc:164: warn: No functional unit for OpClass SimdBf16DotProd
+src/cpu/minor/execute.cc:164: warn: No functional unit for OpClass SimdBf16MatMultAcc
+src/cpu/minor/execute.cc:164: warn: No functional unit for OpClass SimdBf16Mult
+src/cpu/minor/execute.cc:164: warn: No functional unit for OpClass SimdBf16MultAcc
+src/cpu/minor/execute.cc:164: warn: No functional unit for OpClass Bf16Cvt
+system.remote_gdb: Listening for connections on port 7000
+src/sim/power_state.cc:105: warn: PowerState: Already in the requested power state, request ignored
+src/sim/faults.cc:103: panic: panic condition !handled && !tc->getSystemPtr()->trapToGdb(GDBSignal::SEGV, tc->contextId()) occurred: Page table fault when accessing virtual address 0xb400000c
+Memory Usage: 210344 KBytes
+Program aborted at tick 382880000
+--- BEGIN LIBC BACKTRACE ---
+build/ARM/gem5.opt(_ZN4gem515print_backtraceEv+0x30)[0x55efa2c6b9c0]
+build/ARM/gem5.opt(_ZN4gem512abortHandlerEi+0x4c)[0x55efa2c9cbbc]
+/lib/x86_64-linux-gnu/libc.so.6(+0x45330)[0x7fe25859d330]
+/lib/x86_64-linux-gnu/libc.so.6(pthread_kill+0x11c)[0x7fe2585f6b2c]
+/lib/x86_64-linux-gnu/libc.so.6(gsignal+0x1e)[0x7fe25859d27e]
+/lib/x86_64-linux-gnu/libc.so.6(abort+0xdf)[0x7fe2585808ff]
+build/ARM/gem5.opt(+0x16abff5)[0x55efa2c84ff5]
+build/ARM/gem5.opt(_ZN4gem521GenericPageTableFault6invokeEPNS_13ThreadContextERKNS_14RefCountingPtrINS_10StaticInstEEE+0xf5)[0x55efa2d3e975]
+build/ARM/gem5.opt(_ZN4gem55minor7Execute17handleMemResponseENS_14RefCountingPtrINS0_12MinorDynInstEEEPNS0_3LSQ10LSQRequestERNS0_10BranchDataERSt10shared_ptrINS_9FaultBaseEE+0x337)[0x55efa4b5e8e7]
+build/ARM/gem5.opt(_ZN4gem55minor7Execute6commitEsbbRNS0_10BranchDataE+0x1a03)[0x55efa4b62a83]
+build/ARM/gem5.opt(_ZN4gem55minor7Execute8evaluateEv+0x911)[0x55efa4b65c61]
+build/ARM/gem5.opt(_ZN4gem55minor8Pipeline8evaluateEv+0x1f8)[0x55efa4ba2ac8]
+build/ARM/gem5.opt(+0x16f4bf7)[0x55efa2ccdbf7]
+build/ARM/gem5.opt(_ZN4gem510EventQueue10serviceOneEv+0xb7)[0x55efa2c87d97]
+build/ARM/gem5.opt(_ZN4gem59doSimLoopEPNS_10EventQueueE+0x70)[0x55efa2cd0e10]
+build/ARM/gem5.opt(_ZN4gem58simulateEm+0x25e)[0x55efa2cd15ae]
+build/ARM/gem5.opt(+0x3e88d62)[0x55efa5461d62]
+build/ARM/gem5.opt(+0x16029aa)[0x55efa2bdb9aa]
+/lib/x86_64-linux-gnu/libpython3.12.so.1.0(+0x1df4b8)[0x7fe259c324b8]
+/lib/x86_64-linux-gnu/libpython3.12.so.1.0(_PyObject_Call+0x5c)[0x7fe259bd785c]
+/lib/x86_64-linux-gnu/libpython3.12.so.1.0(_PyEval_EvalFrameDefault+0x8ec)[0x7fe259b6cdec]
+/lib/x86_64-linux-gnu/libpython3.12.so.1.0(PyEval_EvalCode+0x20f)[0x7fe259cf391f]
+/lib/x86_64-linux-gnu/libpython3.12.so.1.0(+0x29c8b0)[0x7fe259cef8b0]
+/lib/x86_64-linux-gnu/libpython3.12.so.1.0(+0x1dfadc)[0x7fe259c32adc]
+/lib/x86_64-linux-gnu/libpython3.12.so.1.0(PyObject_Vectorcall+0x5c)[0x7fe259bd5b2c]
+/lib/x86_64-linux-gnu/libpython3.12.so.1.0(_PyEval_EvalFrameDefault+0x40ee)[0x7fe259b705ee]
+build/ARM/gem5.opt(+0x16cc3d9)[0x55efa2ca53d9]
+build/ARM/gem5.opt(main+0x218)[0x55efa2b31548]
+/lib/x86_64-linux-gnu/libc.so.6(+0x2a1ca)[0x7fe2585821ca]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x8b)[0x7fe25858228b]
+build/ARM/gem5.opt(_start+0x25)[0x55efa2bc7c55]
+--- END LIBC BACKTRACE ---
+For more info on how to address this issue, please visit https://www.gem5.org/documentation/general_docs/common-errors/ 
+

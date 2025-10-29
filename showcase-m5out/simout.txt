@@ -1,0 +1,85 @@
+gem5 Simulator System.  https://www.gem5.org
+gem5 is copyrighted software; use the --copyright option for details.
+
+gem5 version DEVELOP-FOR-25.1
+gem5 compiled Oct 29 2025 14:24:21
+gem5 started Oct 29 2025 14:44:57
+gem5 executing on ztlaptop, pid 114648
+command line: build/ARM/gem5.opt --debug-flags=DummySPI -re -d showcase-m5out demo-board/se_board.py --binary1 test/program1.elf --binary2 test/program2.elf
+
+Global frequency set at 1000000000000 ticks per second
+      0: system.dummy_spi: DummySPI initialized at position (0, 0) in grid 10x10
+      0: system.dummy_spi: Target address: 0x20000000, Interrupt thread ID: 1
+      0: system.dummy_spi: 
+Starting Grid: 
+R . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+      0: system.dummy_spi: registering range: 0x40013000-0x100000
+Currently at /home/studyztp/experiment/roboarch/robo-sim-gem5
+Beginning simulation!
+Starting test program 1...
+146430761: system.dummy_spi: Received sensor start read request
+146430761: system.dummy_spi: Trigger address is 40013000
+146430761: system.dummy_spi: Performing signaling: surrounding obstacles = 0x05
+146460001: system.dummy_spi: Switching to interrupt thread 1
+Starting robot main loop...
+Robot deciding next move...
+333460000: system.dummy_spi: Received sensor start read request
+333460000: system.dummy_spi: Trigger address is 40013000
+333460000: system.dummy_spi: Performing signaling: surrounding obstacles = 0x05
+333480001: system.dummy_spi: Switching to interrupt thread 1
+335320000: system.dummy_spi: Received motion command write request
+335320000: system.dummy_spi: Trigger address is 40013000
+335320000: system.dummy_spi: Pkt cmd is WritebackDirty
+335320000: system.dummy_spi: Switching to default thread 0
+335320000: system.dummy_spi: Received command: 0x03, new position: (1, 0)
+335320000: system.dummy_spi: 
+Current Grid: 
+. R . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+335320000: system.dummy_spi: Scheduling next signaling in 100 cycles
+335320000: system.dummy_spi: Pkt isResponse: false
+336320000: system.dummy_spi: Performing signaling: surrounding obstacles = 0x01
+336340001: system.dummy_spi: Switching to interrupt thread 1
+Robot deciding next move...
+374900000: system.dummy_spi: Received sensor start read request
+374900000: system.dummy_spi: Trigger address is 40013000
+374900000: system.dummy_spi: Performing signaling: surrounding obstacles = 0x01
+374920001: system.dummy_spi: Switching to interrupt thread 1
+376730000: system.dummy_spi: Received motion command write request
+376730000: system.dummy_spi: Trigger address is 40013000
+376730000: system.dummy_spi: Pkt cmd is WritebackDirty
+376730000: system.dummy_spi: Switching to default thread 0
+376730000: system.dummy_spi: Received command: 0x01, new position: (1, 1)
+376730000: system.dummy_spi: 
+Current Grid: 
+. . . . . . . . . . 
+. R . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+. . . . . . . . . . 
+376730000: system.dummy_spi: Scheduling next signaling in 100 cycles
+376730000: system.dummy_spi: Pkt isResponse: false
+377730000: system.dummy_spi: Performing signaling: surrounding obstacles = 0x00
+377750001: system.dummy_spi: Switching to interrupt thread 1
