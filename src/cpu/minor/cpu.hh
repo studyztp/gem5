@@ -205,6 +205,14 @@ class MinorCPU : public BaseCPU
      *  enumeration Pipeline::StageId */
     void wakeupOnEvent(unsigned int stage_id);
     EventFunctionWrapper *fetchEventWrapper;
+
+  private:
+    ThreadID target_id = 0;
+
+  public:
+    void setTargetThreadID(ThreadID tid) { target_id = tid; }
+    ThreadID getTargetThreadID() const { return target_id; }
+
 };
 
 } // namespace gem5

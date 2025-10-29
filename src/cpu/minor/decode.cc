@@ -312,7 +312,7 @@ Decode::getScheduledThread()
 
     switch (cpu.threadPolicy) {
       case enums::SingleThreaded:
-        priority_list.push_back(0);
+        priority_list.push_back(cpu.getTargetThreadID());
         break;
       case enums::RoundRobin:
         priority_list = cpu.roundRobinPriority(threadPriority);

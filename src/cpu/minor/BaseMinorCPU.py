@@ -298,6 +298,10 @@ class BaseMinorCPU(BaseCPU):
     type = "BaseMinorCPU"
     cxx_header = "cpu/minor/cpu.hh"
     cxx_class = "gem5::MinorCPU"
+    cxx_exports = [
+        PyBindMethod("setTargetThreadID"),
+        PyBindMethod("getTargetThreadID"),
+    ]
 
     @classmethod
     def memory_mode(cls):

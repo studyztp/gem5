@@ -1760,7 +1760,7 @@ Execute::getCommittingThread()
 
     switch (cpu.threadPolicy) {
       case enums::SingleThreaded:
-          return 0;
+          return cpu.getTargetThreadID();
       case enums::RoundRobin:
           priority_list = cpu.roundRobinPriority(commitPriority);
           break;
@@ -1827,7 +1827,7 @@ Execute::getIssuingThread()
 
     switch (cpu.threadPolicy) {
       case enums::SingleThreaded:
-          return 0;
+          return cpu.getTargetThreadID();
       case enums::RoundRobin:
           priority_list = cpu.roundRobinPriority(issuePriority);
           break;
