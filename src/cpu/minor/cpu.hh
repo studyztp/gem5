@@ -193,6 +193,18 @@ class MinorCPU : public BaseCPU
         return prio_list;
     }
 
+    std::vector<ThreadID> targetedPriority()
+    {
+        std::vector<ThreadID> prio_list;
+        for (ThreadID i = 0; i < numThreads; i++) {
+            if (i!= getTargetThreadID()) {
+              prio_list.push_back(i);
+            }
+        }
+        prio_list.insert(prio_list.begin(), getTargetThreadID());
+        return prio_list;
+    }
+
     /** The tick method in the MinorCPU is simply updating the cycle
      * counters as the ticking of the pipeline stages is already
      * handled by the Pipeline object.

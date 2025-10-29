@@ -1760,12 +1760,15 @@ Execute::getCommittingThread()
 
     switch (cpu.threadPolicy) {
       case enums::SingleThreaded:
-          return cpu.getTargetThreadID();
+          return 0;
       case enums::RoundRobin:
           priority_list = cpu.roundRobinPriority(commitPriority);
           break;
       case enums::Random:
           priority_list = cpu.randomPriority();
+          break;
+      case enums::Targeted:
+          priority_list = cpu.targetedPriority();
           break;
       default:
           panic("Invalid thread policy");
@@ -1827,12 +1830,15 @@ Execute::getIssuingThread()
 
     switch (cpu.threadPolicy) {
       case enums::SingleThreaded:
-          return cpu.getTargetThreadID();
+          return 0;
       case enums::RoundRobin:
           priority_list = cpu.roundRobinPriority(issuePriority);
           break;
       case enums::Random:
           priority_list = cpu.randomPriority();
+          break;
+      case enums::Targeted:
+          priority_list.push_back(cpu.getTargetThreadID());
           break;
       default:
           panic("Invalid thread scheduling policy.");

@@ -291,7 +291,7 @@ class MinorDefaultFUPool(MinorFUPool):
 
 
 class ThreadPolicy(Enum):
-    vals = ["SingleThreaded", "RoundRobin", "Random"]
+    vals = ["SingleThreaded", "RoundRobin", "Random", "Targeted"]
 
 
 class BaseMinorCPU(BaseCPU):

@@ -127,13 +127,16 @@ Fetch1::getScheduledThread()
 
     switch (cpu.threadPolicy) {
       case enums::SingleThreaded:
-        priority_list.push_back(cpu.getTargetThreadID());
+        priority_list.push_back(0);
         break;
       case enums::RoundRobin:
         priority_list = cpu.roundRobinPriority(threadPriority);
         break;
       case enums::Random:
         priority_list = cpu.randomPriority();
+        break;
+      case enums::Targeted:
+        priority_list.push_back(cpu.getTargetThreadID());
         break;
       default:
         panic("Unknown fetch policy");
