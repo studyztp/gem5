@@ -140,8 +140,25 @@ FsWorkload::initState()
         inform("Using kernel entry physical address at %#x\n", kernelEntry);
     } else {
         // Set the initial PC to be at start of the kernel code
-        if (!arm_sys->highestELIs64())
-            arm_sys->threads[0]->pcState(kernelObj->entryPoint());
+        if (!arm_sys->highestELIs64()) {
+            // FsWorkload previously set the PCState using only the entry
+            // address which doesn't encode Thumb state. In SE, the
+            // Process loader sets the PC thumb mode based on the ELF
+            // entry (LSB). Do the same here: infer Thumb from the
+            // entrypoint LSB so Cortex-M / Thumb kernels start correctly
+            // in full-system mode.
+            Addr entry = kernelObj->entryPoint();
+            PCState pc;
+            // Clear the low bit when setting the PC address itself
+            pc.set(entry & ~mask(1));
+            // Thumb mode is indicated by the LSB of the entrypoint
+            pc.thumb((entry & 1) != 0);
+            pc.nextThumb(pc.thumb());
+            // Ensure we're in AArch32 when highest EL is not 64
+            pc.aarch64(false);
+            pc.nextAArch64(false);
+            arm_sys->threads[0]->pcState(pc);
+        }
     }
 }
 
