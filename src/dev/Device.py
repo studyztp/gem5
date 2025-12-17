@@ -36,10 +36,12 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from m5.objects import SimObject
 from m5.objects.ClockedObject import ClockedObject
 from m5.params import *
 from m5.proxy import *
 from m5.util.fdthelper import *
+from m5.util.pybind import *
 
 
 class PioDevice(ClockedObject):
@@ -130,6 +132,35 @@ class DmaVirtDevice(DmaDevice):
     cxx_header = "dev/dma_virt_device.hh"
     cxx_class = "gem5::DmaVirtDevice"
     abstract = True
+
+
+class BridgeIODevice(BasicPioDevice):
+    type = "BridgeIODevice"
+    cxx_header = "dev/bridgeIODevice.hh"
+    cxx_class = "gem5::BridgeIODevice"
+
+    pio_size = Param.Addr(0x1000, "Size of address range")
+    interrupt_pin = Param.SimObject("Interrupt pin connected to device")
+    input_data_buffer_size = Param.Int(
+        1024, "Size of input data buffer in bytes"
+    )
+    output_data_buffer_size = Param.Int(
+        1024, "Size of output data buffer in bytes"
+    )
+    isa = Param.String("Arm", "ISA of the platform")
+    go = Param.Bool(
+        True, "Start processing data as soon as the simulation starts"
+    )
+
+    cxx_exports = [
+        PyBindMethod("updateDone"),
+        PyBindMethod("raiseInterrupt"),
+        PyBindMethod("updateInputData"),
+        PyBindMethod("clearInterrupt"),
+        PyBindMethod("ifDone"),
+        PyBindMethod("getOutputData"),
+        PyBindMethod("getOutputDataSize"),
+    ]
 
 
 class IsaFake(BasicPioDevice):

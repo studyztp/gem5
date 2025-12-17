@@ -29,11 +29,14 @@
 #ifndef __SIM_INIT_SIGNALS_HH__
 #define __SIM_INIT_SIGNALS_HH__
 
+#include <csignal>
 #include <string>
 
 namespace gem5
 {
-
+void installSignalHandler(int signal, void (*handler)(int sigtype),
+                     int flags = SA_RESTART,
+                     struct sigaction *old_sa = NULL);
 void dumpStatsHandler(int sigtype);
 void dumprstStatsHandler(int sigtype);
 void exitNowHandler(int sigtype);

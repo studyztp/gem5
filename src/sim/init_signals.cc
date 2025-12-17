@@ -44,7 +44,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <csignal>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -87,10 +86,10 @@ setupAltStack()
     return sigaltstack(&stack, NULL) == 0;
 }
 
-static void
+void
 installSignalHandler(int signal, void (*handler)(int sigtype),
-                     int flags = SA_RESTART,
-                     struct sigaction *old_sa = NULL)
+                     int flags,
+                     struct sigaction *old_sa)
 {
     struct sigaction sa;
 

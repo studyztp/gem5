@@ -29,8 +29,10 @@
 Import('*')
 
 SimObject('Device.py', sim_objects=[
-    'PioDevice', 'BasicPioDevice', 'DmaDevice', 'DmaVirtDevice', 'IsaFake'])
+    'PioDevice', 'BasicPioDevice', 'DmaDevice', 'DmaVirtDevice',
+     'BridgeIODevice', 'IsaFake'])
 Source('io_device.cc')
+Source('bridgeIODevice.cc')
 Source('isa_fake.cc')
 Source('dma_device.cc')
 Source('dma_virt_device.cc')
@@ -38,6 +40,7 @@ Source('dma_virt_device.cc')
 DebugFlag('IntPin')
 DebugFlag('IsaFake')
 DebugFlag('DMA')
+DebugFlag('BridgeIO')
 
 SimObject('Platform.py', sim_objects=['Platform'])
 Source('platform.cc')
