@@ -7867,6 +7867,18 @@ ISA::initializeMiscRegMetadata()
         idxToMiscRegNum.insert({val, key});
     }
 
+    // M-profile registers
+    InitReg(MISCREG_MSP)
+    // TODO: reset to the initial MSP value
+      .reset(0)
+      .allPrivileges();
+    InitReg(MISCREG_PSP)
+      .reset(0)
+      .allPrivileges();
+    InitReg(MISCREG_M_CONTROL)
+      .reset(0)
+      .allPrivileges();
+    
     completed = true;
 }
 

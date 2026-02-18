@@ -1181,6 +1181,12 @@ namespace ArmISA
         Bitfield<0> el0Vpmen;
     EndBitUnion(MPAMHCR)
 
+    BitUnion32(M_CONTROL)
+        Bitfield<2> fpca;
+        Bitfield<1> spsel;
+        Bitfield<0> npriv;
+    EndBitUnion(M_CONTROL)
+
 } // namespace ArmISA
 } // namespace gem5
 

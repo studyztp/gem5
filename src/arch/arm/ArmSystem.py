@@ -65,6 +65,7 @@ class SmeVectorLength(UInt8):
 
 class ArmExtension(ScopedEnum):
     vals = [
+        "M_PROFILE",
         "FEAT_AES",
         "FEAT_PMULL",
         "FEAT_SHA1",
@@ -184,6 +185,9 @@ class ArmRelease(SimObject):
         release.remove(ArmExtension("VIRTUALIZATION"))
         return release
 
+class Armv7M(ArmRelease):
+    # TODO: Implement M-profile extensions
+    extensions = ["M_PROFILE"]
 
 class Armv8(ArmRelease):
     extensions = [

@@ -31,3 +31,9 @@ class ArmInterrupts(BaseInterrupts):
     type = "ArmInterrupts"
     cxx_class = "gem5::ArmISA::Interrupts"
     cxx_header = "arch/arm/interrupts.hh"
+
+class ArmMProfileInterrupts(BaseInterrupts):
+    type = "ArmMProfileInterrupts"
+    cxx_class = "gem5::ArmISA::ArmMProfileInterrupts"
+    cxx_header = "arch/arm/mprofile/interrupts.hh"
+

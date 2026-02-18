@@ -139,9 +139,37 @@ FsWorkload::initState()
         }
         inform("Using kernel entry physical address at %#x\n", kernelEntry);
     } else {
-        // Set the initial PC to be at start of the kernel code
-        if (!arm_sys->highestELIs64())
+        // Set the initial PC to be at start of the kernel code if not 
+        // M-profile
+        if (!arm_sys->highestELIs64() 
+            && !arm_sys->has(ArmExtension::M_PROFILE)) {
             arm_sys->threads[0]->pcState(kernelObj->entryPoint());
+        } else {
+            // M-profile: stop here and inspect entry point
+            Addr ep = kernelObj->entryPoint();
+            
+            DPRINTF(MProfile, "M-profile: entryPoint() = %#x", ep);
+        
+            // Vector table base = image load base 
+            // (first word = MSP, second = reset vector)
+            Addr vecBase = (start() & loadAddrMask()) + loadAddrOffset();
+            uint32_t word0 = 0, word1 = 0;
+            arm_sys->physProxy.readBlob(vecBase, (uint8_t *)&word0, 4);
+            arm_sys->physProxy.readBlob(vecBase + 4, (uint8_t *)&word1, 4);
+            DPRINTF(MProfile, 
+                "M-profile: vector table at %#x: "
+                "word0 (MSP)=%#x word1 (Reset)=%#x",
+                   vecBase, word0, word1);
+        
+            // First instruction at entry point (little-endian)
+            uint32_t firstInsn = 0;
+            arm_sys->physProxy.readBlob(ep & ~1ULL, (uint8_t *)&firstInsn, 4);
+            DPRINTF(MProfile, 
+                "M-profile: first instruction at %#x = %#x", 
+                                                        ep & ~1ULL, firstInsn);
+            // Set the initial PC to be at the first instruction
+            arm_sys->threads[0]->pcState(ep & ~1ULL);
+        }
     }
 }
 

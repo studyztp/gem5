@@ -50,6 +50,7 @@
 #include "kern/linux/events.hh"
 #include "sim/kernel_workload.hh"
 #include "sim/sim_object.hh"
+#include "debug/MProfile.hh"
 
 namespace gem5
 {

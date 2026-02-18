@@ -1224,6 +1224,11 @@ namespace ArmISA
         MISCREG_PAN,
         MISCREG_UAO,
 
+        // M-profile registers
+        MISCREG_MSP,        // Main Stack Pointer
+        MISCREG_PSP,        // Process Stack Pointer
+        MISCREG_M_CONTROL,  // M_CONTROL register (SPSEL, nPRIV, FPCA)
+
         // Total number of Misc Registers: Physical + Dummy
         NUM_MISCREGS
     };
@@ -2482,6 +2487,11 @@ namespace ArmISA
         // PSTATE
         "pan",
         "uao",
+
+        // M-profile registers
+        "msp",
+        "psp",
+        "control"
     };
 
     static_assert(sizeof(miscRegName) / sizeof(*miscRegName) == NUM_MISCREGS,

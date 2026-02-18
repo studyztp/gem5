@@ -716,7 +716,13 @@ let {{
         else
             imm16 = bits(machInst, 7, 0);
 
-        return softwareBreakpoint32(xc, imm16);
+        ThreadContext *tc = xc->tcBase();
+        bool have_semi = ArmSystem::haveSemihosting(tc);
+        if (have_semi && imm16 == ArmSemihosting::T32Imm) {
+            ArmSystem::callSemihosting32(tc, true);
+        } else {
+            return softwareBreakpoint32(xc, imm16);
+        }
     '''
     bkptIop = ArmInstObjParams("bkpt", "BkptInst", "PredOp", bkptCode)
     header_output += BasicDeclare.subst(bkptIop)
