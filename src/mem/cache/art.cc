@@ -1,494 +1,497 @@
-#include "art.hh"
+/**
+ * @file
+ * Implementation of the ART (Adaptive Real-Time) accelerator cache.
+ */
+
+#include "mem/cache/art.hh"
 
 namespace gem5
 {
 
-ART::ART(const ARTCacheParams& p)
+ART::ART(const ARTCacheParams &p)
   : NoncoherentCache(p),
-    bypassCache(p.bypass_cache),
-    bypassPrefetch(p.bypass_prefetch),
+    directMemoryMode(p.direct_memory_mode),
+    enablePrefetch(p.enable_prefetch),
     pfBlkSize(p.pf_blk_size),
-    prefetch_hit(false),
     artPrefetchOrder(0),
+    artRequestorId(p.system->getRequestorId(this)),
+    flashStartAddr(p.flash_start_addr),
+    flashEndAddr(p.flash_end_addr),
     prefetchBuffer(pfBlkSize),
     currentBuffer(pfBlkSize),
     artPfEntry("ART Prefetch Entry", pfBlkSize),
-    bypassCacheEntry("Bypass Cache Entry")
+    bypassCacheEntry("Bypass Cache Entry"),
+    stats(*this)
 {
+    fatal_if(!isPowerOf2(pfBlkSize),
+             "ART prefetch block size must be a power of 2, got %u",
+             pfBlkSize);
+    fatal_if(flashStartAddr > flashEndAddr,
+             "ART flash start address (%#x) must be <= end address (%#x)",
+             flashStartAddr, flashEndAddr);
+
     DPRINTF(ARTCache,
-        "ART Cache created with bypassCache=%s, bypassPrefetch=%s\n",
-            bypassCache ? "true" : "false",
-            bypassPrefetch ? "true" : "false");
-    DPRINTF(ARTCache,
-        "ART Cache prefetch buffer size: %i bytes\n", pfBlkSize);
+            "ART created: directMemoryMode=%s, enablePrefetch=%s, "
+            "pfBlkSize=%u, flash=[%#x, %#x]\n",
+            directMemoryMode ? "true" : "false",
+            enablePrefetch ? "true" : "false",
+            pfBlkSize, flashStartAddr, flashEndAddr);
 }
 
-QueueEntry* ART::getNextQueueEntry() {
-    if (bypassCache) {
-        // bypassCache target always has higher priority than Prefetch target
-        // because bypassCache target is for certain that it is needed by CPU.
-        // However, if the prefetch target is already retrying, we should not
-        // interrupt it with a new bypassCache target.
-        if (bypassCacheEntry.ifRetrying() ||
-                    (bypassCacheEntry.ready() && !artPfEntry.ifRetrying())) {
+// -------------------------------------------------------------------
+//  Statistics
+// -------------------------------------------------------------------
 
+ART::ARTStats::ARTStats(ART &art)
+  : statistics::Group(&art),
+    ADD_STAT(currentBufferHits, statistics::units::Count::get(),
+             "Requests served from the current buffer"),
+    ADD_STAT(prefetchBufferHits, statistics::units::Count::get(),
+             "Requests served from the prefetch buffer"),
+    ADD_STAT(prefetchMisses, statistics::units::Count::get(),
+             "Requests not served by either prefetch buffer"),
+    ADD_STAT(bypassAccesses, statistics::units::Count::get(),
+             "Requests forwarded directly to memory (bypass mode)"),
+    ADD_STAT(cpuWaitEvents, statistics::units::Count::get(),
+             "Times the CPU had to wait for an in-flight prefetch"),
+    ADD_STAT(prefetchesIssued, statistics::units::Count::get(),
+             "Total prefetch requests issued to memory"),
+    ADD_STAT(prefetchesCompleted, statistics::units::Count::get(),
+             "Total prefetch responses received from memory")
+{
+}
+
+// -------------------------------------------------------------------
+//  Queue scheduling
+// -------------------------------------------------------------------
+
+QueueEntry *
+ART::getNextQueueEntry()
+{
+    if (directMemoryMode) {
+        /*
+         * In direct-memory mode the bypass entry has higher priority
+         * than a prefetch, because bypass traffic is demand traffic
+         * that the CPU is actively waiting on.  However, if the
+         * prefetch entry is already retrying we must not preempt it.
+         */
+        if (bypassCacheEntry.ifRetrying() ||
+            (bypassCacheEntry.ready() && !artPfEntry.ifRetrying())) {
             DPRINTF(ARTCache,
-                    "ART::getNextQueueEntry: returning BypassCache entry\n");
+                    "getNextQueueEntry: returning BypassCache entry\n");
             return &bypassCacheEntry;
         }
     } else {
-        // BaseCache always having the higher priority because if there is a
-        // cache miss or access, it is more urgent than prefetch.
-        QueueEntry* baseEntry = BaseCache::getNextQueueEntry();
+        /*
+         * When the cache is active, base-cache entries (MSHR / WB)
+         * take priority over prefetch because they represent demand
+         * traffic.
+         */
+        QueueEntry *baseEntry = BaseCache::getNextQueueEntry();
         if (baseEntry) {
             DPRINTF(ARTCache,
-                "ART::getNextQueueEntry: returning BaseCache entry\n");
+                    "getNextQueueEntry: returning BaseCache entry\n");
             return baseEntry;
         }
     }
 
     if (artPfEntry.ready()) {
-        DPRINTF(ARTCache, "ART::getNextQueueEntry: returning Prefetch "
-                                                                    "entry\n");
+        DPRINTF(ARTCache,
+                "getNextQueueEntry: returning Prefetch entry\n");
         return &artPfEntry;
     }
 
-    DPRINTF(ARTCache, "ART::getNextQueueEntry: no entry ready\n");
+    DPRINTF(ARTCache, "getNextQueueEntry: no entry ready\n");
     return nullptr;
 }
 
-Tick ART::nextQueueReadyTime() const {
-    Tick next_time = BaseCache::nextQueueReadyTime();
-    if (bypassCacheEntry.ready() && next_time == MaxTick) {
-        next_time = curTick();
-        DPRINTF(ARTCache, "ART::nextQueueReadyTime:[BypassCache] "
-                                                "BypassCache entry ready\n");
+Tick
+ART::nextQueueReadyTime() const
+{
+    Tick nextTime = BaseCache::nextQueueReadyTime();
+
+    if (bypassCacheEntry.ready() && nextTime == MaxTick) {
+        nextTime = curTick();
+        DPRINTF(ARTCache,
+                "nextQueueReadyTime: BypassCache entry ready\n");
     }
-    if (artPfEntry.ready() && next_time == MaxTick) {
-        next_time = curTick();
-        DPRINTF(ARTCache, "ART::nextQueueReadyTime:[Prefetch] "
-                                                "Prefetch entry ready\n");
+    if (artPfEntry.ready() && nextTime == MaxTick) {
+        nextTime = curTick();
+        DPRINTF(ARTCache,
+                "nextQueueReadyTime: Prefetch entry ready\n");
     }
-    return next_time;
+    return nextTime;
 }
 
-bool ART::ifDataInCache(PacketPtr pkt) {
-    // Since this is meant to be a ready-only cache, we do not care if it is
-    // dirty or not because we will never write to the memory.
-    CacheBlk* blk = tags->findBlock({pkt->getAddr(), pkt->isSecure()});
+// -------------------------------------------------------------------
+//  Helpers
+// -------------------------------------------------------------------
+
+bool
+ART::isDataInCache(PacketPtr pkt)
+{
+    CacheBlk *blk = tags->findBlock({pkt->getAddr(), pkt->isSecure()});
     return blk && blk->isValid();
 }
 
-void ART::recvTimingReq(PacketPtr pkt) {
-    // First, check if it is a read request because the ART cache is read-only.
-    panic_if(!pkt->isRead(), "ART Cache only supports read requests.\n");
+void
+ART::serveFromBuffer(PacketPtr pkt, ARTPrefetchBuffer &buf)
+{
+    pkt->setDataFromBlock(buf.data.data(), buf.blkSize);
+    pkt->makeTimingResponse();
+    cpuSidePort.schedTimingResp(pkt, clockEdge(Cycles(1)));
+}
 
-    // TODO: we assume there is only one CPU and one hierarchy cache, which is
-    // the cache for ART accelerator in STM32-G4.
-    DPRINTF(ARTCache, "ART::recvTimingReq: request packet address: %s\n",
-                                                addrToString(pkt->getAddr()));
+// -------------------------------------------------------------------
+//  Timing request path
+// -------------------------------------------------------------------
 
-    // Check if the request can be served from current buffer or the prefetch
-    // buffer (including currently prefetching line when data not in ICache).
-    prefetch_hit = false;
+void
+ART::recvTimingReq(PacketPtr pkt)
+{
+    panic_if(!pkt->isRead(), "ART only supports read requests.");
 
-    // Only handle prefetch if it is enabled.
-    // TODO: we don't deal with secure requests for now.
-    if (!bypassPrefetch && !pkt->isSecure()) {
-        // Check if the current buffer has the request address
+    DPRINTF(ARTCache, "recvTimingReq: addr=%s\n",
+            addrToString(pkt->getAddr()));
+
+    bool prefetchHit = false;
+
+    if (enablePrefetch && !pkt->isSecure()) {
+        // --- Try to serve from the current buffer ---
         if (currentBuffer.isHit(pkt->getAddr())) {
-            DPRINTF(ARTCache,
-                "ART::recvTimingReq:[Prefetch]: Current buffer hits \n");
-            // Serve data from current buffer
-            pkt->setDataFromBlock(
-                currentBuffer.data.data(), currentBuffer.blk_size);
-            pkt->makeTimingResponse();
-            DPRINTF(ARTCache,
-                "ART::recvTimingReq:[Prefetch]: Schedule CPU port response\n");
-            cpuSidePort.schedTimingResp(pkt, clockEdge(Cycles(1)));
-            prefetch_hit = true;
-        // Check if the prefetch buffer has the request address.
-        // Note that the prefetch buffer can only return isHit() true if it has
-        // valid data.
+            DPRINTF(ARTCache, "recvTimingReq: current buffer hit\n");
+            serveFromBuffer(pkt, currentBuffer);
+            prefetchHit = true;
+            ++stats.currentBufferHits;
+
         } else if (prefetchBuffer.isHit(pkt->getAddr())) {
-            DPRINTF(ARTCache,
-                "ART::recvTimingReq:[Prefetch]: Prefetch buffer hits \n");
-            // Serve data from prefetch buffer
-            pkt->setDataFromBlock(
-                prefetchBuffer.data.data(), prefetchBuffer.blk_size);
-            pkt->makeTimingResponse();
-            DPRINTF(ARTCache,
-                "ART::recvTimingReq:[Prefetch]: Schedule CPU port response\n");
-            cpuSidePort.schedTimingResp(pkt, clockEdge(Cycles(1)));
-            prefetch_hit = true;
-            DPRINTF(ARTCache,
-                "ART::recvTimingReq:[Prefetch]: Invalidate prefetch buffer\n");
+            DPRINTF(ARTCache, "recvTimingReq: prefetch buffer hit\n");
+            serveFromBuffer(pkt, prefetchBuffer);
+            prefetchHit = true;
+            ++stats.prefetchBufferHits;
             prefetchBuffer.invalidate();
         }
 
-        // Calculate the next sequential address as our default next prefetch
-        // address
+        // Compute the candidate next-prefetch address.
         nextPfAddr = getNextSequentialAddr(pkt->getAddr());
-        DPRINTF(ARTCache,
-            "ART::recvTimingReq:[Prefetch]: Next sequential address of the "
-                "request packet's address: %s\n", addrToString(nextPfAddr));
+        DPRINTF(ARTCache, "recvTimingReq: next sequential addr=%s\n",
+                addrToString(nextPfAddr));
 
-        // If the next prefetch address is already in the prefetch buffer, we
-        // should skip it and move to the next of that.
+        // Skip ahead if that address is already covered.
         if (prefetchBuffer.isHit(nextPfAddr)) {
             DPRINTF(ARTCache,
-                "ART::recvTimingReq:[Prefetch]: Next sequential address hits "
-                            "prefetch buffer.\n");
+                    "recvTimingReq: next addr already in prefetch buffer, "
+                    "advancing\n");
             nextPfAddr = getNextSequentialAddr(nextPfAddr);
         } else if (artPfEntry.ifInService() &&
-                        artPfEntry.matchBlockAddr(nextPfAddr, false)) {
+                   artPfEntry.matchBlockAddr(nextPfAddr, false)) {
             DPRINTF(ARTCache,
-                "ART::recvTimingReq:[Prefetch]: Next sequential address hits "
-                            "the prefetch in service.\n");
+                    "recvTimingReq: next addr already in-flight, "
+                    "advancing\n");
             nextPfAddr = getNextSequentialAddr(nextPfAddr);
         }
 
-        // In here, we have the true next prefetch address to use.
-        DPRINTF(ARTCache,
-            "ART::recvTimingReq:[Prefetch]: Final next prefetch address: %s\n",
+        DPRINTF(ARTCache, "recvTimingReq: final next prefetch addr=%s\n",
                 addrToString(nextPfAddr));
 
-        // Invalidate the current buffer because it is been accessed.
-        DPRINTF(ARTCache,
-            "ART::recvTimingReq:[Prefetch]: Invalidated current buffer.\n");
         currentBuffer.invalidate();
 
-
-        // Check if the prefetch entry is in service. If not, we can setup the
-        // next prefetch request.
-        // If yes, there are two cases:
-        // 1) the request packet can be served by the current buffer or the
-        // cache. In this case, we don't do anything.
-        // 2) the request packet cannot be served by any of the above. In this
-        // case, we need to check if the request packet matches the address the
-        // prefetch entry is waiting for. a) If yes, we set the CPU waiting
-        // flag in the prefetch entry so that when the prefetch response comes,
-        // we can serve the CPU request immediately. b) If not, we don't do
-        // anything and let it go to the normal cache access flow.
         if (!artPfEntry.ifInService()) {
-            // If the prefetch buffer is valid (has data and not yet used),
-            // we should move it to current buffer before we issue a new
-            // prefetch request.
-            DPRINTF(ARTCache,
-                "ART::recvTimingReq:[Prefetch]: prefetch NOT in service.\n");
+            // Promote prefetchBuffer -> currentBuffer if possible.
             if (prefetchBuffer.isValid()) {
                 DPRINTF(ARTCache,
-                    "ART::recvTimingReq:[Prefetch]: Move prefetch buffer to "
-                    "current buffer and invalidate the prefetch buffer.\n");
+                        "recvTimingReq: promoting prefetch -> current "
+                        "buffer\n");
                 currentBuffer.copyFrom(prefetchBuffer);
                 prefetchBuffer.invalidate();
             }
-            // If the prefetch entry has a target, it means that the previous
-            // prefetch request is not yet in service (i.e., waiting for retry)
-            // so we need to delete the previous target first.
-            // This is possible even for single issue single width CPU because
-            // the prefetch request is setup speculatively.
+
+            /*
+             * If a previous prefetch target is still waiting for
+             * retry, discard it so we can issue the new one.
+             */
             if (artPfEntry.ifHasTarget()) {
                 DPRINTF(ARTCache,
-                    "ART::recvTimingReq:[Prefetch]: Previous prefetch target "
-                    "with address %s is not yet in service, deleting it.\n",
-                    addrToString(artPfEntry.getTarget()->pkt->getAddr()));
+                        "recvTimingReq: discarding stale prefetch "
+                        "target addr=%s\n",
+                        addrToString(
+                            artPfEntry.getTarget()->pkt->getAddr()));
                 delete artPfEntry.getTarget()->pkt;
                 artPfEntry.deallocate();
                 artPfEntry.clearCPUWaiting();
-                // Make sure the retrying flag is cleared as well so it doesn't
-                // block the priority of bypassCacheEntry.
                 artPfEntry.clearRetrying();
             }
-            // The prefetch entry has its own request and packet creation.
-            // When the packet finished its service, it will copy the data
-            // to the prefetch buffer and then we handle the delete there.
-            // The request should be handled by C++ smart pointer
-            // (std::make_shared<Request>).
-            RequestPtr req = makeARTPrefetchRequest(nextPfAddr, pfBlkSize);
-            PacketPtr pf_pkt = makeARTPrefetchPacket(req, &artPfEntry);
-            panic_if(!pf_pkt, "Failed to create prefetch packet in "
-                                                    "ART::recvTimingReq().\n");
-            // The prefetch entry will store the packet into itself using the
-            // Target class method.
-            // Using this method is easier for us to leverage the inherited
-            // scheduling and retrying mechanism from the BaseCache class.
-            // Therefore, the Target object doesn't do much but holding the
-            // packet and its state.
-            DPRINTF(ARTCache,
-                "ART::recvTimingReq:[Prefetch]: Allocate Target for prefetch "
-                                                                "entry.\n");
-            artPfEntry.allocate(
-                nextPfAddr, pf_pkt, clockEdge(Cycles(1)), artPrefetchOrder++);
-            if (prefetch_hit) {
-                DPRINTF(ARTCache,
-                    "ART::recvTimingReq:[Prefetch]: Schedule prefetch request "
-                        "to memory side port for address %s at %llu\n",
-                                        addrToString(nextPfAddr), clockEdge());
-                schedMemSideSendEvent(clockEdge());
+
+            // Only issue the prefetch if it falls within flash range.
+            if (isInFlashRange(nextPfAddr)) {
+                RequestPtr req =
+                    makeARTPrefetchRequest(nextPfAddr, pfBlkSize);
+                PacketPtr pfPkt =
+                    makeARTPrefetchPacket(req, &artPfEntry);
+                panic_if(!pfPkt,
+                         "Failed to create prefetch packet in "
+                         "recvTimingReq.");
+
+                artPfEntry.allocate(nextPfAddr, pfPkt,
+                                    clockEdge(Cycles(1)),
+                                    artPrefetchOrder++);
+                ++stats.prefetchesIssued;
+
+                if (prefetchHit) {
+                    DPRINTF(ARTCache,
+                            "recvTimingReq: scheduling prefetch for "
+                            "%s immediately\n",
+                            addrToString(nextPfAddr));
+                    schedMemSideSendEvent(clockEdge());
+                } else {
+                    DPRINTF(ARTCache,
+                            "recvTimingReq: prefetch will be "
+                            "scheduled after cache event\n");
+                }
+
+                panic_if(!artPfEntry.ready(),
+                         "Prefetch entry not ready after allocation.");
             } else {
                 DPRINTF(ARTCache,
-                    "ART::recvTimingReq:[Prefetch]: Prefetch request will be "
-                    "scheduled after cache event.\n"
-                );
+                        "recvTimingReq: next prefetch addr=%s outside "
+                        "flash range, skipping\n",
+                        addrToString(nextPfAddr));
             }
-            panic_if(!artPfEntry.ready(), "Prefetch entry is not ready after "
-                                    "allocation in ART::recvTimingReq().\n");
+
         } else {
-            DPRINTF(ARTCache,
-                "ART::recvTimingReq:[Prefetch]: prefetch in service.\n");
+            /*
+             * Prefetch is already in service.  If the CPU request
+             * targets the same block, mark the CPU as waiting so the
+             * response path can serve it immediately — unless the
+             * data is already in the cache.
+             */
+            DPRINTF(ARTCache, "recvTimingReq: prefetch in service\n");
             if (artPfEntry.matchBlockAddr(pkt)) {
-                DPRINTF(ARTCache,
-                    "ART::recvTimingReq:[Prefetch]: Request address matches "
-                    "the prefetch in service.\n");
-                if (ifDataInCache(pkt)) {
-                    // Instead of waiting for the prefetch to complete,
-                    // we can serve the request from cache if the data
-                    // is already in cache
+                if (isDataInCache(pkt)) {
                     DPRINTF(ARTCache,
-                        "ART::recvTimingReq:[Prefetch]: Data is already in "
-                        "cache, serving from cache.\n");
+                            "recvTimingReq: data already in cache, "
+                            "no need to wait\n");
                 } else {
                     assert(artPfEntry.setCPUWaiting(pkt));
                     panic_if(!artPfEntry.ifCPUWaiting(),
-                        "Failed to set CPU waiting flag in "
-                                                    "ART::recvTimingReq().\n");
-                    prefetch_hit = true;
+                             "Failed to set CPU waiting flag.");
+                    prefetchHit = true;
+                    ++stats.cpuWaitEvents;
                     DPRINTF(ARTCache,
-                        "ART::recvTimingReq:[Prefetch]: Set CPU waiting flag "
-                        "in prefetch entry.\n");
+                            "recvTimingReq: CPU waiting for "
+                            "in-flight prefetch\n");
                 }
             }
         }
     }
 
-    if (prefetch_hit)
-    {
+    if (prefetchHit) {
         DPRINTF(ARTCache,
-            "ART::recvTimingReq: Request served by prefetch mechanism so "
-                                                "skipping cache access.\n");
+                "recvTimingReq: served by prefetch mechanism, "
+                "skipping cache access\n");
         return;
-    } else {
-        // Since ART allows us to bypass the ICache, we should also model it.
-        // If the request address is not in cache, we can bypass the cache
-        // and send it directly to memory.
-        // This is handle by the bypassCacheEntry which is a single entry
-        // queue similar to the prefetch entry but has two Target objects:
-        // one for the current request and one for the next request.
-        if (bypassCache) {
-            DPRINTF(ARTCache,
-                "ART::recvTimingReq:[BypassCache]: "
-                    "Bypass cache is enabled and bypassing %s.\n",
-                                                addrToString(pkt->getAddr()));
-            panic_if(!bypassCacheEntry.ifTargetOpen(),
-                "Bypass cache entry bypass target is not empty in "
-                                                    "ART::recvTimingReq().\n");
-            // Create a new target for the bypass entry
-            DPRINTF(ARTCache,
-                "ART::recvTimingReq:[BypassCache]: Allocate Target for bypass "
-                                                "cache entry.\n");
-            bypassCacheEntry.allocate(
-                pkt, clockEdge(Cycles(1)), artPrefetchOrder++);
-            panic_if(!bypassCacheEntry.ready(),
-                "Bypass cache entry is not ready after allocation in "
-                                                    "ART::recvTimingReq().\n");
-
-            DPRINTF(ARTCache,
-                "ART::recvTimingReq:[BypassCache]: Schedule bypass cache "
-                "request to memory side port for address %s at %llu\n",
-                                addrToString(pkt->getAddr()), clockEdge());
-            schedMemSideSendEvent(clockEdge());
-
-            return;
-        }
     }
 
+    if (directMemoryMode) {
+        DPRINTF(ARTCache,
+                "recvTimingReq: direct memory bypass for addr=%s\n",
+                addrToString(pkt->getAddr()));
+        panic_if(!bypassCacheEntry.ifTargetOpen(),
+                 "Bypass target slot is not empty.");
+
+        bypassCacheEntry.allocate(
+            pkt, clockEdge(Cycles(1)), artPrefetchOrder++);
+        panic_if(!bypassCacheEntry.ready(),
+                 "Bypass entry not ready after allocation.");
+
+        ++stats.bypassAccesses;
+        schedMemSideSendEvent(clockEdge());
+        return;
+    }
+
+    if (enablePrefetch && !prefetchHit)
+        ++stats.prefetchMisses;
+
     DPRINTF(ARTCache,
-        "ART::recvTimingReq: Passing request to "
-                                        "NoncoherentCache::recvTimingReq()\n");
-    // Continue with normal processing
-    return NoncoherentCache::recvTimingReq(pkt);
+            "recvTimingReq: forwarding to NoncoherentCache\n");
+    NoncoherentCache::recvTimingReq(pkt);
 }
 
-void ART::recvTimingResp(PacketPtr pkt) {
-    // Response only happen for sent requests, which we should only check the
-    // entries in service.
+// -------------------------------------------------------------------
+//  Timing response path
+// -------------------------------------------------------------------
+
+void
+ART::recvTimingResp(PacketPtr pkt)
+{
+    // --- Check bypass entry first ---
     if (bypassCacheEntry.ifInService()) {
         DPRINTF(ARTCache,
-            "ART::recvTimingResp:[BypassCache]: Received timing response "
-                                            "while bypass is in service.\n");
-        BypassCacheEntry* entry =
-            dynamic_cast<BypassCacheEntry*>(
+                "recvTimingResp: bypass entry in service\n");
+        BypassCacheEntry *entry =
+            dynamic_cast<BypassCacheEntry *>(
                 pkt->findNextSenderState<BypassCacheEntry>());
         if (entry) {
             panic_if(entry != &bypassCacheEntry,
-                "Bypass cache entry mismatch in ART::recvTimingResp().\n");
+                     "Bypass entry mismatch in recvTimingResp.");
             DPRINTF(ARTCache,
-                "ART::recvTimingResp:[BypassCache]: Received response for "
-                "address %s\n", addrToString(entry->blkAddr));
-            BypassCacheEntry* temp_entry =
-                        dynamic_cast<BypassCacheEntry*>(pkt->popSenderState());
-            panic_if(temp_entry != entry,
-                "Bypass cache entry pop mismatch in ART::recvTimingResp().\n");
-            DPRINTF(ARTCache,
-                "ART::recvTimingResp:[BypassCache]: Schedule CPU port response"
-                " for the bypassed request at %llu.\n", clockEdge(Cycles(1)));
+                    "recvTimingResp: bypass response for addr=%s\n",
+                    addrToString(entry->blkAddr));
+
+            BypassCacheEntry *popped =
+                dynamic_cast<BypassCacheEntry *>(pkt->popSenderState());
+            panic_if(popped != entry,
+                     "Bypass entry pop mismatch in recvTimingResp.");
+
             cpuSidePort.schedTimingResp(pkt, clockEdge(Cycles(1)));
-            // Clean up the entry
-            DPRINTF(ARTCache,
-                "ART::recvTimingResp:[BypassCache]: Deallocate bypass cache "
-                                                                "entry.\n");
             entry->deallocate();
             return;
         }
     }
+
+    // --- Check prefetch entry ---
     if (artPfEntry.ifInService()) {
         DPRINTF(ARTCache,
-            "ART::recvTimingResp:[Prefetch]: Received timing response while "
-                                                    "prefetch in service.\n");
-        ARTPfQueueEntry* entry =
-            dynamic_cast<ARTPfQueueEntry*>(
+                "recvTimingResp: prefetch entry in service\n");
+        ARTPfQueueEntry *entry =
+            dynamic_cast<ARTPfQueueEntry *>(
                 pkt->findNextSenderState<ARTPfQueueEntry>());
         if (entry) {
             panic_if(entry != &artPfEntry,
-                "Prefetch entry mismatch in ART::recvTimingResp().\n");
+                     "Prefetch entry mismatch in recvTimingResp.");
+
             DPRINTF(ARTCache,
-                "ART::recvTimingResp:[Prefetch]: Received response for "
-                "address %s. Now store data in prefetch buffer.\n",
-                                                addrToString(entry->blkAddr));
-            // Store the data in the prefetch buffer
+                    "recvTimingResp: prefetch response for addr=%s\n",
+                    addrToString(entry->blkAddr));
+            ++stats.prefetchesCompleted;
+
             prefetchBuffer.storeData(
-                entry->blkAddr, pkt->getPtr<uint8_t>()
-            );
+                entry->blkAddr, pkt->getPtr<uint8_t>());
 
-            bool ifServedCPU = false;
+            bool servedCPU = false;
 
-            // If the data is needed by CPU, we need to serve it now
             if (entry->ifCPUWaiting()) {
                 DPRINTF(ARTCache,
-                    "ART::recvTimingResp:[Prefetch]: Prefetch entry has CPU "
-                    "waiting, serve the CPU now.\n");
+                        "recvTimingResp: serving waiting CPU\n");
                 entry->cpuPtr->setDataFromBlock(
-                    prefetchBuffer.data.data(), prefetchBuffer.blk_size);
+                    prefetchBuffer.data.data(), prefetchBuffer.blkSize);
                 entry->cpuPtr->makeTimingResponse();
-                DPRINTF(ARTCache,
-                    "ART::recvTimingResp:[Prefetch]: Schedule CPU port "
-                    "response for the waiting CPU request at %llu.\n",
-                                                clockEdge(Cycles(1)));
                 cpuSidePort.schedTimingResp(
                     entry->cpuPtr, clockEdge(Cycles(1)));
-                // Clear the waiting state
                 entry->clearCPUWaiting();
-                ifServedCPU = true;
+                servedCPU = true;
             }
 
-            // Clean up the entry
-            DPRINTF(ARTCache, "ART::recvTimingResp:[Prefetch]: Deallocate "
-                                    "prefetch entry and delete the packet.\n");
             delete pkt;
             entry->deallocate();
 
-            // Only prefetch a new line if we have buffer space.
-            // If the current buffer is valid, it means that both the current
-            // buffer and the prefetch buffer are occupied, we should not
-            // issue a new prefetch.
+            /*
+             * Issue a follow-up prefetch only when the current buffer
+             * is free (i.e., both buffers are not simultaneously
+             * occupied).
+             */
             if (!currentBuffer.isValid()) {
-                // If the prefetch buffer just served a CPU request, we should
-                // just abandon it for new prefetch.
-                // Also, logically, if the prefetch buffer has a CPU waiting,
-                // then the current buffer must be invalidated.
-                if (!ifServedCPU) {
+                if (!servedCPU) {
                     currentBuffer.copyFrom(prefetchBuffer);
-                    DPRINTF(ARTCache, "ART::recvTimingResp:[Prefetch]: "
-                                "Move prefetch buffer to current buffer.\n");
+                    DPRINTF(ARTCache,
+                            "recvTimingResp: promoted prefetch -> "
+                            "current buffer\n");
                 }
-
-                DPRINTF(ARTCache, "ART::recvTimingResp:[Prefetch]: "
-                            "Invalidate prefetch buffer for new prefetch.\n");
                 prefetchBuffer.invalidate();
 
-                // If the next prefetch address set in recvTimingReq() is the
-                // same as the one just fetched, we need to update it.
-                // This is already guarded in recvTimingReq() but just in case
-                // something changed in between.
                 if (entry->matchBlockAddr(nextPfAddr, false)) {
                     nextPfAddr = getNextSequentialAddr(nextPfAddr);
                     DPRINTF(ARTCache,
-                        "ART::recvTimingResp:[Prefetch]: Next prefetch address"
-                        " after response matches the fetched address, update "
-                        "to the next sequential address: %s\n",
-                                                    addrToString(nextPfAddr));
+                            "recvTimingResp: advancing next prefetch "
+                            "addr to %s\n", addrToString(nextPfAddr));
                 }
-                // Create a new prefetch request and packet
-                DPRINTF(ARTCache,
-                    "ART::recvTimingResp:[Prefetch]: Allocate new Target in "
-                                "prefetch entry for new prefetch target.\n");
-                RequestPtr req = makeARTPrefetchRequest(nextPfAddr, pfBlkSize);
-                PacketPtr pf_pkt = makeARTPrefetchPacket(req, &artPfEntry);
-                panic_if(!pf_pkt, "Failed to create prefetch packet in "
-                                                "ART::recvTimingResp().\n");
-                artPfEntry.allocate(nextPfAddr, pf_pkt, clockEdge(Cycles(1)),
-                                                        artPrefetchOrder++);
-                DPRINTF(ARTCache,
-                    "ART::recvTimingResp:[Prefetch]: Schedule prefetch request"
-                    " to memory side port for address %s at %llu\n",
-                                        addrToString(nextPfAddr), clockEdge());
-                schedMemSideSendEvent(clockEdge());
+
+                if (isInFlashRange(nextPfAddr)) {
+                    RequestPtr req =
+                        makeARTPrefetchRequest(nextPfAddr, pfBlkSize);
+                    PacketPtr pfPkt =
+                        makeARTPrefetchPacket(req, &artPfEntry);
+                    panic_if(!pfPkt,
+                             "Failed to create prefetch packet in "
+                             "recvTimingResp.");
+                    artPfEntry.allocate(nextPfAddr, pfPkt,
+                                        clockEdge(Cycles(1)),
+                                        artPrefetchOrder++);
+                    ++stats.prefetchesIssued;
+                    DPRINTF(ARTCache,
+                            "recvTimingResp: issued follow-up "
+                            "prefetch for addr=%s\n",
+                            addrToString(nextPfAddr));
+                    schedMemSideSendEvent(clockEdge());
+                } else {
+                    DPRINTF(ARTCache,
+                            "recvTimingResp: next prefetch addr=%s "
+                            "outside flash range, skipping\n",
+                            addrToString(nextPfAddr));
+                }
             }
             return;
         }
     }
 
     DPRINTF(ARTCache,
-        "ART::recvTimingResp: Passing response to "
-                                    "NoncoherentCache::recvTimingResp()\n");
-    // Continue with normal processing
+            "recvTimingResp: forwarding to NoncoherentCache\n");
     NoncoherentCache::recvTimingResp(pkt);
 }
 
+// -------------------------------------------------------------------
+//  Packet send helpers
+// -------------------------------------------------------------------
+
 bool
-ART::sendARTPrefetchPacket(ARTPfQueueEntry* entry) {
-    panic_if(!entry, "Null prefetch entry in ART::sendARTPrefetchPacket().\n");
+ART::sendARTPrefetchPacket(ARTPfQueueEntry *entry)
+{
+    panic_if(!entry, "Null prefetch entry in sendARTPrefetchPacket.");
     panic_if(!entry->ready(),
-        "Prefetch entry not ready in ART::sendARTPrefetchPacket().\n");
+             "Prefetch entry not ready in sendARTPrefetchPacket.");
+
     PacketPtr pkt = entry->getTarget()->pkt;
-    panic_if(!pkt, "Null prefetch packet in ART::sendARTPrefetchPacket().\n");
+    panic_if(!pkt, "Null prefetch packet in sendARTPrefetchPacket.");
+
     if (!memSidePort.sendTimingReq(pkt)) {
         DPRINTF(ARTCache,
-                "ART::sendARTPrefetchPacket:[Prefetch] Failed to send prefetch"
-                " packet for address: %s\n", addrToString(entry->blkAddr));
+                "sendARTPrefetchPacket: send failed for addr=%s, "
+                "will retry\n", addrToString(entry->blkAddr));
         entry->markRetrying();
-        // Failed to send the packet, return true then it will try again later
         return true;
-    } else {
-        entry->markInService();
-        entry->clearRetrying();
-        DPRINTF(ARTCache,
-            "ART::sendARTPrefetchPacket:[Prefetch] Sent prefetch packet for "
-                                "address: %s\n", addrToString(entry->blkAddr));
     }
+
+    entry->markInService();
+    entry->clearRetrying();
+    DPRINTF(ARTCache,
+            "sendARTPrefetchPacket: sent prefetch for addr=%s\n",
+            addrToString(entry->blkAddr));
     return false;
 }
 
 bool
-ART::sendBypassPacket(BypassCacheEntry* entry) {
-    panic_if(!entry, "Null bypass cache entry in ART::sendBypassPacket().\n");
+ART::sendBypassPacket(BypassCacheEntry *entry)
+{
+    panic_if(!entry, "Null bypass entry in sendBypassPacket.");
     panic_if(!entry->ready(),
-        "Bypass cache entry not ready in ART::sendBypassPacket().\n");
+             "Bypass entry not ready in sendBypassPacket.");
+
     PacketPtr pkt = entry->getTarget()->pkt;
-    panic_if(!pkt, "Null bypass packet in ART::sendBypassPacket().\n");
+    panic_if(!pkt, "Null bypass packet in sendBypassPacket.");
+
     if (!memSidePort.sendTimingReq(pkt)) {
-        DPRINTF(ARTCache, "ART::sendBypassPacket:[Bypass] Failed to send "
-            "bypass packet for address: %s\n", addrToString(pkt->getAddr()));
-        // Failed to send the packet, return true then it will try again later
+        DPRINTF(ARTCache,
+                "sendBypassPacket: send failed for addr=%s, "
+                "will retry\n", addrToString(pkt->getAddr()));
         entry->markRetrying();
         return true;
-    } else {
-        entry->markInService();
-        entry->clearRetrying();
-        DPRINTF(ARTCache, "ART::sendBypassPacket:[Bypass] Sent bypass packet "
-                            "for address: %s\n", addrToString(pkt->getAddr()));
     }
+
+    entry->markInService();
+    entry->clearRetrying();
+    DPRINTF(ARTCache,
+            "sendBypassPacket: sent bypass for addr=%s\n",
+            addrToString(pkt->getAddr()));
     return false;
 }
 

@@ -193,13 +193,21 @@ class ARTCache(NoncoherentCache):
     cxx_header = "mem/cache/art.hh"
     cxx_class = "gem5::ART"
 
-    bypass_prefetch = Param.Bool(
-        False, "Whether to enable instruction prefetching"
+    enable_prefetch = Param.Bool(
+        True, "Enable ART sequential instruction prefetching"
     )
-    bypass_cache = Param.Bool(False, "Whether this is an instruction cache")
+    direct_memory_mode = Param.Bool(
+        False,
+        "Bypass the cache and forward all requests directly to memory",
+    )
     pf_blk_size = Param.Int(8, "The block size (in bytes) for prefetching")
     cache_blk_size = Param.Int(8, "The block size (in bytes) for caching")
 
-    blk_size = Self.cache_blk_size
+    flash_start_addr = Param.Addr(
+        0, "Start address of the flash memory region for prefetch bounds"
+    )
+    flash_end_addr = Param.Addr(
+        MaxAddr, "End address of the flash memory region for prefetch bounds"
+    )
 
-    # ART specific parameters can be added here
+    blk_size = Self.cache_blk_size
