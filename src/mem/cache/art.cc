@@ -9,19 +9,20 @@ namespace gem5
 {
 
 ART::ART(const ARTCacheParams &p)
-  : NoncoherentCache(p),
-    directMemoryMode(p.direct_memory_mode),
-    enablePrefetch(p.enable_prefetch),
-    pfBlkSize(p.pf_blk_size),
-    artPrefetchOrder(0),
-    artRequestorId(p.system->getRequestorId(this)),
-    flashStartAddr(p.flash_start_addr),
-    flashEndAddr(p.flash_end_addr),
-    prefetchBuffer(pfBlkSize),
-    currentBuffer(pfBlkSize),
-    artPfEntry("ART Prefetch Entry", pfBlkSize),
-    bypassCacheEntry("Bypass Cache Entry"),
-    stats(*this)
+    : NoncoherentCache(p),
+      directMemoryMode(p.direct_memory_mode),
+      enablePrefetch(p.enable_prefetch),
+      prefetchOnCacheHit(p.prefetch_on_cache_hit),
+      pfBlkSize(p.pf_blk_size),
+      artPrefetchOrder(0),
+      artRequestorId(p.system->getRequestorId(this)),
+      flashStartAddr(p.flash_start_addr),
+      flashEndAddr(p.flash_end_addr),
+      prefetchBuffer(pfBlkSize),
+      currentBuffer(pfBlkSize),
+      artPfEntry("ART Prefetch Entry", pfBlkSize),
+      bypassCacheEntry("Bypass Cache Entry"),
+      stats(*this)
 {
     fatal_if(!isPowerOf2(pfBlkSize),
              "ART prefetch block size must be a power of 2, got %u",
@@ -32,10 +33,11 @@ ART::ART(const ARTCacheParams &p)
 
     DPRINTF(ARTCache,
             "ART created: directMemoryMode=%s, enablePrefetch=%s, "
-            "pfBlkSize=%u, flash=[%#x, %#x]\n",
+            "prefetchOnCacheHit=%s, pfBlkSize=%u, flash=[%#x, %#x]\n",
             directMemoryMode ? "true" : "false",
             enablePrefetch ? "true" : "false",
-            pfBlkSize, flashStartAddr, flashEndAddr);
+            prefetchOnCacheHit ? "true" : "false", pfBlkSize, flashStartAddr,
+            flashEndAddr);
 }
 
 // -------------------------------------------------------------------
@@ -43,21 +45,23 @@ ART::ART(const ARTCacheParams &p)
 // -------------------------------------------------------------------
 
 ART::ARTStats::ARTStats(ART &art)
-  : statistics::Group(&art),
-    ADD_STAT(currentBufferHits, statistics::units::Count::get(),
-             "Requests served from the current buffer"),
-    ADD_STAT(prefetchBufferHits, statistics::units::Count::get(),
-             "Requests served from the prefetch buffer"),
-    ADD_STAT(prefetchMisses, statistics::units::Count::get(),
-             "Requests not served by either prefetch buffer"),
-    ADD_STAT(bypassAccesses, statistics::units::Count::get(),
-             "Requests forwarded directly to memory (bypass mode)"),
-    ADD_STAT(cpuWaitEvents, statistics::units::Count::get(),
-             "Times the CPU had to wait for an in-flight prefetch"),
-    ADD_STAT(prefetchesIssued, statistics::units::Count::get(),
-             "Total prefetch requests issued to memory"),
-    ADD_STAT(prefetchesCompleted, statistics::units::Count::get(),
-             "Total prefetch responses received from memory")
+    : statistics::Group(&art),
+      ADD_STAT(currentBufferHits, statistics::units::Count::get(),
+               "Requests served from the current buffer"),
+      ADD_STAT(prefetchBufferHits, statistics::units::Count::get(),
+               "Requests served from the prefetch buffer"),
+      ADD_STAT(prefetchMisses, statistics::units::Count::get(),
+               "Requests not served by either prefetch buffer"),
+      ADD_STAT(bypassAccesses, statistics::units::Count::get(),
+               "Requests forwarded directly to memory (bypass mode)"),
+      ADD_STAT(cpuWaitEvents, statistics::units::Count::get(),
+               "Times the CPU had to wait for an in-flight prefetch"),
+      ADD_STAT(prefetchesAllocated, statistics::units::Count::get(),
+               "Total prefetch entries allocated (includes discarded)"),
+      ADD_STAT(prefetchesIssued, statistics::units::Count::get(),
+               "Total prefetch requests actually sent to memory"),
+      ADD_STAT(prefetchesCompleted, statistics::units::Count::get(),
+               "Total prefetch responses received from memory")
 {
 }
 
@@ -154,6 +158,27 @@ ART::recvTimingReq(PacketPtr pkt)
     DPRINTF(ARTCache, "recvTimingReq: addr=%s\n",
             addrToString(pkt->getAddr()));
 
+    {
+        std::string curBufStr =
+            currentBuffer.isValid()
+                ? "valid addr=" + addrToString(currentBuffer.addr)
+                : "invalid";
+        std::string pfBufStr =
+            prefetchBuffer.isValid()
+                ? "valid addr=" + addrToString(prefetchBuffer.addr)
+                : "invalid";
+        std::string pfEntryStr =
+            artPfEntry.ifInService()
+                ? "IN_SVC@" + addrToString(artPfEntry.blkAddr)
+            : artPfEntry.ifHasTarget()
+                ? "ALLOC@" + addrToString(artPfEntry.blkAddr)
+                : "EMPTY";
+        DPRINTF(ARTCache,
+                "recvTimingReq: state curBuf=(%s) pfBuf=(%s) "
+                "pfEntry=%s\n",
+                curBufStr, pfBufStr, pfEntryStr);
+    }
+
     bool prefetchHit = false;
 
     if (enablePrefetch && !pkt->isSecure()) {
@@ -163,12 +188,30 @@ ART::recvTimingReq(PacketPtr pkt)
             serveFromBuffer(pkt, currentBuffer);
             prefetchHit = true;
             ++stats.currentBufferHits;
+            DPRINTF(ARTCache,
+                    "recvTimingReq: stats hits=%d pfHits=%d "
+                    "misses=%d alloc=%d issued=%d completed=%d\n",
+                    stats.currentBufferHits.value(),
+                    stats.prefetchBufferHits.value(),
+                    stats.prefetchMisses.value(),
+                    stats.prefetchesAllocated.value(),
+                    stats.prefetchesIssued.value(),
+                    stats.prefetchesCompleted.value());
 
         } else if (prefetchBuffer.isHit(pkt->getAddr())) {
             DPRINTF(ARTCache, "recvTimingReq: prefetch buffer hit\n");
             serveFromBuffer(pkt, prefetchBuffer);
             prefetchHit = true;
             ++stats.prefetchBufferHits;
+            DPRINTF(ARTCache,
+                    "recvTimingReq: stats hits=%d pfHits=%d "
+                    "misses=%d alloc=%d issued=%d completed=%d\n",
+                    stats.currentBufferHits.value(),
+                    stats.prefetchBufferHits.value(),
+                    stats.prefetchMisses.value(),
+                    stats.prefetchesAllocated.value(),
+                    stats.prefetchesIssued.value(),
+                    stats.prefetchesCompleted.value());
             prefetchBuffer.invalidate();
         }
 
@@ -235,7 +278,12 @@ ART::recvTimingReq(PacketPtr pkt)
                 artPfEntry.allocate(nextPfAddr, pfPkt,
                                     clockEdge(Cycles(1)),
                                     artPrefetchOrder++);
-                ++stats.prefetchesIssued;
+                ++stats.prefetchesAllocated;
+                DPRINTF(ARTCache,
+                        "recvTimingReq: allocated prefetch "
+                        "for addr=%s (allocated=%d)\n",
+                        addrToString(nextPfAddr),
+                        stats.prefetchesAllocated.value());
 
                 if (prefetchHit) {
                     DPRINTF(ARTCache,
@@ -305,16 +353,30 @@ ART::recvTimingReq(PacketPtr pkt)
                  "Bypass entry not ready after allocation.");
 
         ++stats.bypassAccesses;
+        DPRINTF(ARTCache, "recvTimingReq: bypass (bypass=%d)\n",
+                stats.bypassAccesses.value());
         schedMemSideSendEvent(clockEdge());
         return;
     }
 
-    if (enablePrefetch && !prefetchHit)
+    if (enablePrefetch && !prefetchHit) {
         ++stats.prefetchMisses;
+        DPRINTF(ARTCache,
+                "recvTimingReq: prefetch miss "
+                "(misses=%d)\n",
+                stats.prefetchMisses.value());
+    }
 
     DPRINTF(ARTCache,
             "recvTimingReq: forwarding to NoncoherentCache\n");
     NoncoherentCache::recvTimingReq(pkt);
+
+    if (prefetchOnCacheHit && artPfEntry.ready()) {
+        DPRINTF(ARTCache,
+                "recvTimingReq: prefetch entry still ready after "
+                "cache access, scheduling send (prefetchOnCacheHit)\n");
+        schedMemSideSendEvent(clockEdge(Cycles(1)));
+    }
 }
 
 // -------------------------------------------------------------------
@@ -364,6 +426,12 @@ ART::recvTimingResp(PacketPtr pkt)
                     "recvTimingResp: prefetch response for addr=%s\n",
                     addrToString(entry->blkAddr));
             ++stats.prefetchesCompleted;
+            DPRINTF(ARTCache,
+                    "recvTimingResp: stats "
+                    "alloc=%d issued=%d completed=%d\n",
+                    stats.prefetchesAllocated.value(),
+                    stats.prefetchesIssued.value(),
+                    stats.prefetchesCompleted.value());
 
             prefetchBuffer.storeData(
                 entry->blkAddr, pkt->getPtr<uint8_t>());
@@ -417,11 +485,12 @@ ART::recvTimingResp(PacketPtr pkt)
                     artPfEntry.allocate(nextPfAddr, pfPkt,
                                         clockEdge(Cycles(1)),
                                         artPrefetchOrder++);
-                    ++stats.prefetchesIssued;
+                    ++stats.prefetchesAllocated;
                     DPRINTF(ARTCache,
                             "recvTimingResp: issued follow-up "
-                            "prefetch for addr=%s\n",
-                            addrToString(nextPfAddr));
+                            "prefetch for addr=%s (allocated=%d)\n",
+                            addrToString(nextPfAddr),
+                            stats.prefetchesAllocated.value());
                     schedMemSideSendEvent(clockEdge());
                 } else {
                     DPRINTF(ARTCache,
@@ -429,6 +498,9 @@ ART::recvTimingResp(PacketPtr pkt)
                             "outside flash range, skipping\n",
                             addrToString(nextPfAddr));
                 }
+            } else {
+                DPRINTF(ARTCache, "recvTimingResp: currentBuffer valid, "
+                                  "skipping follow-up prefetch\n");
             }
             return;
         }
@@ -463,9 +535,11 @@ ART::sendARTPrefetchPacket(ARTPfQueueEntry *entry)
 
     entry->markInService();
     entry->clearRetrying();
+    ++stats.prefetchesIssued;
     DPRINTF(ARTCache,
-            "sendARTPrefetchPacket: sent prefetch for addr=%s\n",
-            addrToString(entry->blkAddr));
+            "sendARTPrefetchPacket: sent prefetch for addr=%s "
+            "(issued=%d)\n",
+            addrToString(entry->blkAddr), stats.prefetchesIssued.value());
     return false;
 }
 

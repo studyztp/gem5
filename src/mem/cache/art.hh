@@ -63,6 +63,9 @@ class ART : public NoncoherentCache
     /** Enable the two-buffer sequential prefetcher. */
     const bool enablePrefetch;
 
+    /** Issue an allocated prefetch immediately on an I-Cache hit. */
+    const bool prefetchOnCacheHit;
+
     /** Block size used for prefetch alignment (must be power of 2). */
     const unsigned pfBlkSize;
 
@@ -228,8 +231,11 @@ class ART : public NoncoherentCache
     {
       public:
         ARTPfQueueEntry(const std::string &name, unsigned blk_size)
-            : QueueEntry(name), hasTarget(false),
-              cpuWaiting(false), cpuPtr(nullptr), retrying(false)
+            : QueueEntry(name),
+              hasTarget(false),
+              cpuWaiting(false),
+              retrying(false),
+              cpuPtr(nullptr)
         {
             fatal_if(blk_size == 0,
                      "ART prefetch block size must be non-zero");
@@ -530,6 +536,7 @@ class ART : public NoncoherentCache
         statistics::Scalar prefetchMisses;
         statistics::Scalar bypassAccesses;
         statistics::Scalar cpuWaitEvents;
+        statistics::Scalar prefetchesAllocated;
         statistics::Scalar prefetchesIssued;
         statistics::Scalar prefetchesCompleted;
     } stats;

@@ -202,6 +202,11 @@ class ARTCache(NoncoherentCache):
     )
     pf_blk_size = Param.Int(8, "The block size (in bytes) for prefetching")
     cache_blk_size = Param.Int(8, "The block size (in bytes) for caching")
+    prefetch_on_cache_hit = Param.Bool(
+        False,
+        "When the underlying cache hits (no flash read), immediately "
+        "issue the allocated prefetch instead of waiting for the next request",
+    )
 
     flash_start_addr = Param.Addr(
         0, "Start address of the flash memory region for prefetch bounds"
