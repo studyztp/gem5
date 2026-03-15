@@ -983,6 +983,10 @@ class BaseCache : public ClockedObject
      * Normally this is all possible memory addresses. */
     const AddrRangeList addrRanges;
 
+    /** Is this a non-coherent cache (does not send invalidates for
+    *  whole-line writes). */
+    const bool isNonCoherent;
+
   public:
     /** System we are currently operating in. */
     System *system;
@@ -1152,7 +1156,8 @@ class BaseCache : public ClockedObject
     void regProbePoints() override;
 
   public:
-    BaseCache(const BaseCacheParams &p, unsigned blk_size);
+    BaseCache(const BaseCacheParams &p, unsigned blk_size,
+        const bool& is_non_coherent);
     ~BaseCache();
 
     void init() override;

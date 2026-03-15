@@ -79,7 +79,8 @@ BaseCache::CacheResponsePort::CacheResponsePort(const std::string &_name,
 {
 }
 
-BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
+BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size,
+    const bool& is_non_coherent)
     : ClockedObject(p),
       cpuSidePort (p.name + ".cpu_side_port", *this, "CpuSidePort"),
       memSidePort(p.name + ".mem_side_port", this, "MemSidePort"),
@@ -114,6 +115,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       noTargetMSHR(nullptr),
       missCount(p.max_miss_count),
       addrRanges(p.addr_ranges.begin(), p.addr_ranges.end()),
+      isNonCoherent(is_non_coherent),
       system(p.system),
       stats(*this)
 {
@@ -594,8 +596,9 @@ BaseCache::recvTimingResp(PacketPtr pkt)
          mshr->wasWholeLineWrite);
 
     // make sure that if the mshr was due to a whole line write then
-    // the response is an invalidation
-    assert(!mshr->wasWholeLineWrite || pkt->isInvalidate());
+    // the response is an invalidation, but non coherenet cache doesn't need
+    // to check for invalidation
+    assert(!mshr->wasWholeLineWrite || pkt->isInvalidate() || isNonCoherent);
 
     CacheBlk *blk = tags->findBlock({pkt->getAddr(), pkt->isSecure()});
 

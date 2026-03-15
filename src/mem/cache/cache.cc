@@ -68,7 +68,7 @@ namespace gem5
 {
 
 Cache::Cache(const CacheParams &p)
-    : BaseCache(p, p.system->cacheLineSize()),
+    : BaseCache(p, p.system->cacheLineSize(), false),
       doFastWrites(true)
 {
     assert(p.tags);
