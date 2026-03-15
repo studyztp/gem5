@@ -242,11 +242,30 @@ void
 NoncoherentCache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
                                      CacheBlk *blk)
 {
-    // First offset for critical word first calculations
-    const int initial_offset = mshr->getTarget()->pkt->getOffset(blkSize);
-
     bool from_core = false;
     bool from_pref = false;
+
+    // Handle the write half of a LockedRMW (atomic) operation completing.
+    // BaseCache::handleTimingReqHit() creates a fake LockedRMWWriteResp
+    // and routes it through recvTimingResp() to clear out the MSHR that
+    // was kept alive during the LockedRMW sequence.  The first (and
+    // typically only) remaining target is the dummy LockedRMWReadReq that
+    // updateLockedRMWReadTarget() placed during the read-half servicing.
+    // Pop it now so the MSHR is properly deallocated.
+    // This mirrors Cache::serviceMSHRTargets (cache.cc).
+    if (pkt->cmd == MemCmd::LockedRMWWriteResp) {
+        QueueEntry::Target *initial_tgt = mshr->getTarget();
+        assert(initial_tgt->pkt->cmd == MemCmd::LockedRMWReadReq);
+        delete initial_tgt->pkt;
+        initial_tgt->pkt = nullptr;
+        mshr->popTarget();
+    }
+
+    // First offset for critical word first calculations.
+    // Computed after the LockedRMWWriteResp pop so it reflects the
+    // actual first serviceable target (if any remain).
+    const int initial_offset = mshr->hasTargets() ?
+        mshr->getTarget()->pkt->getOffset(blkSize) : 0;
 
     MSHR::TargetList targets = mshr->extractServiceableTargets(pkt);
     for (auto &target: targets) {
@@ -283,6 +302,26 @@ NoncoherentCache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
             stats.cmdStats(tgt_pkt).missLatency[tgt_pkt->req->requestorId()] +=
                 completion_time - target.recvTime;
 
+            // Handle the read half of a LockedRMW (atomic) operation.
+            // extractServiceableTargets() intentionally leaves the
+            // LockedRMWReadReq in the MSHR targets list so the MSHR
+            // stays allocated until the write half arrives.  Since
+            // makeTimingResponse() below will mutate this packet to
+            // LockedRMWReadResp (and the MSHR target shares the same
+            // pointer), we must replace the MSHR's copy with a fresh
+            // dummy LockedRMWReadReq first -- otherwise
+            // hasLockedRMWReadTarget() would fail to recognise it.
+            // This mirrors Cache::serviceMSHRTargets (cache.cc).
+            // Without this, the bug is latent with 64-byte lines
+            // (LockedRMW rarely misses due to spatial locality) but
+            // surfaces with small cache lines (e.g. 8 bytes) where
+            // every atomic instruction is likely to miss.
+            if (tgt_pkt->cmd == MemCmd::LockedRMWReadReq) {
+                mshr->updateLockedRMWReadTarget(tgt_pkt);
+                blk->clearCoherenceBits(CacheBlk::WritableBit);
+                blk->clearCoherenceBits(CacheBlk::ReadableBit);
+            }
+
             tgt_pkt->makeTimingResponse();
             if (pkt->isError())
                 tgt_pkt->copyError(pkt);
@@ -315,20 +354,27 @@ NoncoherentCache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
         blk->setPrefetched();
     }
 
-    // Reponses are filling and bring in writable blocks, therefore
+    // Responses are filling and bring in writable blocks, therefore
     // there should be no deferred targets and all the non-deferred
-    // targets are now serviced.
-    assert(mshr->getNumTargets() == 0);
+    // targets are now serviced.  The one exception is a
+    // LockedRMWReadReq target, which extractServiceableTargets()
+    // intentionally leaves in the targets list so the MSHR stays
+    // allocated until the corresponding LockedRMWWriteReq arrives.
+    assert(mshr->getNumTargets() == 0 || mshr->hasLockedRMWReadTarget());
 }
 
 void
 NoncoherentCache::recvTimingResp(PacketPtr pkt)
 {
     assert(pkt->isResponse());
-    // At the moment the only supported downstream requests we issue
-    // are ReadReq and therefore here we should only see the
-    // corresponding responses
-    assert(pkt->isRead());
+    // The only downstream requests a non-coherent cache issues are
+    // ReadReq, so responses are normally ReadResp.  The one exception
+    // is LockedRMWWriteResp: a fake response generated internally by
+    // BaseCache::handleTimingReqHit() when the write half of a
+    // LockedRMW (atomic) operation completes.  It is routed through
+    // recvTimingResp() solely to clear out the MSHR that was kept
+    // alive for the LockedRMW sequence.
+    assert(pkt->isRead() || pkt->cmd == MemCmd::LockedRMWWriteResp);
     assert(pkt->cmd != MemCmd::UpgradeResp);
     assert(!pkt->isInvalidate());
     // This cache is non-coherent and any memories below are

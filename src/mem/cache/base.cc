@@ -595,9 +595,12 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         (pkt->isRead() || pkt->cmd == MemCmd::UpgradeResp ||
          mshr->wasWholeLineWrite);
 
-    // make sure that if the mshr was due to a whole line write then
-    // the response is an invalidation, but non coherenet cache doesn't need
-    // to check for invalidation
+    // For coherent caches, a whole-line write is sent downstream as
+    // InvalidateReq and the response must be an invalidation.
+    // Non-coherent caches always send ReadReq regardless of whole-line
+    // writes (there are no other caches to invalidate), so the
+    // response is a ReadResp which legitimately lacks the invalidate
+    // flag.
     assert(!mshr->wasWholeLineWrite || pkt->isInvalidate() || isNonCoherent);
 
     CacheBlk *blk = tags->findBlock({pkt->getAddr(), pkt->isSecure()});
@@ -606,6 +609,10 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
                 pkt->getAddr());
 
+        // writeAllocator is designed for coherent caches where
+        // whole-line writes send InvalidateReq (no data returned).
+        // Non-coherent caches always get ReadResp with data, so the
+        // writeAllocator path should not apply
         const bool allocate = (writeAllocator && mshr->wasWholeLineWrite) ?
             writeAllocator->allocate() : mshr->allocOnFill();
         blk = handleFill(pkt, blk, writebacks, allocate);
