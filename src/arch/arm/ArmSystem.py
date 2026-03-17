@@ -138,6 +138,7 @@ class ArmExtension(ScopedEnum):
         "VIRTUALIZATION",
         "TME",
         "FEAT_MPAM",
+        "M_PROFILE",
     ]
 
 

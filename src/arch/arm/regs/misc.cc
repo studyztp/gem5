@@ -7850,6 +7850,93 @@ ISA::initializeMiscRegMetadata()
         .mon();
     InitReg(MISCREG_PIR_EL3)
         .mon();
+
+
+    // M-Class Core special registers
+    InitReg(MISCREG_M_XPSR)
+        .reset(0x01000000)
+        .allPrivileges();
+    InitReg(MISCREG_M_MSP)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_PSP)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_CONTROL)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_PRIMASK)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_BASEPRI)
+        .reset(0)
+        .allPrivileges();
+    // BASEPRI_MAX has no independent storage; it aliases BASEPRI with a
+    // conditional-write gate (see setMiscReg in isa.cc).  Reset value tracks
+    // BASEPRI (0 = no masking).  Architecturally write-only, but gem5
+    // returns BASEPRI on read for consistency with Cortex-M4 silicon.
+    InitReg(MISCREG_M_BASEPRI_MAX)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_FAULTMASK)
+        .reset(0)
+        .allPrivileges();
+
+    // M-Class SCB registers
+    InitReg(MISCREG_M_CPUID)
+        .reset(0x410FC241)
+        .allPrivileges()
+        .writes(0); // RO
+    InitReg(MISCREG_M_ICSR)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_VTOR)
+        .reset(0)
+        .raz(0x7F)
+        .allPrivileges();
+    InitReg(MISCREG_M_AIRCR)
+        .reset(0xFA050000)
+        .allPrivileges();
+    InitReg(MISCREG_M_SCR)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_CCR)
+        .reset(0x200)
+        .allPrivileges();
+    InitReg(MISCREG_M_SHPR1)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_SHPR2)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_SHPR3)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_SHCSR)
+        .reset(0)
+        .allPrivileges();
+
+    // M-Class Fault status registers
+    InitReg(MISCREG_M_CFSR)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_HFSR)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_DFSR)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_MMFAR)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_BFAR)
+        .reset(0)
+        .allPrivileges();
+    InitReg(MISCREG_M_AFSR)
+        .reset(0)
+        .allPrivileges();
+
+
     // clang-format on
 
     // Register mappings for some unimplemented registers:

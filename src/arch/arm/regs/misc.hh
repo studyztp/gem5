@@ -1190,6 +1190,49 @@ namespace ArmISA
         MISCREG_PIR_EL3,
         MISCREG_PIR_EL12,
 
+        // ---- M-profile registers (namespace ArmMISA) ----
+        // These indices belong to the ArmMISA domain.  BitUnion types for
+        // these registers (XPSR, AIRCR_t, VTOR_t, …) are declared in
+        // misc_types.hh inside namespace gem5::ArmISA::ArmMISA.
+        // The MISCREG_M_* names are accessible from ArmMISA code without
+        // any qualification thanks to enclosing-namespace lookup.
+        MISCREG_M_XPSR,
+        MISCREG_M_MSP,
+        MISCREG_M_PSP,
+        MISCREG_M_CONTROL,
+        MISCREG_M_PRIMASK,
+        MISCREG_M_BASEPRI,
+        // BASEPRI_MAX: SYSm=0b10010.  Conditional-write alias for BASEPRI.
+        // A write only takes effect when the new value would *raise* the
+        // execution-priority ceiling (lower number = higher priority):
+        //   condition: new_val != 0  AND  (cur_basepri == 0 OR new_val < cur)
+        // Used by FreeRTOS taskENTER_CRITICAL() /
+        // portSET_INTERRUPT_MASK_FROM_ISR()
+        // to safely raise the priority floor without accidentally lowering it.
+        // Architecturally write-only; reads return BASEPRI (see isa.cc).
+        MISCREG_M_BASEPRI_MAX,
+        MISCREG_M_FAULTMASK,
+
+        // M-profile System Control Block (SCB) registers
+        MISCREG_M_CPUID,
+        MISCREG_M_ICSR,
+        MISCREG_M_VTOR,
+        MISCREG_M_AIRCR,
+        MISCREG_M_SCR,
+        MISCREG_M_CCR,
+        MISCREG_M_SHPR1,     // System Handler Priority 1 (exceptions 4-7)
+        MISCREG_M_SHPR2,     // System Handler Priority 2 (exceptions 8-11)
+        MISCREG_M_SHPR3,     // System Handler Priority 3 (exceptions 12-15)
+        MISCREG_M_SHCSR,
+
+        // M-profile fault status registers
+        MISCREG_M_CFSR,
+        MISCREG_M_HFSR,
+        MISCREG_M_DFSR,
+        MISCREG_M_MMFAR,
+        MISCREG_M_BFAR,
+        MISCREG_M_AFSR,
+
         // NUM_PHYS_MISCREGS specifies the number of actual physical
         // registers, not considering the following pseudo-registers
         // (dummy registers), like MISCREG_UNKNOWN, MISCREG_IMPDEF_UNIMPL.
@@ -2460,6 +2503,36 @@ namespace ArmISA
         "pir_el3",
         "pir_el12",
 
+        // M-profile core special registers
+        "m_xpsr",
+        "m_msp",
+        "m_psp",
+        "m_control",
+        "m_primask",
+        "m_basepri",
+        "m_basepri_max",   // conditional-write alias
+        "m_faultmask",
+
+        // M-profile SCB registers
+        "m_cpuid",
+        "m_icsr",
+        "m_vtor",
+        "m_aircr",
+        "m_scr",
+        "m_ccr",
+        "m_shpr1",
+        "m_shpr2",
+        "m_shpr3",
+        "m_shcsr",
+
+        // M-profile fault status registers
+        "m_cfsr",
+        "m_hfsr",
+        "m_dfsr",
+        "m_mmfar",
+        "m_bfar",
+        "m_afsr",
+
         "num_phys_regs",
 
         // Dummy registers
@@ -2482,6 +2555,7 @@ namespace ArmISA
         // PSTATE
         "pan",
         "uao",
+
     };
 
     static_assert(sizeof(miscRegName) / sizeof(*miscRegName) == NUM_MISCREGS,

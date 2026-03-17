@@ -69,6 +69,10 @@ GTest("matrix.test", "matrix.test.cc")
 
 Source("decoder.cc", tags=['arm isa'])
 Source("faults.cc", tags=['arm isa'])
+Source("m_faults.cc", tags=['arm isa'])
+Source("m_fs_workload.cc", tags=['arm isa'])
+Source("m_mmu.cc", tags=['arm isa'])
+Source("m_system.cc", tags=['arm isa'])
 Source("htm.cc", tags=['arm isa'])
 Source("insts/branch.cc", tags=['arm isa'])
 Source("insts/branch64.cc", tags=['arm isa'])
@@ -146,6 +150,21 @@ SimObject(
     tags=['arm isa'],
 )
 SimObject(
+    "ArmMFsWorkload.py",
+    sim_objects=["ArmMFsWorkload"],
+    tags=['arm isa'],
+)
+SimObject(
+    "ArmMISA.py",
+    sim_objects=["ArmMISA"],
+    tags=['arm isa'],
+)
+SimObject(
+    'ArmMMMU.py',
+    sim_objects=['ArmMMMU', 'ArmMTLB'],
+    tags='arm isa',
+)
+SimObject(
     'ArmMMU.py',
     sim_objects=['ArmTableWalker', 'ArmWalkUnit', 'ArmMMU'],
     tags='arm isa')
@@ -162,6 +181,11 @@ SimObject(
 SimObject(
     "ArmSeWorkload.py",
     sim_objects=["ArmSEWorkload", "ArmEmuLinux", "ArmEmuFreebsd"],
+    tags=['arm isa'],
+)
+SimObject(
+    "ArmMSystem.py",
+    sim_objects=["ArmMSystem"],
     tags=['arm isa'],
 )
 SimObject(

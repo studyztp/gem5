@@ -1181,6 +1181,171 @@ namespace ArmISA
         Bitfield<0> el0Vpmen;
     EndBitUnion(MPAMHCR)
 
+    // -----------------------------------------------------------------------
+    // M-profile (ARMv7-M / ARMv8-M) register types
+    // Placed in a nested namespace so they are clearly separated from the
+    // A/R-profile types above and do not pollute the ArmISA namespace.
+    // Usage: ArmMISA::XPSR, ArmMISA::AIRCR_t, etc.
+    // -----------------------------------------------------------------------
+    namespace ArmMISA {
+
+    BitUnion32(XPSR)
+        // APSR fields
+        Bitfield<31> n;
+        Bitfield<30> z;
+        Bitfield<29> c;
+        Bitfield<28> v;
+        Bitfield<27> q;
+        Bitfield<19, 16> ge;
+        // IPSR fields
+        Bitfield<8, 0> exception;
+        // EPSR fields
+        Bitfield<26, 25> iciIt1;
+        Bitfield<24> t;         // Thumb state (always 1 for M-profile)
+        Bitfield<15, 10> iciIt2;
+        // bit[9]: Frame pointer / stack alignment indicator.
+        // Set to 1 by hardware on exception entry when the pre-exception SP
+        // was not 8-byte aligned: the hardware decrements SP by 4 extra bytes
+        // to force 8-byte alignment before pushing the exception frame.
+        // On EXC_RETURN the hardware reads this bit from the stacked xPSR
+        // and, if set, adds 4 back to SP to restore the original alignment.
+        // This field is only meaningful in the copy of xPSR saved on the
+        // exception stack; reading live xPSR via MRS always returns 0 here.
+        Bitfield<9> frameptralign;
+    EndBitUnion(XPSR)
+
+    BitUnion32(CONTROL_M)
+        Bitfield<2> fpca;       // FP context active
+        Bitfield<1> spsel;      // Stack pointer selection (0=MSP, 1=PSP)
+        Bitfield<0> npriv;      // Thread mode privilege
+                                // (0=privileged, 1=unprivileged)
+    EndBitUnion(CONTROL_M)
+
+    BitUnion32(AIRCR_t)
+        Bitfield<31, 16> vectkey;    // Must write 0x05FA
+        Bitfield<15> endianness;     // Data endianness (read-only)
+        Bitfield<10, 8> prigroup;    // Priority grouping
+        Bitfield<2> sysresetreq;     // System reset request
+        Bitfield<1> vectclractive;   // Clear active exception status
+    EndBitUnion(AIRCR_t)
+
+    BitUnion32(CCR_t)
+        Bitfield<9> stkalign;       // Stack alignment on exc
+                                    // entry (1=8-byte)
+        Bitfield<8> bfhfnmign;      // BusFault on hard fault and NMI ignore
+        Bitfield<4> div0trp;        // Divide by zero trap
+        Bitfield<3> unaligntrp;     // Unaligned access trap
+        Bitfield<1> usersetmpend;   // User set pending
+        Bitfield<0> nonbasethrdena; // Non-base thread enable
+    EndBitUnion(CCR_t)
+
+    BitUnion32(ICSR_t)
+        Bitfield<31> nmipendset;    // NMI pend set
+        Bitfield<28> pendsvset;     // PendSV set
+        Bitfield<27> pendsvclr;     // PendSV clear
+        Bitfield<26> pendstset;     // SysTick pend set
+        Bitfield<25> pendstclr;     // SysTick pend clear
+        Bitfield<23> isrpreempt;    // ISR preempt
+        Bitfield<22> isrpending;    // ISR pending
+        Bitfield<20, 12> vectpending; // Pending vector number
+        Bitfield<11> rettobase;     // Return to base
+        Bitfield<8, 0> vectactive;  // Active vector number
+    EndBitUnion(ICSR_t)
+
+    BitUnion32(SHCSR_t)
+        Bitfield<18> usgfaultena;   // UsageFault enable
+        Bitfield<17> busfaultena;   // BusFault enable
+        Bitfield<16> memfaultena;   // MemManage enable
+        Bitfield<15> svcallpended;  // SVCall pending
+        Bitfield<14> busfaultpended;
+        Bitfield<13> memfaultpended;
+        Bitfield<12> usgfaultpended;
+        Bitfield<11> systickact;    // SysTick active
+        Bitfield<10> pendsvact;     // PendSV active
+        Bitfield<8> monitoract;   // Debug monitor active
+        Bitfield<7> svcallact;      // SVCall active
+        Bitfield<3> usgfaultact;    // UsageFault active
+        Bitfield<1> busfaultact;    // BusFault active
+        Bitfield<0> memfaultact;    // MemManage active
+    EndBitUnion(SHCSR_t)
+
+    BitUnion32(CFSR_t)
+        // UsageFault Status (bits 31:16)
+        Bitfield<25> divbyzero;
+        Bitfield<24> unaligned;
+        Bitfield<19> nocp;
+        Bitfield<18> invpc;
+        Bitfield<17> invstate;
+        Bitfield<16> undefinstr;
+        // BusFault Status (bits 15:8)
+        Bitfield<15> bfarvalid;
+        Bitfield<13> lsperr;
+        Bitfield<12> stkerr;
+        Bitfield<11> unstkerr;
+        Bitfield<10> impreciserr;
+        Bitfield<9> preciserr;
+        Bitfield<8> ibuserr;
+        // MemManage Fault Status (bits 7:0)
+        Bitfield<7> mmarvalid;
+        Bitfield<5> mlsperr;
+        Bitfield<4> mstkerr;
+        Bitfield<3> munstkerr;
+        Bitfield<1> daccviol;
+        Bitfield<0> iaccviol;
+    EndBitUnion(CFSR_t)
+
+    BitUnion32(HFSR_t)
+        Bitfield<31> debugevt;      // Debug event
+        Bitfield<30> forced;        // Forced HardFault (escalation)
+        Bitfield<1> vecttbl;        // Vector table read error
+    EndBitUnion(HFSR_t)
+
+    // VTOR: Vector Table Offset Register (0xE000ED08).
+    //
+    // The ARM spec defines TBLOFF as bits[31:N] where N depends on the
+    // number of implemented exceptions (N=7 for M0/M0+, N=9 for M4/M7).
+    // That lower bound cannot be a runtime variable in a C++ template, so
+    // we use Bitfield<31, 0> (full width) and name the field `base_addr`
+    // to make the intent clear: reading this field gives you the vector
+    // table byte address directly, with no shifting required.
+    //
+    // The architectural alignment constraint (bits[N-1:0] are reserved/zero)
+    // is enforced entirely by the .raz() mask in InitReg (see misc.cc), which
+    // is computed from the vtor_align_bits ISA parameter at simulation init
+    // time.  Because .raz() forces the low bits to 0 on every write and masks
+    // them on every read, `vtor.base_addr` always equals the correctly aligned
+    // vector table byte address regardless of which
+    // M-class variant is modeled.
+    BitUnion32(VTOR_t)
+        Bitfield<31, 0> base_addr; // vector table byte
+                                   // address; low bits
+                                   // zeroed by .raz()
+    EndBitUnion(VTOR_t)
+
+    // M-profile System Control Register (SCR, at 0xE000ED10).
+    // Controls CPU sleep behavior and pending-interrupt wakeup signaling.
+    // All three bits reset to 0 (no sleep-on-exit,
+    // normal sleep, no SEVONPEND).
+    BitUnion32(SCR_M_t)
+        // bit[4]: Send Event on Pending.
+        // When 1, a newly pended interrupt (even if disabled or masked by
+        // PRIMASK/BASEPRI) generates a WFE wakeup event.  Allows the idle
+        // loop to use WFE instead of WFI without missing interrupt arrivals.
+        Bitfield<4> sevonpend;
+        // bit[2]: Sleep Deep.
+        // When 1, WFI/WFE selects the processor's deep-sleep mode instead of
+        // normal sleep.  The exact behavior is implementation-defined (e.g.
+        // power-gating on real silicon).  gem5 can treat this as a hint.
+        Bitfield<2> sleepdeep;
+        // bit[1]: Sleep on Exit.
+        // When 1, the processor enters sleep automatically on return from any
+        // exception handler back to Thread mode.  Used by interrupt-driven
+        // designs with no foreground thread (zero-overhead idle pattern).
+        Bitfield<1> sleeponexit;
+    EndBitUnion(SCR_M_t)
+
+    } // namespace ArmMISA
+
 } // namespace ArmISA
 } // namespace gem5
 

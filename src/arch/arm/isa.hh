@@ -61,6 +61,7 @@ namespace gem5
 {
 
 struct ArmISAParams;
+struct ArmMISAParams;
 struct DummyArmISADeviceParams;
 class Checkpoint;
 class EventManager;
@@ -279,6 +280,40 @@ class ISA : public BaseISA
     {
         return sveVL * 16;
     }
+};
+
+/**
+ * M-profile ISA object (ARMv7-M / ARMv8-M, i.e. Cortex-M variants).
+ *
+ * Inherits all A/R-profile machinery from ISA and overrides setMiscReg()
+ * to enforce M-profile-specific invariants that cannot be expressed as
+ * static .raz() masks in the global MiscRegLUT (because they are
+ * implementation-defined and therefore per-instance).
+ *
+ * Currently enforced:
+ *   - VTOR alignment: bits[vtor_align_bits-1:0] are forced to zero on every
+ *     write, matching the RES0 field defined in the Cortex-M TRM.
+ */
+class MISA : public ISA
+{
+  protected:
+    /**
+     * Mask of VTOR bits that must always read as zero.
+     * Computed in the constructor from p.vtor_align_bits (valid range 7–31):
+     *   vtorAlignMask = ~((1u << p.vtor_align_bits) - 1u)
+     * Applied on every write to MISCREG_M_VTOR in setMiscReg().
+     * The constructor calls fatal_if() for out-of-range values to avoid
+     * undefined behaviour from shifting a 32-bit value by 32 or more.
+     */
+    uint32_t vtorAlignMask;
+
+  public:
+    PARAMS(ArmMISA);
+
+    MISA(const Params &p);
+
+    RegVal readMiscReg(RegIndex idx) override;
+    void setMiscReg(RegIndex idx, RegVal val) override;
 };
 
 } // namespace ArmISA

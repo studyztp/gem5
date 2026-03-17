@@ -64,6 +64,7 @@
 #include "dev/arm/gic_v3.hh"
 #include "dev/arm/gic_v3_cpu_interface.hh"
 #include "params/ArmISA.hh"
+#include "params/ArmMISA.hh"
 #include "sim/faults.hh"
 #include "sim/stat_control.hh"
 #include "sim/system.hh"
@@ -1972,6 +1973,133 @@ ISA::globalClearExclusive(ExecContext *xc)
     // Implement ARMv8 WFE/SEV semantics
     sendEvent(xc->tcBase());
     xc->setMiscReg(MISCREG_SEV_MAILBOX, true);
+}
+
+// ---------------------------------------------------------------------------
+// MISA — M-profile ISA object
+// M-profile BitUnion types (XPSR, AIRCR_t, VTOR_t, …) live in ArmMISA
+// (misc_types.hh).  The using-directive below makes them available without
+// the ArmMISA:: prefix in all MISA methods below.
+// MISCREG_M_* enum values are in ArmISA::MiscRegIndex and are already
+// visible here through enclosing-namespace lookup — no aliases needed.
+// ---------------------------------------------------------------------------
+using namespace ArmMISA;
+
+MISA::MISA(const Params &p)
+    : ISA(p), vtorAlignMask(0)
+{
+    // Validate vtor_align_bits before computing the mask.
+    //   - Architectural minimum per ARMv7-M: 7
+    //     (M0/M0+ use bits[31:7], 128-byte).
+    //   - C++ left-shift UB: `1u << N` is undefined behaviour for N >= 32.
+    //   - Param.UInt8 admits 0-255, so user error can reach both extremes.
+    fatal_if(p.vtor_align_bits < 7 || p.vtor_align_bits > 31,
+             "ArmMISA: vtor_align_bits=%u is out of the valid range [7, 31]. "
+             "Typical values: 7 (M0/M0+/M33, 128-byte alignment), "
+             "9 (M4/M7, 512-byte alignment).",
+             (unsigned)p.vtor_align_bits);
+
+    // Build the mask of VTOR bits that must be zero on every write.
+    // Example: vtor_align_bits=9 → mask = ~0x1FF = 0xFFFFFE00 (M4/M7).
+    //          vtor_align_bits=7 → mask = ~0x07F = 0xFFFFFF80 (M0/M0+/M33).
+    vtorAlignMask = ~((1u << p.vtor_align_bits) - 1u);
+
+    // Override defaults set by ISA(p).
+    // When the system is ArmMSystem (not ArmSystem), the dynamic_cast
+    // in ISA::ISA() returns nullptr and the else-branch sets SE-mode
+    // defaults (highestELIs64=true, etc.) which are wrong for M-profile.
+    highestELIs64 = false;   // M-profile is always AArch32 Thumb
+    highestEL = EL1;         // no ELs; EL1 is the least harmful default
+    physAddrRange = 32;      // 32-bit address space
+    sveVL = 0;               // no SVE on M-profile
+    smeVL = 0;               // no SME on M-profile
+    // release is already correct: ISA(p) else-branch sets
+    // release = p.release_se, which should be an M-profile ArmRelease.
+}
+
+RegVal
+MISA::readMiscReg(RegIndex idx)
+{
+    switch (idx) {
+      case MISCREG_M_XPSR: {
+          // T-bit (bit 24) reflects the current Thumb state from PCState,
+          // not the stored register value — analogous to A-profile CPSR.T.
+          XPSR xpsr = readMiscRegNoEffect(MISCREG_M_XPSR);
+          auto pc = tc->pcState().as<PCState>();
+          xpsr.t = pc.thumb() ? 1 : 0;
+          return xpsr;
+      }
+      case MISCREG_M_BASEPRI_MAX:
+          // Architecturally UNPREDICTABLE on reads; real Cortex-M4 silicon
+          // returns the current BASEPRI value — match that so
+          // MRS round-trips
+          // (e.g. FreeRTOS save/restore) work correctly.
+          return readMiscRegNoEffect(MISCREG_M_BASEPRI);
+      default:
+          return ISA::readMiscReg(idx);
+    }
+}
+
+void
+MISA::setMiscReg(RegIndex idx, RegVal val)
+{
+    switch (idx) {
+      case MISCREG_M_VTOR:
+          // Enforce implementation-defined VTOR alignment: bits[N-1:0] are
+          // RES0.  The global LUT enforces the architectural minimum (0x7F /
+          // 128-byte); vtorAlignMask additionally clears variant-specific bits
+          // (e.g. bits[8:7] for M4/M7 512-byte alignment).
+          val &= vtorAlignMask;
+          break;
+
+      case MISCREG_M_CFSR:
+          // Write-1-to-clear (W1C): writing 1 clears the bit, 0 leaves it.
+          // Per DDI0403E §B3.2.15.  Software clears faults with
+          //   SCB->CFSR = SCB->CFSR;
+          val = readMiscRegNoEffect(MISCREG_M_CFSR) & ~val;
+          break;
+
+      case MISCREG_M_HFSR:
+          // Write-1-to-clear (W1C) per DDI0403E §B3.2.16.
+          val = readMiscRegNoEffect(MISCREG_M_HFSR) & ~val;
+          break;
+
+      case MISCREG_M_DFSR:
+          // Write-1-to-clear (W1C) per DDI0403E §B3.2.17.
+          val = readMiscRegNoEffect(MISCREG_M_DFSR) & ~val;
+          break;
+
+      case MISCREG_M_AIRCR: {
+          // Writes to AIRCR are only committed when the magic key 0x05FA is
+          // present in bits[31:16] (VECTKEY).  Writes without the key are
+          // silently ignored (DDI0403E §B3.2.6).  On readback, VECTKEYSTAT
+          // (bits[31:16]) always returns 0xFA05.
+          AIRCR_t aircr = val;
+          if (aircr.vectkey != 0x05FA)
+              return;  // wrong key — discard write
+          aircr.vectkey = 0xFA05;  // restore readback value
+          val = aircr;
+          break;
+      }
+
+      case MISCREG_M_BASEPRI_MAX: {
+          // Conditional-write: only commit when the new value *raises* the
+          // execution-priority ceiling (lower number = higher priority).
+          //   - new value must be nonzero (0 means "disable ceiling")
+          //   - new value < current BASEPRI, OR current BASEPRI is 0
+          // This prevents accidentally lowering the ceiling, which is the
+          // whole point of the BASEPRI_MAX alias (used by FreeRTOS
+          // taskENTER_CRITICAL / portSET_INTERRUPT_MASK_FROM_ISR).
+          RegVal cur = readMiscRegNoEffect(MISCREG_M_BASEPRI);
+          if (val != 0 && (cur == 0 || val < cur))
+              setMiscRegNoEffect(MISCREG_M_BASEPRI, val);
+          return;  // never fall through — BASEPRI_MAX has no own storage
+      }
+
+      default:
+          break;
+    }
+    ISA::setMiscReg(idx, val);
 }
 
 } // namespace ArmISA
