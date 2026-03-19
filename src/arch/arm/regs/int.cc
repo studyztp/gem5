@@ -41,6 +41,7 @@
 #include "arch/arm/regs/int.hh"
 
 #include "arch/arm/isa.hh"
+#include "arch/arm/m_isa.hh"
 #include "arch/arm/regs/misc.hh"
 #include "arch/arm/utility.hh"
 #include "base/logging.hh"
@@ -55,6 +56,12 @@ RegId
 IntRegClassOps::flatten(const BaseISA &isa, const RegId &id) const
 {
     const RegIndex reg_idx = id.index();
+
+    // M-profile ISA (MISA) inherits from BaseISA, not from ISA.
+    // M-profile has no register banking — all registers are flat.
+    if (dynamic_cast<const ArmISA::MISA *>(&isa)) {
+        return {flatIntRegClass, id};
+    }
 
     auto &arm_isa = static_cast<const ArmISA::ISA &>(isa);
 

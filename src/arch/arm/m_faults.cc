@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 The gem5 Contributors
+ * Copyright (c) 2026 University of California, Davis and Cornell University
  * All rights reserved
  *
  * Redistribution and use in source and binary forms, with or without
@@ -210,20 +210,19 @@ ArmMFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
     CONTROL_M ctrl = tc->readMiscRegNoEffect(MISCREG_M_CONTROL);
     bool usePSP = !inHandler && ctrl.spsel;
 
-    // TODO: M-profile has two stack pointers (MSP and PSP) stored as
-    // misc regs.  The mapping between architectural R13 and MSP/PSP
-    // is not yet wired through the register flattening system.
-    // Currently we access them via MISCREG directly.  Revisit when
-    // CONTROL.SPSEL switching is implemented (see Step 3 deferral).
+    // R13 is the authoritative SP.  Read from R13, not from misc regs.
+    // On real Cortex-M, R13 IS MSP/PSP.  In gem5 they're separate storage
+    // kept in sync via MRS/MSR handlers (m_insts.cc).
     MiscRegIndex spReg = usePSP ? MISCREG_M_PSP : MISCREG_M_MSP;
-    uint32_t sp = tc->readMiscRegNoEffect(spReg);
+    uint32_t sp = (uint32_t)tc->getReg(int_reg::Sp);
 
     // ---- 2. Push exception frame ----
 
     CCR_t ccr = tc->readMiscRegNoEffect(MISCREG_M_CCR);
     uint32_t newSP = pushExceptionFrame(tc, inst, sp, ccr.stkalign);
 
-    // Write back the stack pointer that was used for stacking.
+    // Write back SP to both R13 and the misc reg copy.
+    tc->setReg(int_reg::Sp, (RegVal)newSP);
     tc->setMiscRegNoEffect(spReg, newSP);
 
     // ---- 3. Set LR to EXC_RETURN ----
@@ -278,12 +277,19 @@ MProfileReset::invoke(ThreadContext *tc, const StaticInstPtr &inst)
     if (!FullSystem)
         return;
 
-    // Clear interrupts and architectural state (same as A-profile Reset).
+    // Clear interrupts and architectural state.
+    // This calls MISA::clear() which zeros all misc regs including VTOR.
     tc->getCpuPtr()->clearInterrupts(tc->threadId());
     tc->clearArchRegs();
 
-    // VTOR resets to 0 — the vector table sits at address 0x00000000.
-    uint32_t vtor = tc->readMiscRegNoEffect(MISCREG_M_VTOR);
+    // Set VTOR to the address provided by the workload.
+    // On real hardware, VTOR resets to 0 and a boot alias maps flash
+    // to address 0.  In gem5, the workload passes the actual flash
+    // base address (e.g., 0x08000000 for STM32) since we may not
+    // have a boot alias.  This must happen AFTER clearArchRegs
+    // (which zeros VTOR) and BEFORE reading the vector table.
+    tc->setMiscRegNoEffect(MISCREG_M_VTOR, vtorAddr);
+    uint32_t vtor = vtorAddr;
     PortProxy &phys = tc->getSystemPtr()->physProxy;
 
     // Entry 0: initial Main Stack Pointer value.
@@ -292,8 +298,12 @@ MProfileReset::invoke(ThreadContext *tc, const StaticInstPtr &inst)
     uint32_t resetHandler = phys.read<uint32_t>(vtor + 4,
                                                 ByteOrder::little);
 
-    // Initialise MSP.
+    // Initialise MSP and the architectural SP register (R13).
+    // On real Cortex-M, MSP IS R13 when CONTROL.SPSEL=0.
+    // In gem5, MISCREG_M_MSP and int_reg::Sp are separate storage,
+    // so we must set both to keep them in sync.
     tc->setMiscRegNoEffect(MISCREG_M_MSP, initialMSP);
+    tc->setReg(int_reg::Sp, (RegVal)initialMSP);
 
     // Set xPSR to reset value: T-bit set, Thread mode (IPSR = 0).
     tc->setMiscRegNoEffect(MISCREG_M_XPSR, 0x01000000);
@@ -327,10 +337,9 @@ mProfileExcReturn(ThreadContext *tc, uint32_t exc_return)
     bool returnToThread = (exc_return & 0x8);
     bool restoreFromPSP = (exc_return & 0x4);
 
-    // TODO: Same MSP/PSP misc-reg access note as in ArmMFault::invoke()
-    // — R13 flattening is not yet wired for M-profile.
+    // R13 is the authoritative SP (same as invoke).
     MiscRegIndex spReg = restoreFromPSP ? MISCREG_M_PSP : MISCREG_M_MSP;
-    uint32_t frameptr = tc->readMiscRegNoEffect(spReg);
+    uint32_t frameptr = (uint32_t)tc->getReg(int_reg::Sp);
 
     // Read the exception frame from physical memory.
     // TODO: Unstacking goes through the MPU on real hardware.
@@ -362,9 +371,11 @@ mProfileExcReturn(ThreadContext *tc, uint32_t exc_return)
     tc->setReg(int_reg::Lr,  (RegVal)lr);
 
     // Restore SP — undo alignment padding if frameptralign was set.
+    // Write both R13 (authoritative) and misc reg copy.
     uint32_t sp = frameptr + 0x20;
     if (xpsr.frameptralign)
         sp += 4;
+    tc->setReg(int_reg::Sp, (RegVal)sp);
     tc->setMiscRegNoEffect(spReg, sp);
 
     // Restore xPSR.  The stacked value already contains the correct

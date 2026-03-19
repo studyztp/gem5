@@ -1,0 +1,221 @@
+
+test_data_processing.elf:     file format elf32-littlearm
+
+SYMBOL TABLE:
+08000000 l    d  .isr_vector	00000000 .isr_vector
+08000040 l    d  .text	00000000 .text
+080001fc l    d  .rodata	00000000 .rodata
+20000000 l    d  .data	00000000 .data
+20000000 l    d  .bss	00000000 .bss
+00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
+00000000 l    df *ABS*	00000000 test_data_processing.o
+20000100 l       *ABS*	00000000 TEST_RESULT
+20000104 l       *ABS*	00000000 TEST_SUBTEST
+cafecafe l       *ABS*	00000000 PASS_VAL
+deaddead l       *ABS*	00000000 FAIL_VAL
+08000000 l       .isr_vector	00000000 __isr_vector
+0800019a l       .text	00000000 fail_1
+080001a0 l       .text	00000000 fail_2
+080001a6 l       .text	00000000 fail_3
+080001ac l       .text	00000000 fail_4
+080001b2 l       .text	00000000 fail_5
+080001b8 l       .text	00000000 fail_6
+080001be l       .text	00000000 fail_7
+080001c4 l       .text	00000000 fail_8
+08000174 l       .text	00000000 z_ok
+080001ca l       .text	00000000 fail_9
+0800017e l       .text	00000000 n_ok
+08000188 l       .text	00000000 c_ok
+08000192 l       .text	00000000 v_ok
+080001d8 l       .text	00000000 done
+080001ce l       .text	00000000 fail
+08000040 g     F .text	00000000 Reset_Handler
+20020000 g       *ABS*	00000000 _estack
+
+
+
+Disassembly of section .text:
+
+08000040 <Reset_Handler>:
+ 8000040:	f04f 002a 	mov.w	r0, #42	@ 0x2a
+ 8000044:	282a      	cmp	r0, #42	@ 0x2a
+ 8000046:	f040 80a8 	bne.w	800019a <fail_1>
+ 800004a:	ea6f 0100 	mvn.w	r1, r0
+ 800004e:	f06f 022a 	mvn.w	r2, #42	@ 0x2a
+ 8000052:	4291      	cmp	r1, r2
+ 8000054:	f040 80a1 	bne.w	800019a <fail_1>
+ 8000058:	f04f 0064 	mov.w	r0, #100	@ 0x64
+ 800005c:	f04f 0132 	mov.w	r1, #50	@ 0x32
+ 8000060:	eb00 0201 	add.w	r2, r0, r1
+ 8000064:	2a96      	cmp	r2, #150	@ 0x96
+ 8000066:	f040 809b 	bne.w	80001a0 <fail_2>
+ 800006a:	eba0 0301 	sub.w	r3, r0, r1
+ 800006e:	2b32      	cmp	r3, #50	@ 0x32
+ 8000070:	f040 8096 	bne.w	80001a0 <fail_2>
+ 8000074:	f1c1 03c8 	rsb	r3, r1, #200	@ 0xc8
+ 8000078:	2b96      	cmp	r3, #150	@ 0x96
+ 800007a:	f040 8091 	bne.w	80001a0 <fail_2>
+ 800007e:	f04f 20ff 	mov.w	r0, #4278255360	@ 0xff00ff00
+ 8000082:	f04f 310f 	mov.w	r1, #252645135	@ 0xf0f0f0f
+ 8000086:	ea00 0201 	and.w	r2, r0, r1
+ 800008a:	f04f 230f 	mov.w	r3, #251662080	@ 0xf000f00
+ 800008e:	429a      	cmp	r2, r3
+ 8000090:	f040 8089 	bne.w	80001a6 <fail_3>
+ 8000094:	ea40 0201 	orr.w	r2, r0, r1
+ 8000098:	f06f 13f0 	mvn.w	r3, #15728880	@ 0xf000f0
+ 800009c:	429a      	cmp	r2, r3
+ 800009e:	f040 8082 	bne.w	80001a6 <fail_3>
+ 80000a2:	ea80 0201 	eor.w	r2, r0, r1
+ 80000a6:	4b4d      	ldr	r3, [pc, #308]	@ (80001dc <done+0x4>)
+ 80000a8:	429a      	cmp	r2, r3
+ 80000aa:	d17c      	bne.n	80001a6 <fail_3>
+ 80000ac:	ea20 0201 	bic.w	r2, r0, r1
+ 80000b0:	f04f 23f0 	mov.w	r3, #4026593280	@ 0xf000f000
+ 80000b4:	429a      	cmp	r2, r3
+ 80000b6:	d176      	bne.n	80001a6 <fail_3>
+ 80000b8:	f04f 0001 	mov.w	r0, #1
+ 80000bc:	ea4f 1100 	mov.w	r1, r0, lsl #4
+ 80000c0:	2910      	cmp	r1, #16
+ 80000c2:	d173      	bne.n	80001ac <fail_4>
+ 80000c4:	f04f 0080 	mov.w	r0, #128	@ 0x80
+ 80000c8:	ea4f 01d0 	mov.w	r1, r0, lsr #3
+ 80000cc:	2910      	cmp	r1, #16
+ 80000ce:	d16d      	bne.n	80001ac <fail_4>
+ 80000d0:	f04f 4000 	mov.w	r0, #2147483648	@ 0x80000000
+ 80000d4:	ea4f 1120 	mov.w	r1, r0, asr #4
+ 80000d8:	f04f 4278 	mov.w	r2, #4160749568	@ 0xf8000000
+ 80000dc:	4291      	cmp	r1, r2
+ 80000de:	d165      	bne.n	80001ac <fail_4>
+ 80000e0:	f04f 0007 	mov.w	r0, #7
+ 80000e4:	f04f 0106 	mov.w	r1, #6
+ 80000e8:	fb00 f201 	mul.w	r2, r0, r1
+ 80000ec:	2a2a      	cmp	r2, #42	@ 0x2a
+ 80000ee:	d160      	bne.n	80001b2 <fail_5>
+ 80000f0:	f04f 030a 	mov.w	r3, #10
+ 80000f4:	fb00 3201 	mla	r2, r0, r1, r3
+ 80000f8:	2a34      	cmp	r2, #52	@ 0x34
+ 80000fa:	d15a      	bne.n	80001b2 <fail_5>
+ 80000fc:	fb00 3211 	mls	r2, r0, r1, r3
+ 8000100:	f06f 031f 	mvn.w	r3, #31
+ 8000104:	429a      	cmp	r2, r3
+ 8000106:	d154      	bne.n	80001b2 <fail_5>
+ 8000108:	f04f 0064 	mov.w	r0, #100	@ 0x64
+ 800010c:	f04f 0107 	mov.w	r1, #7
+ 8000110:	fbb0 f2f1 	udiv	r2, r0, r1
+ 8000114:	2a0e      	cmp	r2, #14
+ 8000116:	d14f      	bne.n	80001b8 <fail_6>
+ 8000118:	fb90 f2f1 	sdiv	r2, r0, r1
+ 800011c:	2a0e      	cmp	r2, #14
+ 800011e:	d14b      	bne.n	80001b8 <fail_6>
+ 8000120:	f06f 0063 	mvn.w	r0, #99	@ 0x63
+ 8000124:	f04f 0107 	mov.w	r1, #7
+ 8000128:	fb90 f2f1 	sdiv	r2, r0, r1
+ 800012c:	f06f 030d 	mvn.w	r3, #13
+ 8000130:	429a      	cmp	r2, r3
+ 8000132:	d141      	bne.n	80001b8 <fail_6>
+ 8000134:	482a      	ldr	r0, [pc, #168]	@ (80001e0 <done+0x8>)
+ 8000136:	ba01      	rev	r1, r0
+ 8000138:	4a2a      	ldr	r2, [pc, #168]	@ (80001e4 <done+0xc>)
+ 800013a:	4291      	cmp	r1, r2
+ 800013c:	d13f      	bne.n	80001be <fail_7>
+ 800013e:	ba41      	rev16	r1, r0
+ 8000140:	4a29      	ldr	r2, [pc, #164]	@ (80001e8 <done+0x10>)
+ 8000142:	4291      	cmp	r1, r2
+ 8000144:	d13b      	bne.n	80001be <fail_7>
+ 8000146:	f64f 7080 	movw	r0, #65408	@ 0xff80
+ 800014a:	b201      	sxth	r1, r0
+ 800014c:	f06f 027f 	mvn.w	r2, #127	@ 0x7f
+ 8000150:	4291      	cmp	r1, r2
+ 8000152:	d137      	bne.n	80001c4 <fail_8>
+ 8000154:	b281      	uxth	r1, r0
+ 8000156:	f64f 7280 	movw	r2, #65408	@ 0xff80
+ 800015a:	4291      	cmp	r1, r2
+ 800015c:	d132      	bne.n	80001c4 <fail_8>
+ 800015e:	b241      	sxtb	r1, r0
+ 8000160:	f06f 027f 	mvn.w	r2, #127	@ 0x7f
+ 8000164:	4291      	cmp	r1, r2
+ 8000166:	d12d      	bne.n	80001c4 <fail_8>
+ 8000168:	b2c1      	uxtb	r1, r0
+ 800016a:	2980      	cmp	r1, #128	@ 0x80
+ 800016c:	d12a      	bne.n	80001c4 <fail_8>
+ 800016e:	2000      	movs	r0, #0
+ 8000170:	d000      	beq.n	8000174 <z_ok>
+ 8000172:	e02a      	b.n	80001ca <fail_9>
+
+08000174 <z_ok>:
+ 8000174:	f04f 4000 	mov.w	r0, #2147483648	@ 0x80000000
+ 8000178:	2800      	cmp	r0, #0
+ 800017a:	d400      	bmi.n	800017e <n_ok>
+ 800017c:	e025      	b.n	80001ca <fail_9>
+
+0800017e <n_ok>:
+ 800017e:	f04f 30ff 	mov.w	r0, #4294967295	@ 0xffffffff
+ 8000182:	1c41      	adds	r1, r0, #1
+ 8000184:	d200      	bcs.n	8000188 <c_ok>
+ 8000186:	e020      	b.n	80001ca <fail_9>
+
+08000188 <c_ok>:
+ 8000188:	f06f 4000 	mvn.w	r0, #2147483648	@ 0x80000000
+ 800018c:	1c41      	adds	r1, r0, #1
+ 800018e:	d600      	bvs.n	8000192 <v_ok>
+ 8000190:	e01b      	b.n	80001ca <fail_9>
+
+08000192 <v_ok>:
+ 8000192:	4816      	ldr	r0, [pc, #88]	@ (80001ec <done+0x14>)
+ 8000194:	4916      	ldr	r1, [pc, #88]	@ (80001f0 <done+0x18>)
+ 8000196:	6008      	str	r0, [r1, #0]
+ 8000198:	e01e      	b.n	80001d8 <done>
+
+0800019a <fail_1>:
+ 800019a:	f04f 0201 	mov.w	r2, #1
+ 800019e:	e016      	b.n	80001ce <fail>
+
+080001a0 <fail_2>:
+ 80001a0:	f04f 0202 	mov.w	r2, #2
+ 80001a4:	e013      	b.n	80001ce <fail>
+
+080001a6 <fail_3>:
+ 80001a6:	f04f 0203 	mov.w	r2, #3
+ 80001aa:	e010      	b.n	80001ce <fail>
+
+080001ac <fail_4>:
+ 80001ac:	f04f 0204 	mov.w	r2, #4
+ 80001b0:	e00d      	b.n	80001ce <fail>
+
+080001b2 <fail_5>:
+ 80001b2:	f04f 0205 	mov.w	r2, #5
+ 80001b6:	e00a      	b.n	80001ce <fail>
+
+080001b8 <fail_6>:
+ 80001b8:	f04f 0206 	mov.w	r2, #6
+ 80001bc:	e007      	b.n	80001ce <fail>
+
+080001be <fail_7>:
+ 80001be:	f04f 0207 	mov.w	r2, #7
+ 80001c2:	e004      	b.n	80001ce <fail>
+
+080001c4 <fail_8>:
+ 80001c4:	f04f 0208 	mov.w	r2, #8
+ 80001c8:	e001      	b.n	80001ce <fail>
+
+080001ca <fail_9>:
+ 80001ca:	f04f 0209 	mov.w	r2, #9
+
+080001ce <fail>:
+ 80001ce:	4809      	ldr	r0, [pc, #36]	@ (80001f4 <done+0x1c>)
+ 80001d0:	4907      	ldr	r1, [pc, #28]	@ (80001f0 <done+0x18>)
+ 80001d2:	6008      	str	r0, [r1, #0]
+ 80001d4:	4908      	ldr	r1, [pc, #32]	@ (80001f8 <done+0x20>)
+ 80001d6:	600a      	str	r2, [r1, #0]
+
+080001d8 <done>:
+ 80001d8:	e7fe      	b.n	80001d8 <done>
+ 80001da:	0000      	.short	0x0000
+ 80001dc:	f00ff00f 	.word	0xf00ff00f
+ 80001e0:	12345678 	.word	0x12345678
+ 80001e4:	78563412 	.word	0x78563412
+ 80001e8:	34127856 	.word	0x34127856
+ 80001ec:	cafecafe 	.word	0xcafecafe
+ 80001f0:	20000100 	.word	0x20000100
+ 80001f4:	deaddead 	.word	0xdeaddead
+ 80001f8:	20000104 	.word	0x20000104

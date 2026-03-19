@@ -1,0 +1,135 @@
+
+test_mrs_msr.elf:     file format elf32-littlearm
+
+SYMBOL TABLE:
+08000000 l    d  .isr_vector	00000000 .isr_vector
+08000040 l    d  .text	00000000 .text
+08000130 l    d  .rodata	00000000 .rodata
+20000000 l    d  .data	00000000 .data
+20000000 l    d  .bss	00000000 .bss
+00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
+00000000 l    df *ABS*	00000000 test_mrs_msr.o
+20000100 l       *ABS*	00000000 TEST_RESULT
+20000104 l       *ABS*	00000000 TEST_SUBTEST
+cafecafe l       *ABS*	00000000 PASS_VAL
+deaddead l       *ABS*	00000000 FAIL_VAL
+08000000 l       .isr_vector	00000000 __isr_vector
+080000e4 l       .text	00000000 fail_1
+080000ea l       .text	00000000 fail_2
+080000f0 l       .text	00000000 fail_3
+080000f6 l       .text	00000000 fail_4
+080000b0 l       .text	00000000 fail_5_restore
+080000b6 l       .text	00000000 test_5_ok
+080000fc l       .text	00000000 fail_5
+08000102 l       .text	00000000 fail_6
+08000108 l       .text	00000000 fail_7
+08000116 l       .text	00000000 done
+0800010c l       .text	00000000 fail
+08000040 g     F .text	00000000 Reset_Handler
+20020000 g       *ABS*	00000000 _estack
+
+
+
+Disassembly of section .text:
+
+08000040 <Reset_Handler>:
+ 8000040:	f04f 0001 	mov.w	r0, #1
+ 8000044:	f380 8810 	msr	PRIMASK, r0
+ 8000048:	f3ef 8110 	mrs	r1, PRIMASK
+ 800004c:	2901      	cmp	r1, #1
+ 800004e:	d149      	bne.n	80000e4 <fail_1>
+ 8000050:	f04f 0000 	mov.w	r0, #0
+ 8000054:	f380 8810 	msr	PRIMASK, r0
+ 8000058:	f3ef 8110 	mrs	r1, PRIMASK
+ 800005c:	2900      	cmp	r1, #0
+ 800005e:	d141      	bne.n	80000e4 <fail_1>
+ 8000060:	f04f 0040 	mov.w	r0, #64	@ 0x40
+ 8000064:	f380 8811 	msr	BASEPRI, r0
+ 8000068:	f3ef 8111 	mrs	r1, BASEPRI
+ 800006c:	2940      	cmp	r1, #64	@ 0x40
+ 800006e:	d13c      	bne.n	80000ea <fail_2>
+ 8000070:	f04f 0000 	mov.w	r0, #0
+ 8000074:	f380 8811 	msr	BASEPRI, r0
+ 8000078:	f04f 0001 	mov.w	r0, #1
+ 800007c:	f380 8813 	msr	FAULTMASK, r0
+ 8000080:	f3ef 8113 	mrs	r1, FAULTMASK
+ 8000084:	2901      	cmp	r1, #1
+ 8000086:	d133      	bne.n	80000f0 <fail_3>
+ 8000088:	f04f 0000 	mov.w	r0, #0
+ 800008c:	f380 8813 	msr	FAULTMASK, r0
+ 8000090:	f3ef 8014 	mrs	r0, CONTROL
+ 8000094:	2800      	cmp	r0, #0
+ 8000096:	d12e      	bne.n	80000f6 <fail_4>
+ 8000098:	f3ef 8408 	mrs	r4, MSP
+ 800009c:	481e      	ldr	r0, [pc, #120]	@ (8000118 <done+0x2>)
+ 800009e:	f380 8808 	msr	MSP, r0
+ 80000a2:	f3ef 8108 	mrs	r1, MSP
+ 80000a6:	4281      	cmp	r1, r0
+ 80000a8:	d102      	bne.n	80000b0 <fail_5_restore>
+ 80000aa:	f384 8808 	msr	MSP, r4
+ 80000ae:	e002      	b.n	80000b6 <test_5_ok>
+
+080000b0 <fail_5_restore>:
+ 80000b0:	f384 8808 	msr	MSP, r4
+ 80000b4:	e022      	b.n	80000fc <fail_5>
+
+080000b6 <test_5_ok>:
+ 80000b6:	4819      	ldr	r0, [pc, #100]	@ (800011c <done+0x6>)
+ 80000b8:	f380 8809 	msr	PSP, r0
+ 80000bc:	f3ef 8109 	mrs	r1, PSP
+ 80000c0:	4281      	cmp	r1, r0
+ 80000c2:	d11e      	bne.n	8000102 <fail_6>
+ 80000c4:	f04f 4020 	mov.w	r0, #2684354560	@ 0xa0000000
+ 80000c8:	f380 8800 	msr	CPSR_f, r0
+ 80000cc:	f3ef 8100 	mrs	r1, CPSR
+ 80000d0:	f04f 4220 	mov.w	r2, #2684354560	@ 0xa0000000
+ 80000d4:	ea01 0102 	and.w	r1, r1, r2
+ 80000d8:	4291      	cmp	r1, r2
+ 80000da:	d115      	bne.n	8000108 <fail_7>
+ 80000dc:	4810      	ldr	r0, [pc, #64]	@ (8000120 <done+0xa>)
+ 80000de:	4911      	ldr	r1, [pc, #68]	@ (8000124 <done+0xe>)
+ 80000e0:	6008      	str	r0, [r1, #0]
+ 80000e2:	e018      	b.n	8000116 <done>
+
+080000e4 <fail_1>:
+ 80000e4:	f04f 0201 	mov.w	r2, #1
+ 80000e8:	e010      	b.n	800010c <fail>
+
+080000ea <fail_2>:
+ 80000ea:	f04f 0202 	mov.w	r2, #2
+ 80000ee:	e00d      	b.n	800010c <fail>
+
+080000f0 <fail_3>:
+ 80000f0:	f04f 0203 	mov.w	r2, #3
+ 80000f4:	e00a      	b.n	800010c <fail>
+
+080000f6 <fail_4>:
+ 80000f6:	f04f 0204 	mov.w	r2, #4
+ 80000fa:	e007      	b.n	800010c <fail>
+
+080000fc <fail_5>:
+ 80000fc:	f04f 0205 	mov.w	r2, #5
+ 8000100:	e004      	b.n	800010c <fail>
+
+08000102 <fail_6>:
+ 8000102:	f04f 0206 	mov.w	r2, #6
+ 8000106:	e001      	b.n	800010c <fail>
+
+08000108 <fail_7>:
+ 8000108:	f04f 0207 	mov.w	r2, #7
+
+0800010c <fail>:
+ 800010c:	4806      	ldr	r0, [pc, #24]	@ (8000128 <done+0x12>)
+ 800010e:	4905      	ldr	r1, [pc, #20]	@ (8000124 <done+0xe>)
+ 8000110:	6008      	str	r0, [r1, #0]
+ 8000112:	4906      	ldr	r1, [pc, #24]	@ (800012c <done+0x16>)
+ 8000114:	600a      	str	r2, [r1, #0]
+
+08000116 <done>:
+ 8000116:	e7fe      	b.n	8000116 <done>
+ 8000118:	20010000 	.word	0x20010000
+ 800011c:	20018000 	.word	0x20018000
+ 8000120:	cafecafe 	.word	0xcafecafe
+ 8000124:	20000100 	.word	0x20000100
+ 8000128:	deaddead 	.word	0xdeaddead
+ 800012c:	20000104 	.word	0x20000104

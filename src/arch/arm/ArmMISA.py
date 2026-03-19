@@ -1,14 +1,5 @@
-# Copyright (c) 2024-2025 Arm Limited
+# Copyright (c) 2026 University of California, Davis and Cornell University
 # All rights reserved.
-#
-# The license below extends only to copyright in the software and shall
-# not be construed as granting a license to any other intellectual
-# property including but not limited to intellectual property relating
-# to a hardware implementation of the functionality of the software
-# licensed hereunder.  You may use the software subject to the license
-# terms below provided that you ensure that this notice is replicated
-# unmodified and in its entirety in all distributions of the software,
-# modified or unmodified, in source code or in binary form.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
@@ -33,40 +24,49 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from m5.objects.ArmISA import ArmISA
+from m5.objects.ArmSystem import ArmRelease
+from m5.objects.BaseISA import BaseISA
 from m5.params import *
+from m5.proxy import *
 
 
-class ArmMISA(ArmISA):
-    """ISA object for ARM M-profile (Cortex-M) processors.
+class ArmMISA(BaseISA):
+    """
+    ISA object for ARM M-profile (Cortex-M) processors.
 
-    Inherits all A/R-profile configuration from ArmISA and adds M-profile
-    specific parameters.  Use this SimObject instead of ArmISA when
-    instantiating any Cortex-M variant (M0, M0+, M3, M4, M7, M23, M33, ...).
+    Inherits from BaseISA (NOT ArmISA) because A-profile ISA
+    initialization crashes on M-profile (resetCPSR dereferences
+    NULL ArmSystem pointer, initializes 750+ A-profile registers).
+
+    M-profile is fundamentally simpler: ~24 misc registers, no CPSR
+    (uses xPSR), no exception levels, no register banking, no SPSR.
+
+    This is the same inheritance pattern as RISC-V ISA
+    (src/arch/riscv/RiscvISA.py inherits from BaseISA).
     """
 
     type = "ArmMISA"
     cxx_class = "gem5::ArmISA::MISA"
-    cxx_header = "arch/arm/isa.hh"
+    cxx_header = "arch/arm/m_isa.hh"
+
+    # System reference — needed to find ArmMSystem for release/extensions.
+    system = Param.System(Parent.any, "System this ISA belongs to")
+
+    # Release for SE mode (when system is not ArmMSystem).
+    # In FS mode, the release comes from ArmMSystem.releaseFS().
+    release_se = Param.ArmRelease(
+        ArmRelease(),
+        "ARM release for SE mode (unused in FS with ArmMSystem)",
+    )
 
     # VTOR alignment granularity.
     #
-    # The ARMv7-M / ARMv8-M architecture specifies that VTOR bits[N-1:0] are
-    # RES0 (read-as-zero, writes ignored), where N is implementation-defined
-    # and depends on the number of exception entries in the vector table.
-    # The architectural minimum is N=7 (128-byte alignment, M0/M0+).
-    # Cortex-M4 and Cortex-M7 require N=9 (512-byte alignment).
-    # Cortex-M33 requires N=7 (128-byte alignment per DDI0553).
-    #
-    # This parameter controls which bits are forced to zero on every write to
-    # MISCREG_M_VTOR.  The mask applied is: ~((1 << vtor_align_bits) - 1).
-    # Example: vtor_align_bits=9 → mask=0xFFFFFE00 (bits[8:0] always zero).
-    #
-    # The VTOR_t BitUnion uses Bitfield<31,0> (full width) so no shift is
-    # needed when reading the register — the stored value IS the byte address
-    # of the vector table.  Alignment is enforced entirely here via MISA.
+    # DDI0403E B3.2.5: VTOR bits[N-1:0] are RES0.
+    # N is implementation-defined:
+    #   7 = 128-byte alignment (M0/M0+/M33)
+    #   9 = 512-byte alignment (M4/M7)
     vtor_align_bits = Param.UInt8(
         9,
-        "Number of low VTOR bits that are RES0 (implementation-defined "
-        "alignment). 7 = 128-byte (M0/M0+/M33), 9 = 512-byte (M4/M7).",
+        "Number of low VTOR bits that are RES0. "
+        "7 = M0/M0+/M33 (128-byte), 9 = M4/M7 (512-byte).",
     )

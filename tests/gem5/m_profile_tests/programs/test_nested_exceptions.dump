@@ -1,0 +1,131 @@
+
+test_nested_exceptions.elf:     file format elf32-littlearm
+
+SYMBOL TABLE:
+08000000 l    d  .isr_vector	00000000 .isr_vector
+08000040 l    d  .text	00000000 .text
+08000114 l    d  .rodata	00000000 .rodata
+20000000 l    d  .data	00000000 .data
+20000000 l    d  .bss	00000000 .bss
+00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
+00000000 l    df *ABS*	00000000 test_nested_exceptions.o
+20000100 l       *ABS*	00000000 TEST_RESULT
+20000104 l       *ABS*	00000000 TEST_SUBTEST
+20000108 l       *ABS*	00000000 COUNTER
+cafecafe l       *ABS*	00000000 PASS_VAL
+deaddead l       *ABS*	00000000 FAIL_VAL
+08000000 l       .isr_vector	00000000 __isr_vector
+080000fe l     F .text	00000000 default_handler
+080000e2 l     F .text	00000000 SVCall_Handler
+080000c0 l       .text	00000000 fail_1
+080000c6 l       .text	00000000 fail_2
+080000cc l       .text	00000000 fail_3
+080000d2 l       .text	00000000 fail_4
+080000e0 l       .text	00000000 done
+080000d6 l       .text	00000000 fail
+08000040 g     F .text	00000000 Reset_Handler
+20020000 g       *ABS*	00000000 _estack
+
+
+
+Disassembly of section .text:
+
+08000040 <Reset_Handler>:
+ 8000040:	4c2f      	ldr	r4, [pc, #188]	@ (8000100 <default_handler+0x2>)
+ 8000042:	f04f 0000 	mov.w	r0, #0
+ 8000046:	6020      	str	r0, [r4, #0]
+ 8000048:	466d      	mov	r5, sp
+ 800004a:	df00      	svc	0
+ 800004c:	466e      	mov	r6, sp
+ 800004e:	42b5      	cmp	r5, r6
+ 8000050:	d136      	bne.n	80000c0 <fail_1>
+ 8000052:	6820      	ldr	r0, [r4, #0]
+ 8000054:	2801      	cmp	r0, #1
+ 8000056:	d133      	bne.n	80000c0 <fail_1>
+ 8000058:	466d      	mov	r5, sp
+ 800005a:	df00      	svc	0
+ 800005c:	df00      	svc	0
+ 800005e:	df00      	svc	0
+ 8000060:	466e      	mov	r6, sp
+ 8000062:	42b5      	cmp	r5, r6
+ 8000064:	d12f      	bne.n	80000c6 <fail_2>
+ 8000066:	6820      	ldr	r0, [r4, #0]
+ 8000068:	2804      	cmp	r0, #4
+ 800006a:	d12c      	bne.n	80000c6 <fail_2>
+ 800006c:	b0a0      	sub	sp, #128	@ 0x80
+ 800006e:	f04f 0042 	mov.w	r0, #66	@ 0x42
+ 8000072:	9000      	str	r0, [sp, #0]
+ 8000074:	466d      	mov	r5, sp
+ 8000076:	df00      	svc	0
+ 8000078:	466e      	mov	r6, sp
+ 800007a:	42b5      	cmp	r5, r6
+ 800007c:	d126      	bne.n	80000cc <fail_3>
+ 800007e:	9800      	ldr	r0, [sp, #0]
+ 8000080:	2842      	cmp	r0, #66	@ 0x42
+ 8000082:	d123      	bne.n	80000cc <fail_3>
+ 8000084:	b020      	add	sp, #128	@ 0x80
+ 8000086:	f04f 3011 	mov.w	r0, #286331153	@ 0x11111111
+ 800008a:	f04f 3122 	mov.w	r1, #572662306	@ 0x22222222
+ 800008e:	f04f 3233 	mov.w	r2, #858993459	@ 0x33333333
+ 8000092:	f04f 3344 	mov.w	r3, #1145324612	@ 0x44444444
+ 8000096:	df00      	svc	0
+ 8000098:	f04f 3411 	mov.w	r4, #286331153	@ 0x11111111
+ 800009c:	42a0      	cmp	r0, r4
+ 800009e:	d118      	bne.n	80000d2 <fail_4>
+ 80000a0:	f04f 3422 	mov.w	r4, #572662306	@ 0x22222222
+ 80000a4:	42a1      	cmp	r1, r4
+ 80000a6:	d114      	bne.n	80000d2 <fail_4>
+ 80000a8:	f04f 3433 	mov.w	r4, #858993459	@ 0x33333333
+ 80000ac:	42a2      	cmp	r2, r4
+ 80000ae:	d110      	bne.n	80000d2 <fail_4>
+ 80000b0:	f04f 3444 	mov.w	r4, #1145324612	@ 0x44444444
+ 80000b4:	42a3      	cmp	r3, r4
+ 80000b6:	d10c      	bne.n	80000d2 <fail_4>
+ 80000b8:	4812      	ldr	r0, [pc, #72]	@ (8000104 <default_handler+0x6>)
+ 80000ba:	4913      	ldr	r1, [pc, #76]	@ (8000108 <default_handler+0xa>)
+ 80000bc:	6008      	str	r0, [r1, #0]
+ 80000be:	e00f      	b.n	80000e0 <done>
+
+080000c0 <fail_1>:
+ 80000c0:	f04f 0201 	mov.w	r2, #1
+ 80000c4:	e007      	b.n	80000d6 <fail>
+
+080000c6 <fail_2>:
+ 80000c6:	f04f 0202 	mov.w	r2, #2
+ 80000ca:	e004      	b.n	80000d6 <fail>
+
+080000cc <fail_3>:
+ 80000cc:	f04f 0203 	mov.w	r2, #3
+ 80000d0:	e001      	b.n	80000d6 <fail>
+
+080000d2 <fail_4>:
+ 80000d2:	f04f 0204 	mov.w	r2, #4
+
+080000d6 <fail>:
+ 80000d6:	480d      	ldr	r0, [pc, #52]	@ (800010c <default_handler+0xe>)
+ 80000d8:	490b      	ldr	r1, [pc, #44]	@ (8000108 <default_handler+0xa>)
+ 80000da:	6008      	str	r0, [r1, #0]
+ 80000dc:	490c      	ldr	r1, [pc, #48]	@ (8000110 <default_handler+0x12>)
+ 80000de:	600a      	str	r2, [r1, #0]
+
+080000e0 <done>:
+ 80000e0:	e7fe      	b.n	80000e0 <done>
+
+080000e2 <SVCall_Handler>:
+ 80000e2:	4807      	ldr	r0, [pc, #28]	@ (8000100 <default_handler+0x2>)
+ 80000e4:	6801      	ldr	r1, [r0, #0]
+ 80000e6:	f101 0101 	add.w	r1, r1, #1
+ 80000ea:	6001      	str	r1, [r0, #0]
+ 80000ec:	f04f 00de 	mov.w	r0, #222	@ 0xde
+ 80000f0:	f04f 01ad 	mov.w	r1, #173	@ 0xad
+ 80000f4:	f04f 02be 	mov.w	r2, #190	@ 0xbe
+ 80000f8:	f04f 03ef 	mov.w	r3, #239	@ 0xef
+ 80000fc:	4770      	bx	lr
+
+080000fe <default_handler>:
+ 80000fe:	e7fe      	b.n	80000fe <default_handler>
+ 8000100:	20000108 	.word	0x20000108
+ 8000104:	cafecafe 	.word	0xcafecafe
+ 8000108:	20000100 	.word	0x20000100
+ 800010c:	deaddead 	.word	0xdeaddead
+ 8000110:	20000104 	.word	0x20000104

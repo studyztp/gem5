@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 The gem5 Contributors
+ * Copyright (c) 2026 University of California, Davis and Cornell University
  * All rights reserved
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,6 +28,7 @@
 
 #include "arch/arm/m_mmu.hh"
 
+#include "arch/arm/m_faults.hh"
 #include "arch/arm/page_size.hh"
 #include "sim/faults.hh"
 
@@ -45,9 +46,38 @@ Fault
 MTLB::translateAtomic(const RequestPtr &req, ThreadContext *tc,
                       BaseMMU::Mode mode)
 {
+    Addr vaddr = req->getVaddr();
+
+    // EXC_RETURN detection for POP {PC} / LDM {PC}.
+    //
+    // When an LDM/POP micro-op loads an EXC_RETURN value (0xFFFFFFF_)
+    // into PC, the CPU tries to fetch the next instruction from that
+    // address.  On real Cortex-M hardware, the bus matrix detects this
+    // address range and triggers exception return instead of a memory
+    // access.  In gem5, there's no memory at 0xFFFFFFF_ so the fetch
+    // would panic.
+    //
+    // We detect this in the MMU translate path (before the fetch
+    // reaches memory) and return an ArmMFault that performs the
+    // exception return.  The fault's invoke() calls
+    // mProfileExcReturn() which pops the exception frame.
+    //
+    // DDI0403E B1.5.8: Exception return occurs when PC is loaded
+    // with a value where bits[31:28] = 0xF (EXC_RETURN prefix).
+    // The exact value encodes which SP and mode to restore to.
+    if (mode == BaseMMU::Execute &&
+        (vaddr & 0xFFFFFF00) == 0xFFFFFF00) {
+        // Trigger exception return via mProfileExcReturn.
+        mProfileExcReturn(tc, (uint32_t)vaddr);
+        // Return a fault to prevent the fetch from proceeding.
+        // Use a no-op fault that doesn't generate an exception.
+        // The PC has already been updated by mProfileExcReturn.
+        return std::make_shared<ReExec>();
+    }
+
     // M-profile: VA == PA, no translation.
     // TODO: Add MPU permission checks here when the MPU is modelled.
-    req->setPaddr(req->getVaddr());
+    req->setPaddr(vaddr);
     return NoFault;
 }
 

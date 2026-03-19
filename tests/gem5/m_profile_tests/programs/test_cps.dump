@@ -1,0 +1,107 @@
+
+test_cps.elf:     file format elf32-littlearm
+
+SYMBOL TABLE:
+08000000 l    d  .isr_vector	00000000 .isr_vector
+08000040 l    d  .text	00000000 .text
+080000e0 l    d  .rodata	00000000 .rodata
+20000000 l    d  .data	00000000 .data
+20000000 l    d  .bss	00000000 .bss
+00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
+00000000 l    df *ABS*	00000000 test_cps.o
+20000100 l       *ABS*	00000000 TEST_RESULT
+20000104 l       *ABS*	00000000 TEST_SUBTEST
+cafecafe l       *ABS*	00000000 PASS_VAL
+deaddead l       *ABS*	00000000 FAIL_VAL
+08000000 l       .isr_vector	00000000 __isr_vector
+080000a0 l       .text	00000000 fail_1
+080000a6 l       .text	00000000 fail_2
+080000ac l       .text	00000000 fail_3
+080000b2 l       .text	00000000 fail_4
+080000b8 l       .text	00000000 fail_5
+080000be l       .text	00000000 fail_6
+080000cc l       .text	00000000 done
+080000c2 l       .text	00000000 fail
+08000040 g     F .text	00000000 Reset_Handler
+20020000 g       *ABS*	00000000 _estack
+
+
+
+Disassembly of section .text:
+
+08000040 <Reset_Handler>:
+ 8000040:	f04f 0000 	mov.w	r0, #0
+ 8000044:	f380 8810 	msr	PRIMASK, r0
+ 8000048:	f380 8813 	msr	FAULTMASK, r0
+ 800004c:	b672      	cpsid	i
+ 800004e:	f3ef 8010 	mrs	r0, PRIMASK
+ 8000052:	2801      	cmp	r0, #1
+ 8000054:	d124      	bne.n	80000a0 <fail_1>
+ 8000056:	b662      	cpsie	i
+ 8000058:	f3ef 8010 	mrs	r0, PRIMASK
+ 800005c:	2800      	cmp	r0, #0
+ 800005e:	d122      	bne.n	80000a6 <fail_2>
+ 8000060:	b671      	cpsid	f
+ 8000062:	f3ef 8013 	mrs	r0, FAULTMASK
+ 8000066:	2801      	cmp	r0, #1
+ 8000068:	d120      	bne.n	80000ac <fail_3>
+ 800006a:	b661      	cpsie	f
+ 800006c:	f3ef 8013 	mrs	r0, FAULTMASK
+ 8000070:	2800      	cmp	r0, #0
+ 8000072:	d11e      	bne.n	80000b2 <fail_4>
+ 8000074:	b673      	cpsid	if
+ 8000076:	f3ef 8010 	mrs	r0, PRIMASK
+ 800007a:	2801      	cmp	r0, #1
+ 800007c:	d11c      	bne.n	80000b8 <fail_5>
+ 800007e:	f3ef 8013 	mrs	r0, FAULTMASK
+ 8000082:	2801      	cmp	r0, #1
+ 8000084:	d118      	bne.n	80000b8 <fail_5>
+ 8000086:	b663      	cpsie	if
+ 8000088:	f3ef 8010 	mrs	r0, PRIMASK
+ 800008c:	2800      	cmp	r0, #0
+ 800008e:	d116      	bne.n	80000be <fail_6>
+ 8000090:	f3ef 8013 	mrs	r0, FAULTMASK
+ 8000094:	2800      	cmp	r0, #0
+ 8000096:	d112      	bne.n	80000be <fail_6>
+ 8000098:	480d      	ldr	r0, [pc, #52]	@ (80000d0 <done+0x4>)
+ 800009a:	490e      	ldr	r1, [pc, #56]	@ (80000d4 <done+0x8>)
+ 800009c:	6008      	str	r0, [r1, #0]
+ 800009e:	e015      	b.n	80000cc <done>
+
+080000a0 <fail_1>:
+ 80000a0:	f04f 0201 	mov.w	r2, #1
+ 80000a4:	e00d      	b.n	80000c2 <fail>
+
+080000a6 <fail_2>:
+ 80000a6:	f04f 0202 	mov.w	r2, #2
+ 80000aa:	e00a      	b.n	80000c2 <fail>
+
+080000ac <fail_3>:
+ 80000ac:	f04f 0203 	mov.w	r2, #3
+ 80000b0:	e007      	b.n	80000c2 <fail>
+
+080000b2 <fail_4>:
+ 80000b2:	f04f 0204 	mov.w	r2, #4
+ 80000b6:	e004      	b.n	80000c2 <fail>
+
+080000b8 <fail_5>:
+ 80000b8:	f04f 0205 	mov.w	r2, #5
+ 80000bc:	e001      	b.n	80000c2 <fail>
+
+080000be <fail_6>:
+ 80000be:	f04f 0206 	mov.w	r2, #6
+
+080000c2 <fail>:
+ 80000c2:	4805      	ldr	r0, [pc, #20]	@ (80000d8 <done+0xc>)
+ 80000c4:	4903      	ldr	r1, [pc, #12]	@ (80000d4 <done+0x8>)
+ 80000c6:	6008      	str	r0, [r1, #0]
+ 80000c8:	4904      	ldr	r1, [pc, #16]	@ (80000dc <done+0x10>)
+ 80000ca:	600a      	str	r2, [r1, #0]
+
+080000cc <done>:
+ 80000cc:	e7fe      	b.n	80000cc <done>
+ 80000ce:	0000      	.short	0x0000
+ 80000d0:	cafecafe 	.word	0xcafecafe
+ 80000d4:	20000100 	.word	0x20000100
+ 80000d8:	deaddead 	.word	0xdeaddead
+ 80000dc:	20000104 	.word	0x20000104

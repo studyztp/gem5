@@ -1,0 +1,123 @@
+
+test_sp_sync.elf:     file format elf32-littlearm
+
+SYMBOL TABLE:
+08000000 l    d  .isr_vector	00000000 .isr_vector
+08000040 l    d  .text	00000000 .text
+080000ec l    d  .rodata	00000000 .rodata
+20000000 l    d  .data	00000000 .data
+20000000 l    d  .bss	00000000 .bss
+00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
+00000000 l    df *ABS*	00000000 test_sp_sync.o
+20000100 l       *ABS*	00000000 TEST_RESULT
+20000104 l       *ABS*	00000000 TEST_SUBTEST
+cafecafe l       *ABS*	00000000 PASS_VAL
+deaddead l       *ABS*	00000000 FAIL_VAL
+08000000 l       .isr_vector	00000000 __isr_vector
+080000d2 l     F .text	00000000 default_handler
+080000c2 l     F .text	00000000 SVCall_Handler
+080000a0 l       .text	00000000 fail_1
+080000a6 l       .text	00000000 fail_2
+08000084 l       .text	00000000 fail_3_restore
+080000ac l       .text	00000000 fail_3
+0800008a l       .text	00000000 test_3_ok
+080000b2 l       .text	00000000 fail_4
+080000c0 l       .text	00000000 done
+080000b6 l       .text	00000000 fail
+08000040 g     F .text	00000000 Reset_Handler
+20020000 g       *ABS*	00000000 _estack
+
+
+
+Disassembly of section .text:
+
+08000040 <Reset_Handler>:
+ 8000040:	466c      	mov	r4, sp
+ 8000042:	b090      	sub	sp, #64	@ 0x40
+ 8000044:	466d      	mov	r5, sp
+ 8000046:	4823      	ldr	r0, [pc, #140]	@ (80000d4 <default_handler+0x2>)
+ 8000048:	9000      	str	r0, [sp, #0]
+ 800004a:	df00      	svc	0
+ 800004c:	466e      	mov	r6, sp
+ 800004e:	42ae      	cmp	r6, r5
+ 8000050:	d126      	bne.n	80000a0 <fail_1>
+ 8000052:	9800      	ldr	r0, [sp, #0]
+ 8000054:	491f      	ldr	r1, [pc, #124]	@ (80000d4 <default_handler+0x2>)
+ 8000056:	4288      	cmp	r0, r1
+ 8000058:	d122      	bne.n	80000a0 <fail_1>
+ 800005a:	b010      	add	sp, #64	@ 0x40
+ 800005c:	466c      	mov	r4, sp
+ 800005e:	df01      	svc	1
+ 8000060:	466d      	mov	r5, sp
+ 8000062:	42a5      	cmp	r5, r4
+ 8000064:	d11f      	bne.n	80000a6 <fail_2>
+ 8000066:	f3ef 8008 	mrs	r0, MSP
+ 800006a:	4604      	mov	r4, r0
+ 800006c:	491a      	ldr	r1, [pc, #104]	@ (80000d8 <default_handler+0x6>)
+ 800006e:	f381 8808 	msr	MSP, r1
+ 8000072:	466a      	mov	r2, sp
+ 8000074:	428a      	cmp	r2, r1
+ 8000076:	d105      	bne.n	8000084 <fail_3_restore>
+ 8000078:	f384 8808 	msr	MSP, r4
+ 800007c:	4668      	mov	r0, sp
+ 800007e:	42a0      	cmp	r0, r4
+ 8000080:	d114      	bne.n	80000ac <fail_3>
+ 8000082:	e002      	b.n	800008a <test_3_ok>
+
+08000084 <fail_3_restore>:
+ 8000084:	f384 8808 	msr	MSP, r4
+ 8000088:	e010      	b.n	80000ac <fail_3>
+
+0800008a <test_3_ok>:
+ 800008a:	b088      	sub	sp, #32
+ 800008c:	f3ef 8008 	mrs	r0, MSP
+ 8000090:	4669      	mov	r1, sp
+ 8000092:	4288      	cmp	r0, r1
+ 8000094:	d10d      	bne.n	80000b2 <fail_4>
+ 8000096:	b008      	add	sp, #32
+ 8000098:	4810      	ldr	r0, [pc, #64]	@ (80000dc <default_handler+0xa>)
+ 800009a:	4911      	ldr	r1, [pc, #68]	@ (80000e0 <default_handler+0xe>)
+ 800009c:	6008      	str	r0, [r1, #0]
+ 800009e:	e00f      	b.n	80000c0 <done>
+
+080000a0 <fail_1>:
+ 80000a0:	f04f 0201 	mov.w	r2, #1
+ 80000a4:	e007      	b.n	80000b6 <fail>
+
+080000a6 <fail_2>:
+ 80000a6:	f04f 0202 	mov.w	r2, #2
+ 80000aa:	e004      	b.n	80000b6 <fail>
+
+080000ac <fail_3>:
+ 80000ac:	f04f 0203 	mov.w	r2, #3
+ 80000b0:	e001      	b.n	80000b6 <fail>
+
+080000b2 <fail_4>:
+ 80000b2:	f04f 0204 	mov.w	r2, #4
+
+080000b6 <fail>:
+ 80000b6:	480b      	ldr	r0, [pc, #44]	@ (80000e4 <default_handler+0x12>)
+ 80000b8:	4909      	ldr	r1, [pc, #36]	@ (80000e0 <default_handler+0xe>)
+ 80000ba:	6008      	str	r0, [r1, #0]
+ 80000bc:	490a      	ldr	r1, [pc, #40]	@ (80000e8 <default_handler+0x16>)
+ 80000be:	600a      	str	r2, [r1, #0]
+
+080000c0 <done>:
+ 80000c0:	e7fe      	b.n	80000c0 <done>
+
+080000c2 <SVCall_Handler>:
+ 80000c2:	b50f      	push	{r0, r1, r2, r3, lr}
+ 80000c4:	4808      	ldr	r0, [pc, #32]	@ (80000e8 <default_handler+0x16>)
+ 80000c6:	f04f 0199 	mov.w	r1, #153	@ 0x99
+ 80000ca:	6001      	str	r1, [r0, #0]
+ 80000cc:	e8bd 400f 	ldmia.w	sp!, {r0, r1, r2, r3, lr}
+ 80000d0:	4770      	bx	lr
+
+080000d2 <default_handler>:
+ 80000d2:	e7fe      	b.n	80000d2 <default_handler>
+ 80000d4:	aa55aa55 	.word	0xaa55aa55
+ 80000d8:	20018000 	.word	0x20018000
+ 80000dc:	cafecafe 	.word	0xcafecafe
+ 80000e0:	20000100 	.word	0x20000100
+ 80000e4:	deaddead 	.word	0xdeaddead
+ 80000e8:	20000104 	.word	0x20000104

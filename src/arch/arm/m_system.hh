@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 The gem5 Contributors
+ * Copyright (c) 2026 University of California, Davis and Cornell University
  * All rights reserved
  *
  * Redistribution and use in source and binary forms, with or without
@@ -48,11 +48,15 @@ namespace gem5
 {
 
 class ArmRelease;
+class MProfileSCS;
 
 class ArmMSystem : public System
 {
   protected:
     const ArmRelease *release;
+
+    /** SCS/NVIC device pointer, set by MProfileSCS::init(). */
+    MProfileSCS *_scs = nullptr;
 
   public:
     PARAMS(ArmMSystem);
@@ -67,6 +71,12 @@ class ArmMSystem : public System
 
     /** M-profile physical address mask (32-bit). */
     Addr physAddrMask() const { return mask(32); }
+
+    /** Called by MProfileSCS::init() to register the SCS device. */
+    void setSCS(MProfileSCS *scs) { _scs = scs; }
+
+    /** Used by MProfileInterrupts to discover the SCS device. */
+    MProfileSCS *getSCS() const { return _scs; }
 };
 
 } // namespace gem5

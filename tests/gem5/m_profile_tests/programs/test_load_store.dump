@@ -1,0 +1,148 @@
+
+test_load_store.elf:     file format elf32-littlearm
+
+SYMBOL TABLE:
+08000000 l    d  .isr_vector	00000000 .isr_vector
+08000040 l    d  .text	00000000 .text
+0800014c l    d  .rodata	00000000 .rodata
+20000000 l    d  .data	00000000 .data
+20000000 l    d  .bss	00000000 .bss
+00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
+00000000 l    df *ABS*	00000000 test_load_store.o
+20000100 l       *ABS*	00000000 TEST_RESULT
+20000104 l       *ABS*	00000000 TEST_SUBTEST
+20000200 l       *ABS*	00000000 SCRATCH
+cafecafe l       *ABS*	00000000 PASS_VAL
+deaddead l       *ABS*	00000000 FAIL_VAL
+08000000 l       .isr_vector	00000000 __isr_vector
+080000f6 l       .text	00000000 fail_1
+080000fc l       .text	00000000 fail_2
+08000102 l       .text	00000000 fail_3
+08000108 l       .text	00000000 fail_4
+0800010e l       .text	00000000 fail_5
+08000114 l       .text	00000000 fail_6
+0800011a l       .text	00000000 fail_7
+08000128 l       .text	00000000 done
+0800011e l       .text	00000000 fail
+08000040 g     F .text	00000000 Reset_Handler
+20020000 g       *ABS*	00000000 _estack
+
+
+
+Disassembly of section .text:
+
+08000040 <Reset_Handler>:
+ 8000040:	4e3a      	ldr	r6, [pc, #232]	@ (800012c <done+0x4>)
+ 8000042:	483b      	ldr	r0, [pc, #236]	@ (8000130 <done+0x8>)
+ 8000044:	6030      	str	r0, [r6, #0]
+ 8000046:	6831      	ldr	r1, [r6, #0]
+ 8000048:	4288      	cmp	r0, r1
+ 800004a:	d154      	bne.n	80000f6 <fail_1>
+ 800004c:	f64a 30cd 	movw	r0, #43981	@ 0xabcd
+ 8000050:	80b0      	strh	r0, [r6, #4]
+ 8000052:	88b1      	ldrh	r1, [r6, #4]
+ 8000054:	4288      	cmp	r0, r1
+ 8000056:	d151      	bne.n	80000fc <fail_2>
+ 8000058:	f04f 00ef 	mov.w	r0, #239	@ 0xef
+ 800005c:	7230      	strb	r0, [r6, #8]
+ 800005e:	7a31      	ldrb	r1, [r6, #8]
+ 8000060:	4288      	cmp	r0, r1
+ 8000062:	d14e      	bne.n	8000102 <fail_3>
+ 8000064:	f04f 3011 	mov.w	r0, #286331153	@ 0x11111111
+ 8000068:	f04f 3122 	mov.w	r1, #572662306	@ 0x22222222
+ 800006c:	e9c6 0104 	strd	r0, r1, [r6, #16]
+ 8000070:	e9d6 2304 	ldrd	r2, r3, [r6, #16]
+ 8000074:	4290      	cmp	r0, r2
+ 8000076:	d147      	bne.n	8000108 <fail_4>
+ 8000078:	4299      	cmp	r1, r3
+ 800007a:	d145      	bne.n	8000108 <fail_4>
+ 800007c:	f04f 30aa 	mov.w	r0, #2863311530	@ 0xaaaaaaaa
+ 8000080:	f04f 31bb 	mov.w	r1, #3149642683	@ 0xbbbbbbbb
+ 8000084:	f04f 32cc 	mov.w	r2, #3435973836	@ 0xcccccccc
+ 8000088:	f106 0420 	add.w	r4, r6, #32
+ 800008c:	c407      	stmia	r4!, {r0, r1, r2}
+ 800008e:	f1a4 040c 	sub.w	r4, r4, #12
+ 8000092:	f04f 0000 	mov.w	r0, #0
+ 8000096:	f04f 0100 	mov.w	r1, #0
+ 800009a:	f04f 0200 	mov.w	r2, #0
+ 800009e:	e894 0007 	ldmia.w	r4, {r0, r1, r2}
+ 80000a2:	f04f 33aa 	mov.w	r3, #2863311530	@ 0xaaaaaaaa
+ 80000a6:	4298      	cmp	r0, r3
+ 80000a8:	d131      	bne.n	800010e <fail_5>
+ 80000aa:	f04f 33bb 	mov.w	r3, #3149642683	@ 0xbbbbbbbb
+ 80000ae:	4299      	cmp	r1, r3
+ 80000b0:	d12d      	bne.n	800010e <fail_5>
+ 80000b2:	f04f 33cc 	mov.w	r3, #3435973836	@ 0xcccccccc
+ 80000b6:	429a      	cmp	r2, r3
+ 80000b8:	d129      	bne.n	800010e <fail_5>
+ 80000ba:	481e      	ldr	r0, [pc, #120]	@ (8000134 <done+0xc>)
+ 80000bc:	b401      	push	{r0}
+ 80000be:	f04f 0000 	mov.w	r0, #0
+ 80000c2:	bc01      	pop	{r0}
+ 80000c4:	491b      	ldr	r1, [pc, #108]	@ (8000134 <done+0xc>)
+ 80000c6:	4288      	cmp	r0, r1
+ 80000c8:	d124      	bne.n	8000114 <fail_6>
+ 80000ca:	481b      	ldr	r0, [pc, #108]	@ (8000138 <done+0x10>)
+ 80000cc:	6330      	str	r0, [r6, #48]	@ 0x30
+ 80000ce:	f896 1030 	ldrb.w	r1, [r6, #48]	@ 0x30
+ 80000d2:	2901      	cmp	r1, #1
+ 80000d4:	d121      	bne.n	800011a <fail_7>
+ 80000d6:	f896 1031 	ldrb.w	r1, [r6, #49]	@ 0x31
+ 80000da:	2902      	cmp	r1, #2
+ 80000dc:	d11d      	bne.n	800011a <fail_7>
+ 80000de:	f896 1032 	ldrb.w	r1, [r6, #50]	@ 0x32
+ 80000e2:	2903      	cmp	r1, #3
+ 80000e4:	d119      	bne.n	800011a <fail_7>
+ 80000e6:	f896 1033 	ldrb.w	r1, [r6, #51]	@ 0x33
+ 80000ea:	2904      	cmp	r1, #4
+ 80000ec:	d115      	bne.n	800011a <fail_7>
+ 80000ee:	4813      	ldr	r0, [pc, #76]	@ (800013c <done+0x14>)
+ 80000f0:	4913      	ldr	r1, [pc, #76]	@ (8000140 <done+0x18>)
+ 80000f2:	6008      	str	r0, [r1, #0]
+ 80000f4:	e018      	b.n	8000128 <done>
+
+080000f6 <fail_1>:
+ 80000f6:	f04f 0201 	mov.w	r2, #1
+ 80000fa:	e010      	b.n	800011e <fail>
+
+080000fc <fail_2>:
+ 80000fc:	f04f 0202 	mov.w	r2, #2
+ 8000100:	e00d      	b.n	800011e <fail>
+
+08000102 <fail_3>:
+ 8000102:	f04f 0203 	mov.w	r2, #3
+ 8000106:	e00a      	b.n	800011e <fail>
+
+08000108 <fail_4>:
+ 8000108:	f04f 0204 	mov.w	r2, #4
+ 800010c:	e007      	b.n	800011e <fail>
+
+0800010e <fail_5>:
+ 800010e:	f04f 0205 	mov.w	r2, #5
+ 8000112:	e004      	b.n	800011e <fail>
+
+08000114 <fail_6>:
+ 8000114:	f04f 0206 	mov.w	r2, #6
+ 8000118:	e001      	b.n	800011e <fail>
+
+0800011a <fail_7>:
+ 800011a:	f04f 0207 	mov.w	r2, #7
+
+0800011e <fail>:
+ 800011e:	4809      	ldr	r0, [pc, #36]	@ (8000144 <done+0x1c>)
+ 8000120:	4907      	ldr	r1, [pc, #28]	@ (8000140 <done+0x18>)
+ 8000122:	6008      	str	r0, [r1, #0]
+ 8000124:	4908      	ldr	r1, [pc, #32]	@ (8000148 <done+0x20>)
+ 8000126:	600a      	str	r2, [r1, #0]
+
+08000128 <done>:
+ 8000128:	e7fe      	b.n	8000128 <done>
+ 800012a:	0000      	.short	0x0000
+ 800012c:	20000200 	.word	0x20000200
+ 8000130:	12345678 	.word	0x12345678
+ 8000134:	deadbeef 	.word	0xdeadbeef
+ 8000138:	04030201 	.word	0x04030201
+ 800013c:	cafecafe 	.word	0xcafecafe
+ 8000140:	20000100 	.word	0x20000100
+ 8000144:	deaddead 	.word	0xdeaddead
+ 8000148:	20000104 	.word	0x20000104

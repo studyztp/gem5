@@ -104,6 +104,16 @@ SimObject(
     tags=['arm isa']
 )
 SimObject(
+    'MProfilePlatform.py',
+    sim_objects=['ArmMPlatform'],
+    tags=['arm isa'],
+)
+SimObject(
+    'MProfileSCS.py',
+    sim_objects=['MProfileSCS'],
+    tags=['arm isa'],
+)
+SimObject(
     'VirtIOMMIO.py',
     sim_objects=['MmioVirtIO'],
     tags=['arm isa']
@@ -115,6 +125,8 @@ if env['CONF']['USE_ARM_FASTMODEL']:
         tags=['arm isa']
     )
 
+Source('m_profile_platform.cc', tags=['arm isa'])
+Source('m_profile_scs.cc', tags=['arm isa'])
 Source('a9scu.cc', tags=['arm isa'])
 Source('amba_device.cc', tags=['arm isa'])
 Source('amba_fake.cc', tags=['arm isa'])
@@ -159,6 +171,7 @@ Source('ufs_device.cc', tags=['arm isa'])
 Source('energy_ctrl.cc', tags=['arm isa'])
 Source('fvp_base_pwr_ctrl.cc', tags=['arm isa'])
 
+DebugFlag('MProfileSCS', tags=['arm isa'])
 DebugFlag('AMBA', tags=['arm isa'])
 DebugFlag('FlashDevice', tags=['arm isa'])
 DebugFlag('HDLcd', tags=['arm isa'])

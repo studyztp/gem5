@@ -139,6 +139,22 @@ class ArmExtension(ScopedEnum):
         "TME",
         "FEAT_MPAM",
         "M_PROFILE",
+        # M-profile architecture versions (cumulative: ARMv7E-M implies
+        # ARMv7-M implies M_PROFILE).  Used by the decoder to gate
+        # instructions per variant.
+        # References:
+        #   ARMv6-M: DDI0419 (ARMv6-M Architecture Reference Manual)
+        #   ARMv7-M: DDI0403E (ARMv7-M Architecture Reference Manual)
+        #   ARMv7E-M: DDI0403E appendix (DSP extension to ARMv7-M)
+        "M_PROFILE_ARMV6M",  # Cortex-M0, M0+, M1: Thumb subset only
+        "M_PROFILE_ARMV7M",  # Cortex-M3: full Thumb + Thumb-2
+        "M_PROFILE_ARMV7EM",  # Cortex-M4, M7: ARMv7-M + DSP base
+        # M-profile optional features (orthogonal to arch version).
+        # A chip may have any combination of these independently of
+        # its architecture version (e.g., M33 can have DSP without FPU).
+        "M_PROFILE_DSP",  # DSP/SIMD packed arithmetic instructions
+        "M_PROFILE_FPU_SP",  # Single-precision FPU (VFPv4-SP / VFPv5)
+        "M_PROFILE_FPU_DP",  # Double-precision FPU (Cortex-M7 only)
     ]
 
 

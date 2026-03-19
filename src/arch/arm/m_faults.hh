@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 The gem5 Contributors
+ * Copyright (c) 2026 University of California, Davis and Cornell University
  * All rights reserved
  *
  * Redistribution and use in source and binary forms, with or without
@@ -184,8 +184,16 @@ class ArmMFault : public FaultBase
  */
 class MProfileReset : public ArmMFault
 {
+  protected:
+    /** Vector table address to use after clearArchRegs().
+     *  On real hardware VTOR resets to 0 (boot alias maps flash there).
+     *  In gem5, the workload sets this to the ELF's flash base address
+     *  since we may not have a boot alias at address 0. */
+    uint32_t vtorAddr;
+
   public:
-    MProfileReset() : ArmMFault(MPEXC_RESET) {}
+    MProfileReset(uint32_t _vtor = 0) : ArmMFault(MPEXC_RESET),
+        vtorAddr(_vtor) {}
     void invoke(ThreadContext *tc,
                 const StaticInstPtr &inst = nullStaticInstPtr) override;
 };
