@@ -1,0 +1,176 @@
+
+test_ipr_byte_access.elf:     file format elf32-littlearm
+
+SYMBOL TABLE:
+08000000 l    d  .isr_vector	00000000 .isr_vector
+08000040 l    d  .text	00000000 .text
+08000144 l    d  .rodata	00000000 .rodata
+20000000 l    d  .data	00000000 .data
+20000000 l    d  .bss	00000000 .bss
+00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
+00000000 l    df *ABS*	00000000 test_ipr_byte_access.o
+20000100 l       *ABS*	00000000 TEST_RESULT
+20000104 l       *ABS*	00000000 TEST_SUBTEST
+20000108 l       *ABS*	00000000 TEST_DATA
+cafecafe l       *ABS*	00000000 PASS_VAL
+deaddead l       *ABS*	00000000 FAIL_VAL
+e000e400 l       *ABS*	00000000 NVIC_IPR_BASE
+08000000 l       .isr_vector	00000000 __isr_vector
+080000c0 l       .text	00000000 fail_1
+080000c6 l       .text	00000000 fail_2
+080000cc l       .text	00000000 fail_3
+080000d2 l       .text	00000000 fail_4
+080000d8 l       .text	00000000 fail_5
+080000de l       .text	00000000 fail_6
+080000e4 l       .text	00000000 fail_7
+080000ea l       .text	00000000 fail_8
+080000f0 l       .text	00000000 fail_9
+080000f6 l       .text	00000000 fail_10
+080000fc l       .text	00000000 fail_11
+08000102 l       .text	00000000 fail_12
+08000108 l       .text	00000000 fail_13
+0800010e l       .text	00000000 fail_14
+08000118 l       .text	00000000 test_exit
+08000112 l       .text	00000000 fail_common
+08000040 g     F .text	00000000 Reset_Handler
+20020000 g       *ABS*	00000000 _estack
+
+
+
+Disassembly of section .text:
+
+08000040 <Reset_Handler>:
+ 8000040:	4e37      	ldr	r6, [pc, #220]	@ (8000120 <test_exit+0x8>)
+ 8000042:	4f38      	ldr	r7, [pc, #224]	@ (8000124 <test_exit+0xc>)
+ 8000044:	4c38      	ldr	r4, [pc, #224]	@ (8000128 <test_exit+0x10>)
+ 8000046:	f04f 0000 	mov.w	r0, #0
+ 800004a:	6020      	str	r0, [r4, #0]
+ 800004c:	6821      	ldr	r1, [r4, #0]
+ 800004e:	2900      	cmp	r1, #0
+ 8000050:	d136      	bne.n	80000c0 <fail_1>
+ 8000052:	f04f 0080 	mov.w	r0, #128	@ 0x80
+ 8000056:	7060      	strb	r0, [r4, #1]
+ 8000058:	6821      	ldr	r1, [r4, #0]
+ 800005a:	4d34      	ldr	r5, [pc, #208]	@ (800012c <test_exit+0x14>)
+ 800005c:	6029      	str	r1, [r5, #0]
+ 800005e:	f44f 4200 	mov.w	r2, #32768	@ 0x8000
+ 8000062:	4291      	cmp	r1, r2
+ 8000064:	d12f      	bne.n	80000c6 <fail_2>
+ 8000066:	7820      	ldrb	r0, [r4, #0]
+ 8000068:	2800      	cmp	r0, #0
+ 800006a:	d12f      	bne.n	80000cc <fail_3>
+ 800006c:	78a0      	ldrb	r0, [r4, #2]
+ 800006e:	2800      	cmp	r0, #0
+ 8000070:	d12f      	bne.n	80000d2 <fail_4>
+ 8000072:	78e0      	ldrb	r0, [r4, #3]
+ 8000074:	2800      	cmp	r0, #0
+ 8000076:	d12f      	bne.n	80000d8 <fail_5>
+ 8000078:	f04f 0040 	mov.w	r0, #64	@ 0x40
+ 800007c:	70e0      	strb	r0, [r4, #3]
+ 800007e:	6821      	ldr	r1, [r4, #0]
+ 8000080:	4a2b      	ldr	r2, [pc, #172]	@ (8000130 <test_exit+0x18>)
+ 8000082:	4291      	cmp	r1, r2
+ 8000084:	d12b      	bne.n	80000de <fail_6>
+ 8000086:	7820      	ldrb	r0, [r4, #0]
+ 8000088:	2800      	cmp	r0, #0
+ 800008a:	d12b      	bne.n	80000e4 <fail_7>
+ 800008c:	7860      	ldrb	r0, [r4, #1]
+ 800008e:	2880      	cmp	r0, #128	@ 0x80
+ 8000090:	d12b      	bne.n	80000ea <fail_8>
+ 8000092:	78a0      	ldrb	r0, [r4, #2]
+ 8000094:	2800      	cmp	r0, #0
+ 8000096:	d12b      	bne.n	80000f0 <fail_9>
+ 8000098:	78e0      	ldrb	r0, [r4, #3]
+ 800009a:	2840      	cmp	r0, #64	@ 0x40
+ 800009c:	d12b      	bne.n	80000f6 <fail_10>
+ 800009e:	4825      	ldr	r0, [pc, #148]	@ (8000134 <test_exit+0x1c>)
+ 80000a0:	6020      	str	r0, [r4, #0]
+ 80000a2:	7820      	ldrb	r0, [r4, #0]
+ 80000a4:	2880      	cmp	r0, #128	@ 0x80
+ 80000a6:	d129      	bne.n	80000fc <fail_11>
+ 80000a8:	7860      	ldrb	r0, [r4, #1]
+ 80000aa:	2860      	cmp	r0, #96	@ 0x60
+ 80000ac:	d129      	bne.n	8000102 <fail_12>
+ 80000ae:	78a0      	ldrb	r0, [r4, #2]
+ 80000b0:	2840      	cmp	r0, #64	@ 0x40
+ 80000b2:	d129      	bne.n	8000108 <fail_13>
+ 80000b4:	78e0      	ldrb	r0, [r4, #3]
+ 80000b6:	2820      	cmp	r0, #32
+ 80000b8:	d129      	bne.n	800010e <fail_14>
+ 80000ba:	481f      	ldr	r0, [pc, #124]	@ (8000138 <test_exit+0x20>)
+ 80000bc:	6030      	str	r0, [r6, #0]
+ 80000be:	e02b      	b.n	8000118 <test_exit>
+
+080000c0 <fail_1>:
+ 80000c0:	f04f 0001 	mov.w	r0, #1
+ 80000c4:	e025      	b.n	8000112 <fail_common>
+
+080000c6 <fail_2>:
+ 80000c6:	f04f 0002 	mov.w	r0, #2
+ 80000ca:	e022      	b.n	8000112 <fail_common>
+
+080000cc <fail_3>:
+ 80000cc:	f04f 0003 	mov.w	r0, #3
+ 80000d0:	e01f      	b.n	8000112 <fail_common>
+
+080000d2 <fail_4>:
+ 80000d2:	f04f 0004 	mov.w	r0, #4
+ 80000d6:	e01c      	b.n	8000112 <fail_common>
+
+080000d8 <fail_5>:
+ 80000d8:	f04f 0005 	mov.w	r0, #5
+ 80000dc:	e019      	b.n	8000112 <fail_common>
+
+080000de <fail_6>:
+ 80000de:	f04f 0006 	mov.w	r0, #6
+ 80000e2:	e016      	b.n	8000112 <fail_common>
+
+080000e4 <fail_7>:
+ 80000e4:	f04f 0007 	mov.w	r0, #7
+ 80000e8:	e013      	b.n	8000112 <fail_common>
+
+080000ea <fail_8>:
+ 80000ea:	f04f 0008 	mov.w	r0, #8
+ 80000ee:	e010      	b.n	8000112 <fail_common>
+
+080000f0 <fail_9>:
+ 80000f0:	f04f 0009 	mov.w	r0, #9
+ 80000f4:	e00d      	b.n	8000112 <fail_common>
+
+080000f6 <fail_10>:
+ 80000f6:	f04f 000a 	mov.w	r0, #10
+ 80000fa:	e00a      	b.n	8000112 <fail_common>
+
+080000fc <fail_11>:
+ 80000fc:	f04f 000b 	mov.w	r0, #11
+ 8000100:	e007      	b.n	8000112 <fail_common>
+
+08000102 <fail_12>:
+ 8000102:	f04f 000c 	mov.w	r0, #12
+ 8000106:	e004      	b.n	8000112 <fail_common>
+
+08000108 <fail_13>:
+ 8000108:	f04f 000d 	mov.w	r0, #13
+ 800010c:	e001      	b.n	8000112 <fail_common>
+
+0800010e <fail_14>:
+ 800010e:	f04f 000e 	mov.w	r0, #14
+
+08000112 <fail_common>:
+ 8000112:	6038      	str	r0, [r7, #0]
+ 8000114:	4809      	ldr	r0, [pc, #36]	@ (800013c <test_exit+0x24>)
+ 8000116:	6030      	str	r0, [r6, #0]
+
+08000118 <test_exit>:
+ 8000118:	f04f 0018 	mov.w	r0, #24
+ 800011c:	4908      	ldr	r1, [pc, #32]	@ (8000140 <test_exit+0x28>)
+ 800011e:	beab      	bkpt	0x00ab
+ 8000120:	20000100 	.word	0x20000100
+ 8000124:	20000104 	.word	0x20000104
+ 8000128:	e000e400 	.word	0xe000e400
+ 800012c:	20000108 	.word	0x20000108
+ 8000130:	40008000 	.word	0x40008000
+ 8000134:	20406080 	.word	0x20406080
+ 8000138:	cafecafe 	.word	0xcafecafe
+ 800013c:	deaddead 	.word	0xdeaddead
+ 8000140:	00020026 	.word	0x00020026

@@ -48,6 +48,7 @@ namespace gem5
 {
 
 class ArmRelease;
+class ArmSemihosting;
 class MProfileSCS;
 
 class ArmMSystem : public System
@@ -59,12 +60,18 @@ class ArmMSystem : public System
     MProfileSCS *_scs = nullptr;
 
   public:
+    /** Semihosting handler, or nullptr if disabled. */
+    ArmSemihosting *const semihosting;
+
     PARAMS(ArmMSystem);
     ArmMSystem(const Params &p);
 
     const ArmRelease *releaseFS() const { return release; }
 
     bool has(ArmExtension ext) const;
+
+    /** Whether semihosting is enabled. */
+    bool haveSemihosting() const { return semihosting != nullptr; }
 
     /** M-profile physical address range is always 32 bits. */
     uint8_t physAddrRange() const { return 32; }

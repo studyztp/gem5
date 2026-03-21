@@ -69,6 +69,8 @@
 
 #include "arch/arm/m_faults.hh"
 #include "arch/arm/m_system.hh"
+#include "arch/arm/regs/misc.hh"
+#include "arch/arm/regs/misc_types.hh"
 #include "cpu/thread_context.hh"
 #include "dev/arm/m_profile_scs.hh"
 
@@ -77,6 +79,11 @@ namespace gem5
 
 namespace ArmISA
 {
+
+// M-profile BitUnion types (XPSR, etc.) live inside namespace ArmMISA
+// (declared in misc_types.hh).  The using-directive makes them
+// available without the ArmMISA:: prefix.
+using namespace ArmMISA;
 
 MProfileInterrupts::MProfileInterrupts(const Params &p)
     : BaseInterrupts(p)
@@ -161,6 +168,43 @@ MProfileInterrupts::updateIntrInfo()
         scs->activateIRQ(lastAckedExcNum);
         lastAckedExcNum = -1;
     }
+}
+
+// =========================================================================
+// Exception return (called when CPU detects EXC_RETURN address)
+// =========================================================================
+//
+// M-profile exception return is hardware-automatic: the CPU detects
+// the EXC_RETURN value, deactivates the returning exception, and
+// unstacks the exception frame — all in one operation.
+// This is unlike A-profile where software explicitly writes to
+// ICC_EOIR to deactivate.
+//
+// Split into two phases:
+//   1. Deactivate: clear active bit via scs->deactivateIRQ()
+//   2. Unstack:    restore CPU state via mProfileExcReturnUnstack()
+
+void
+MProfileInterrupts::excReturn(ThreadContext *tc, uint32_t exc_return)
+{
+    // Read current IPSR to identify which exception is returning.
+    // Must happen before unstacking, which restores the stacked xPSR
+    // (overwriting IPSR with the interrupted context's exception number).
+    XPSR currentXpsr = tc->readMiscRegNoEffect(MISCREG_M_XPSR);
+    int returningExc = currentXpsr.exception;
+
+    // Deactivate the returning exception — clear its active bit in
+    // NVIC (nvicActive[]) or SHCSR.
+    // DDI0403E B1.5.8: exception return transitions the returning
+    // exception from active to inactive.
+    if (returningExc > 0 && scs) {
+        scs->deactivateIRQ(returningExc);
+    }
+
+    // Unstack the exception frame and restore CPU state.
+    // This restores r0-r3, r12, LR, SP, xPSR, CONTROL.SPSEL,
+    // and sets NPC to the stacked return address.
+    mProfileExcReturnUnstack(tc, exc_return);
 }
 
 // =========================================================================

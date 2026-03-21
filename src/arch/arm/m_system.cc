@@ -35,7 +35,8 @@ namespace gem5
 
 ArmMSystem::ArmMSystem(const Params &p)
     : System(p),
-      release(p.release)
+      release(p.release),
+      semihosting(p.semihosting)
 {
     fatal_if(!release->has(ArmExtension::M_PROFILE),
              "ArmMSystem requires an ArmRelease with the M_PROFILE "

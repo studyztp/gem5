@@ -1,0 +1,83 @@
+
+test_exc_return_mask.elf:     file format elf32-littlearm
+
+SYMBOL TABLE:
+08000000 l    d  .isr_vector	00000000 .isr_vector
+08000040 l    d  .text	00000000 .text
+080000a8 l    d  .rodata	00000000 .rodata
+20000000 l    d  .data	00000000 .data
+20000000 l    d  .bss	00000000 .bss
+00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
+00000000 l    df *ABS*	00000000 test_exc_return_mask.o
+20000100 l       *ABS*	00000000 TEST_RESULT
+20000104 l       *ABS*	00000000 TEST_SUBTEST
+cafecafe l       *ABS*	00000000 PASS_VAL
+deaddead l       *ABS*	00000000 FAIL_VAL
+08000000 l       .isr_vector	00000000 __isr_vector
+08000090 l     F .text	00000000 default_handler
+08000086 l     F .text	00000000 SVCall_Handler
+08000066 l       .text	00000000 fail_1
+0800006c l       .text	00000000 fail_2
+0800007c l       .text	00000000 done
+08000072 l       .text	00000000 fail
+08000040 g     F .text	00000000 Reset_Handler
+20020000 g       *ABS*	00000000 _estack
+
+
+
+Disassembly of section .text:
+
+08000040 <Reset_Handler>:
+ 8000040:	4c14      	ldr	r4, [pc, #80]	@ (8000094 <default_handler+0x4>)
+ 8000042:	f04f 0000 	mov.w	r0, #0
+ 8000046:	6020      	str	r0, [r4, #0]
+ 8000048:	df00      	svc	0
+ 800004a:	6820      	ldr	r0, [r4, #0]
+ 800004c:	2842      	cmp	r0, #66	@ 0x42
+ 800004e:	d10a      	bne.n	8000066 <fail_1>
+ 8000050:	f04f 0000 	mov.w	r0, #0
+ 8000054:	6020      	str	r0, [r4, #0]
+ 8000056:	df01      	svc	1
+ 8000058:	6820      	ldr	r0, [r4, #0]
+ 800005a:	2842      	cmp	r0, #66	@ 0x42
+ 800005c:	d106      	bne.n	800006c <fail_2>
+ 800005e:	480e      	ldr	r0, [pc, #56]	@ (8000098 <default_handler+0x8>)
+ 8000060:	490e      	ldr	r1, [pc, #56]	@ (800009c <default_handler+0xc>)
+ 8000062:	6008      	str	r0, [r1, #0]
+ 8000064:	e00a      	b.n	800007c <done>
+
+08000066 <fail_1>:
+ 8000066:	f04f 0201 	mov.w	r2, #1
+ 800006a:	e002      	b.n	8000072 <fail>
+
+0800006c <fail_2>:
+ 800006c:	f04f 0202 	mov.w	r2, #2
+ 8000070:	e7ff      	b.n	8000072 <fail>
+
+08000072 <fail>:
+ 8000072:	480b      	ldr	r0, [pc, #44]	@ (80000a0 <default_handler+0x10>)
+ 8000074:	4909      	ldr	r1, [pc, #36]	@ (800009c <default_handler+0xc>)
+ 8000076:	6008      	str	r0, [r1, #0]
+ 8000078:	4906      	ldr	r1, [pc, #24]	@ (8000094 <default_handler+0x4>)
+ 800007a:	600a      	str	r2, [r1, #0]
+
+0800007c <done>:
+ 800007c:	f04f 0018 	mov.w	r0, #24
+ 8000080:	4908      	ldr	r1, [pc, #32]	@ (80000a4 <default_handler+0x14>)
+ 8000082:	beab      	bkpt	0x00ab
+ 8000084:	e7fe      	b.n	8000084 <done+0x8>
+
+08000086 <SVCall_Handler>:
+ 8000086:	4803      	ldr	r0, [pc, #12]	@ (8000094 <default_handler+0x4>)
+ 8000088:	f04f 0142 	mov.w	r1, #66	@ 0x42
+ 800008c:	6001      	str	r1, [r0, #0]
+ 800008e:	4770      	bx	lr
+
+08000090 <default_handler>:
+ 8000090:	e7fe      	b.n	8000090 <default_handler>
+ 8000092:	0000      	.short	0x0000
+ 8000094:	20000104 	.word	0x20000104
+ 8000098:	cafecafe 	.word	0xcafecafe
+ 800009c:	20000100 	.word	0x20000100
+ 80000a0:	deaddead 	.word	0xdeaddead
+ 80000a4:	00020026 	.word	0x00020026

@@ -95,6 +95,7 @@
 
 #include "dev/arm/m_profile_scs.hh"
 
+#include <cassert>
 #include <cstring>
 
 #include "arch/arm/m_faults.hh"
@@ -106,6 +107,7 @@
 #include "debug/MProfileSCS.hh"
 #include "mem/packet.hh"
 #include "mem/packet_access.hh"
+#include "sim/serialize.hh"
 
 namespace gem5
 {
@@ -188,6 +190,17 @@ MProfileSCS::MProfileSCS(const Params &p)
     std::memset(nvicPending,  0, sizeof(nvicPending));
     std::memset(nvicActive,   0, sizeof(nvicActive));
     std::memset(nvicPriority, 0, sizeof(nvicPriority));
+
+    // Register with ArmMSystem so MProfileInterrupts can discover us
+    // via mSystem->getSCS() during BaseCPU::init().
+    // Must happen in the constructor (not init()) because
+    // MProfileInterrupts::setThreadContext() is called during
+    // BaseCPU::init(), which may run before MProfileSCS::init().
+    // This follows the A-profile BaseGic pattern (registers in ctor).
+    mSystem = dynamic_cast<ArmMSystem *>(sys);
+    assert(mSystem && "MProfileSCS must be attached to an ArmMSystem, "
+                      "not a generic System.");
+    mSystem->setSCS(this);
 }
 
 // =========================================================================
@@ -198,16 +211,32 @@ void
 MProfileSCS::init()
 {
     BasicPioDevice::init();
+}
+
+// =========================================================================
+// startup() -- called after all SimObjects have been init()'d
+// =========================================================================
+
+void
+MProfileSCS::startup()
+{
+    BasicPioDevice::startup();
 
     // Acquire ThreadContext for ISA misc reg access.
+    // Done in startup() (not constructor/init()) because threads
+    // are fully registered only after all init() calls complete
+    // (BaseCPU::init() calls registerThreadContexts()).
     // Single-core MVP: always thread 0.
     tc = sys->threads[0];
 
-    // Register ourselves with ArmMSystem so that MProfileInterrupts
-    // can discover us via mSystem->getSCS().
-    mSystem = dynamic_cast<ArmMSystem *>(sys);
-    fatal_if(!mSystem, "MProfileSCS requires ArmMSystem.");
-    mSystem->setSCS(this);
+    // After checkpoint restore, rebuild the cached pending state and
+    // re-signal the CPU interrupt line.  This must happen here (not in
+    // unserialize()) because updatePending() reads ISA misc regs via
+    // tc, which is only available after startup() sets it above.
+    if (restoredFromCheckpoint) {
+        updatePending();
+        restoredFromCheckpoint = false;
+    }
 }
 
 // =========================================================================
@@ -228,6 +257,32 @@ Tick
 MProfileSCS::read(PacketPtr pkt)
 {
     Addr daddr = pkt->getAddr() - pioAddr;
+    unsigned size = pkt->getSize();
+
+    // NVIC IPR registers (0x400-0x4EF) are byte-accessible per
+    // DDI0403E B3.4.9.  CMSIS reads individual priority bytes via
+    // LDRB at 0xE000E400+irq.  Handle sub-word IPR reads here;
+    // 32-bit IPR reads fall through to readNVIC() below.
+    if (daddr >= 0x400 && daddr <= 0x4EF && size < 4) {
+        if (size == 1) {
+            int irq = daddr - 0x400;
+            uint8_t pri = (irq < (int)numIRQs)
+                              ? nvicPriority[irq] : 0;
+            pkt->setLE<uint8_t>(pri);
+        } else if (size == 2) {
+            uint16_t val = 0;
+            for (int i = 0; i < 2; ++i) {
+                int irq = (daddr - 0x400) + i;
+                uint8_t pri = (irq < (int)numIRQs)
+                                  ? nvicPriority[irq] : 0;
+                val |= ((uint16_t)pri) << (i * 8);
+            }
+            pkt->setLE<uint16_t>(val);
+        }
+        pkt->makeAtomicResponse();
+        return pioDelay;
+    }
+
     uint32_t data = 0;
 
     if (daddr >= 0x010 && daddr <= 0x01F) {
@@ -254,6 +309,34 @@ Tick
 MProfileSCS::write(PacketPtr pkt)
 {
     Addr daddr = pkt->getAddr() - pioAddr;
+    unsigned size = pkt->getSize();
+
+    // NVIC IPR registers (0x400-0x4EF) are byte-accessible per
+    // DDI0403E B3.4.9.  CMSIS writes individual priority bytes via
+    // STRB at 0xE000E400+irq.  Handle sub-word IPR writes here;
+    // 32-bit IPR writes fall through to writeNVIC() below.
+    if (daddr >= 0x400 && daddr <= 0x4EF && size < 4) {
+        if (size == 1) {
+            int irq = daddr - 0x400;
+            if (irq < (int)numIRQs) {
+                nvicPriority[irq] =
+                    pkt->getLE<uint8_t>() & priorityMask;
+            }
+        } else if (size == 2) {
+            uint16_t val = pkt->getLE<uint16_t>();
+            for (int i = 0; i < 2; ++i) {
+                int irq = (daddr - 0x400) + i;
+                if (irq < (int)numIRQs) {
+                    nvicPriority[irq] =
+                        (uint8_t)((val >> (i * 8)) & priorityMask);
+                }
+            }
+        }
+        updatePending();
+        pkt->makeAtomicResponse();
+        return pioDelay;
+    }
+
     uint32_t data = pkt->getLE<uint32_t>();
 
     if (daddr >= 0x010 && daddr <= 0x01F) {
@@ -307,6 +390,39 @@ MProfileSCS::readSCB(Addr offset, uint32_t &data)
 Tick
 MProfileSCS::writeSCB(Addr offset, uint32_t data)
 {
+    using namespace ArmISA;
+
+    // ICSR (offset 0x04) has special write semantics (DDI0403E B3.2.4):
+    //   bit 28: PENDSVSET  — write 1 to pend PendSV
+    //   bit 27: PENDSVCLR  — write 1 to clear PendSV pending
+    //   bit 26: PENDSTSET  — write 1 to pend SysTick
+    //   bit 25: PENDSTCLR  — write 1 to clear SysTick pending
+    // These are NOT a normal read-modify-write register.  SET and CLR
+    // are separate actions applied to the current ICSR value.
+    //
+    // After modifying pending bits, call updatePending() so the NVIC
+    // re-evaluates whether an exception should be delivered to the CPU.
+    // Without this, FreeRTOS context switches (PendSV) never fire.
+    if (offset == 0x04) {
+        RegVal icsr = tc->readMiscRegNoEffect(MISCREG_M_ICSR);
+
+        // PENDSVSET / PENDSVCLR
+        if (data & (1u << 28))
+            icsr |= (1u << 28);    // pend PendSV
+        if (data & (1u << 27))
+            icsr &= ~(1u << 28);   // clear PendSV pending
+
+        // PENDSTSET / PENDSTCLR
+        if (data & (1u << 26))
+            icsr |= (1u << 26);    // pend SysTick
+        if (data & (1u << 25))
+            icsr &= ~(1u << 26);   // clear SysTick pending
+
+        tc->setMiscRegNoEffect(MISCREG_M_ICSR, icsr);
+        updatePending();
+        return pioDelay;
+    }
+
     auto it = scbRegMap.find(offset);
     if (it != scbRegMap.end()) {
         tc->setMiscReg(it->second, data);
@@ -507,15 +623,89 @@ MProfileSCS::executionPriority() const
             return bp;
     }
 
-    // TODO: Check priorities of currently active exceptions.
-    // The execution priority should be the minimum (highest-priority)
-    // of all active exception priorities.  This requires scanning
-    // nvicActive[] and SHCSR active bits for system exceptions.
-    // Needed for correct priority-based preemption of nested handlers.
+    // Scan active exception priorities to find the execution priority.
+    // DDI0403E B1.5.4: the execution priority is the highest priority
+    // (lowest number) among all active exceptions and priority masks.
+    uint8_t execPri = 0xFF;  // default: Thread mode, no active exceptions
 
-    // Thread mode with no active exceptions and no masks.
-    // 0xFF is lower priority than any configurable exception.
-    return 0xFF;
+    // Check fixed-priority exceptions via xPSR.IPSR.
+    // HardFault (exc 3): fixed priority -1, mapped to 0 in unsigned.
+    // NMI (exc 2): fixed priority -2, also mapped to 0.
+    // These don't have SHCSR active bits; IPSR is the only indicator.
+    ArmISA::ArmMISA::XPSR xpsr = tc->readMiscRegNoEffect(MISCREG_M_XPSR);
+    if (xpsr.exception == MPEXC_HARDFAULT ||
+        xpsr.exception == MPEXC_NMI)
+        return 0;  // nothing configurable can preempt
+
+    // Check SHCSR active bits for system exceptions with configurable
+    // priority.  DDI0403E B3.2.10 defines the active bit positions.
+    // Group by SHPR register to minimize misc reg reads.
+    RegVal shcsr = tc->readMiscRegNoEffect(MISCREG_M_SHCSR);
+
+    // SHPR1 covers exceptions 4-7 (MemManage, BusFault, UsageFault)
+    //   bit 0: MEMFAULTACT  (exc 4) → SHPR1[7:0]
+    //   bit 1: BUSFAULTACT  (exc 5) → SHPR1[15:8]
+    //   bit 3: USGFAULTACT  (exc 6) → SHPR1[23:16]
+    if (shcsr & ((1u << 0) | (1u << 1) | (1u << 3))) {
+        RegVal shpr1 = tc->readMiscRegNoEffect(MISCREG_M_SHPR1);
+        if (shcsr & (1u << 0)) {  // MEMFAULTACT
+            uint8_t pri = (uint8_t)(shpr1 & priorityMask);
+            if (pri < execPri) execPri = pri;
+        }
+        if (shcsr & (1u << 1)) {  // BUSFAULTACT
+            uint8_t pri = (uint8_t)((shpr1 >> 8) & priorityMask);
+            if (pri < execPri) execPri = pri;
+        }
+        if (shcsr & (1u << 3)) {  // USGFAULTACT
+            uint8_t pri = (uint8_t)((shpr1 >> 16) & priorityMask);
+            if (pri < execPri) execPri = pri;
+        }
+    }
+
+    // SHPR2 covers exceptions 8-11
+    //   bit 7: SVCALLACT (exc 11) → SHPR2[31:24]
+    if (shcsr & (1u << 7)) {
+        RegVal shpr2 = tc->readMiscRegNoEffect(MISCREG_M_SHPR2);
+        uint8_t pri = (uint8_t)((shpr2 >> 24) & priorityMask);
+        if (pri < execPri) execPri = pri;
+    }
+
+    // SHPR3 covers exceptions 12-15
+    //   bit 8:  MONITORACT  (exc 12) → SHPR3[7:0]
+    //   bit 10: PENDSVACT   (exc 14) → SHPR3[23:16]
+    //   bit 11: SYSTICKACT  (exc 15) → SHPR3[31:24]
+    if (shcsr & ((1u << 8) | (1u << 10) | (1u << 11))) {
+        RegVal shpr3 = tc->readMiscRegNoEffect(MISCREG_M_SHPR3);
+        if (shcsr & (1u << 8)) {  // MONITORACT
+            uint8_t pri = (uint8_t)(shpr3 & priorityMask);
+            if (pri < execPri) execPri = pri;
+        }
+        if (shcsr & (1u << 10)) {  // PENDSVACT
+            uint8_t pri = (uint8_t)((shpr3 >> 16) & priorityMask);
+            if (pri < execPri) execPri = pri;
+        }
+        if (shcsr & (1u << 11)) {  // SYSTICKACT
+            uint8_t pri = (uint8_t)((shpr3 >> 24) & priorityMask);
+            if (pri < execPri) execPri = pri;
+        }
+    }
+
+    // Scan NVIC active bits for external IRQs (exc >= 16).
+    // Each bit in nvicActive[] corresponds to one IRQ.
+    for (int w = 0; w < MAX_IRQS / 32; ++w) {
+        uint32_t active = nvicActive[w];
+        while (active) {
+            int bit = __builtin_ctz(active);  // lowest set bit
+            int irq = w * 32 + bit;
+            if (irq < (int)numIRQs) {
+                uint8_t pri = nvicPriority[irq] & priorityMask;
+                if (pri < execPri) execPri = pri;
+            }
+            active &= ~(1u << bit);
+        }
+    }
+
+    return execPri;
 }
 
 // =========================================================================
@@ -706,22 +896,22 @@ MProfileSCS::deactivateIRQ(int exc_num)
     // interrupt from active to inactive, allowing it to pend again.
 
     if (exc_num >= MPEXC_EXTERNAL_BASE) {
+        // External IRQ: clear nvicActive bit.
         int irq = exc_num - MPEXC_EXTERNAL_BASE;
         int word = irq / 32;
         int bit = irq % 32;
         nvicActive[word] &= ~(1u << bit);
 
-    } else if (exc_num == MPEXC_SYSTICK) {
-        // Clear SHCSR.SYSTICKACT (bit 11)
-        RegVal shcsr = tc->readMiscRegNoEffect(MISCREG_M_SHCSR);
-        shcsr &= ~(1u << 11);
-        tc->setMiscRegNoEffect(MISCREG_M_SHCSR, shcsr);
-
-    } else if (exc_num == MPEXC_PENDSV) {
-        // Clear SHCSR.PENDSVACT (bit 10)
-        RegVal shcsr = tc->readMiscRegNoEffect(MISCREG_M_SHCSR);
-        shcsr &= ~(1u << 10);
-        tc->setMiscRegNoEffect(MISCREG_M_SHCSR, shcsr);
+    } else {
+        // System exception: clear the corresponding SHCSR active bit.
+        // Uses the shared helper from m_faults.hh which maps exception
+        // numbers to SHCSR bit positions (DDI0403E B3.2.10).
+        int shcsrBit = mProfileShcsrActiveBit(exc_num);
+        if (shcsrBit >= 0) {
+            RegVal shcsr = tc->readMiscRegNoEffect(MISCREG_M_SHCSR);
+            shcsr &= ~(1u << shcsrBit);
+            tc->setMiscRegNoEffect(MISCREG_M_SHCSR, shcsr);
+        }
     }
 
     // Re-evaluate: a lower-priority interrupt that was blocked by
@@ -911,6 +1101,83 @@ MProfileSCS::sysTickCurrentValue() const
 
     Tick remaining = sysTick.expireEvent.when() - curTick();
     return (uint32_t)(remaining / clockPeriod());
+}
+
+// =========================================================================
+// Checkpoint serialization
+//
+// Saves all NVIC and SysTick runtime state.  SCB registers (SHCSR,
+// SHPR1-3, ICSR, VTOR, etc.) live in ISA misc regs and are serialized
+// by MISA::serialize() — they are NOT duplicated here.
+//
+// Configuration params (numIRQs, priorityBits, hasSysTick, etc.) are
+// re-initialized by the constructor from Python and need not be saved.
+//
+// Pattern follows GicV2 (NVIC arrays) and Sp804::Timer (event schedule).
+// =========================================================================
+
+void
+MProfileSCS::serialize(CheckpointOut &cp) const
+{
+    // NVIC interrupt state arrays (bit-vectors and per-IRQ priorities)
+    SERIALIZE_ARRAY(nvicEnabled, MAX_IRQS / 32);
+    SERIALIZE_ARRAY(nvicPending, MAX_IRQS / 32);
+    SERIALIZE_ARRAY(nvicActive,  MAX_IRQS / 32);
+    SERIALIZE_ARRAY(nvicPriority, MAX_IRQS);
+
+    // Cached highest-pending state (rebuilt by updatePending() on
+    // unserialize, but saved for completeness / debugging)
+    SERIALIZE_SCALAR(highestPendingExc);
+    SERIALIZE_SCALAR(highestPendingPri);
+
+    // SysTick timer state
+    SERIALIZE_SCALAR(sysTick.ctrl);
+    SERIALIZE_SCALAR(sysTick.load);
+    SERIALIZE_SCALAR(sysTick.startTick);
+
+    // SysTick expiry event schedule (Sp804 timer pattern):
+    // Save whether the event is scheduled and, if so, at what tick.
+    bool sysTickEventScheduled = sysTick.expireEvent.scheduled();
+    SERIALIZE_SCALAR(sysTickEventScheduled);
+    if (sysTickEventScheduled) {
+        Tick sysTickEventTime = sysTick.expireEvent.when();
+        SERIALIZE_SCALAR(sysTickEventTime);
+    }
+}
+
+void
+MProfileSCS::unserialize(CheckpointIn &cp)
+{
+    // NVIC interrupt state arrays
+    UNSERIALIZE_ARRAY(nvicEnabled, MAX_IRQS / 32);
+    UNSERIALIZE_ARRAY(nvicPending, MAX_IRQS / 32);
+    UNSERIALIZE_ARRAY(nvicActive,  MAX_IRQS / 32);
+    UNSERIALIZE_ARRAY(nvicPriority, MAX_IRQS);
+
+    // Cached highest-pending state
+    UNSERIALIZE_SCALAR(highestPendingExc);
+    UNSERIALIZE_SCALAR(highestPendingPri);
+
+    // SysTick timer state
+    UNSERIALIZE_SCALAR(sysTick.ctrl);
+    UNSERIALIZE_SCALAR(sysTick.load);
+    UNSERIALIZE_SCALAR(sysTick.startTick);
+
+    // Restore SysTick expiry event if it was scheduled at checkpoint time
+    bool sysTickEventScheduled;
+    UNSERIALIZE_SCALAR(sysTickEventScheduled);
+    if (sysTickEventScheduled) {
+        Tick sysTickEventTime;
+        UNSERIALIZE_SCALAR(sysTickEventTime);
+        schedule(sysTick.expireEvent, sysTickEventTime);
+    }
+
+    // Do NOT call updatePending() here — it accesses tc (ThreadContext)
+    // which is not set until startup().  gem5 restore order is:
+    //   constructor → init() → unserialize() → startup()
+    // Instead, set a flag so startup() calls updatePending() after
+    // tc is available.
+    restoredFromCheckpoint = true;
 }
 
 } // namespace gem5

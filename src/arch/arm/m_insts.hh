@@ -173,7 +173,7 @@ class CpsMProfile : public PredOp
  * Thumb-16 encoding T1: 01000111 0 Rm[6:3] (000)
  *
  * If the target address matches the EXC_RETURN pattern
- * (addr & 0xFFFFFF00) == 0xFFFFFF00, this is NOT a branch — it
+ * (addr & 0xFFFFFFF0) == 0xFFFFFFF0, this is NOT a branch — it
  * triggers M-profile exception return (unstacking).
  *
  * EXC_RETURN values (DDI0403E B1.5.8):
@@ -385,6 +385,78 @@ class ExcReturnFromPC : public PredOp
         : PredOp("exc_return", mach_inst, IntAluOp),
           excReturnVal(_excReturn)
     {}
+
+    Fault execute(ExecContext *xc,
+                  trace::InstRecord *traceData) const override;
+
+    std::string generateDisassembly(
+            Addr pc,
+            const loader::SymbolTable *symtab) const override;
+};
+
+/**
+ * M-profile semihosting via BKPT #0xAB.
+ *
+ * Per the ARM semihosting specification, M-profile uses BKPT #0xAB
+ * (not SVC #0xAB) as the semihosting trigger.  The semihosting ABI
+ * is the same as A-profile 32-bit: R0 = operation code, R1 = param
+ * block pointer.
+ *
+ * The actual semihosting logic lives in ArmSemihosting (which inherits
+ * from BaseSemihosting).  This instruction just calls call32() on
+ * the semihosting object obtained from ArmMSystem.
+ *
+ * Reference: ARM Semihosting Specification, Section 3.1
+ */
+class BkptSemiMProfile : public PredOp
+{
+  public:
+    BkptSemiMProfile(ExtMachInst mach_inst)
+        : PredOp("bkpt_semi", mach_inst, IntAluOp)
+    {}
+
+    Fault execute(ExecContext *xc,
+                  trace::InstRecord *traceData) const override;
+
+    std::string generateDisassembly(
+            Addr pc,
+            const loader::SymbolTable *symtab) const override;
+};
+
+/**
+ * M-profile LDREX / LDREXB / LDREXH: Load Register Exclusive.
+ *
+ * The shared ISA-generated LDREX instruction class calls
+ * ArmISA::ISA::getSelfDebug() which performs a static_cast<ISA*>
+ * on the ISA pointer.  On M-profile the ISA is MISA (a sibling of
+ * ISA, not a subclass), so the cast is undefined behavior and
+ * causes a segfault.  This M-profile-specific class avoids the
+ * SelfDebug call entirely — M-profile has no A-profile-style
+ * single-step debug extension.
+ *
+ * The size parameter selects the access width:
+ *   4 = LDREX  (word)     DDI0403E A7.7.49
+ *   2 = LDREXH (halfword) DDI0403E A7.7.51
+ *   1 = LDREXB (byte)     DDI0403E A7.7.50
+ *
+ * Reference: DDI0403E A3.4.5 (Exclusive monitors)
+ */
+class LdrexMProfile : public PredOp
+{
+  protected:
+    RegIndex dest;     // Rt
+    RegIndex base;     // Rn
+    uint32_t imm;      // offset in bytes (already shifted for LDREX)
+    unsigned accessSize; // 1, 2, or 4
+
+  public:
+    LdrexMProfile(ExtMachInst mach_inst, RegIndex _dest, RegIndex _base,
+                  uint32_t _imm, unsigned _size)
+        : PredOp("ldrex", mach_inst, MemReadOp),
+          dest(_dest), base(_base), imm(_imm), accessSize(_size)
+    {
+        flags[IsLoad] = true;
+    }
 
     Fault execute(ExecContext *xc,
                   trace::InstRecord *traceData) const override;

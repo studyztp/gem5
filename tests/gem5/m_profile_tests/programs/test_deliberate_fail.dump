@@ -1,0 +1,42 @@
+
+test_deliberate_fail.elf:     file format elf32-littlearm
+
+SYMBOL TABLE:
+08000000 l    d  .isr_vector	00000000 .isr_vector
+08000040 l    d  .text	00000000 .text
+0800006c l    d  .rodata	00000000 .rodata
+20000000 l    d  .data	00000000 .data
+20000000 l    d  .bss	00000000 .bss
+00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
+00000000 l    df *ABS*	00000000 test_deliberate_fail.o
+20000100 l       *ABS*	00000000 TEST_RESULT
+20000104 l       *ABS*	00000000 TEST_SUBTEST
+deaddead l       *ABS*	00000000 FAIL_VAL
+08000000 l       .isr_vector	00000000 __isr_vector
+08000058 l     F .text	00000000 default_handler
+08000040 g     F .text	00000000 Reset_Handler
+20020000 g       *ABS*	00000000 _estack
+
+
+
+Disassembly of section .text:
+
+08000040 <Reset_Handler>:
+ 8000040:	4806      	ldr	r0, [pc, #24]	@ (800005c <default_handler+0x4>)
+ 8000042:	4907      	ldr	r1, [pc, #28]	@ (8000060 <default_handler+0x8>)
+ 8000044:	6008      	str	r0, [r1, #0]
+ 8000046:	f04f 0063 	mov.w	r0, #99	@ 0x63
+ 800004a:	4906      	ldr	r1, [pc, #24]	@ (8000064 <default_handler+0xc>)
+ 800004c:	6008      	str	r0, [r1, #0]
+ 800004e:	f04f 0018 	mov.w	r0, #24
+ 8000052:	4905      	ldr	r1, [pc, #20]	@ (8000068 <default_handler+0x10>)
+ 8000054:	beab      	bkpt	0x00ab
+ 8000056:	e7fe      	b.n	8000056 <Reset_Handler+0x16>
+
+08000058 <default_handler>:
+ 8000058:	e7fe      	b.n	8000058 <default_handler>
+ 800005a:	0000      	.short	0x0000
+ 800005c:	deaddead 	.word	0xdeaddead
+ 8000060:	20000100 	.word	0x20000100
+ 8000064:	20000104 	.word	0x20000104
+ 8000068:	00020026 	.word	0x00020026

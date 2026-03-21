@@ -4,7 +4,7 @@ test_mrs_msr.elf:     file format elf32-littlearm
 SYMBOL TABLE:
 08000000 l    d  .isr_vector	00000000 .isr_vector
 08000040 l    d  .text	00000000 .text
-08000130 l    d  .rodata	00000000 .rodata
+0800013c l    d  .rodata	00000000 .rodata
 20000000 l    d  .data	00000000 .data
 20000000 l    d  .bss	00000000 .bss
 00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
@@ -61,7 +61,7 @@ Disassembly of section .text:
  8000094:	2800      	cmp	r0, #0
  8000096:	d12e      	bne.n	80000f6 <fail_4>
  8000098:	f3ef 8408 	mrs	r4, MSP
- 800009c:	481e      	ldr	r0, [pc, #120]	@ (8000118 <done+0x2>)
+ 800009c:	4820      	ldr	r0, [pc, #128]	@ (8000120 <done+0xa>)
  800009e:	f380 8808 	msr	MSP, r0
  80000a2:	f3ef 8108 	mrs	r1, MSP
  80000a6:	4281      	cmp	r1, r0
@@ -74,7 +74,7 @@ Disassembly of section .text:
  80000b4:	e022      	b.n	80000fc <fail_5>
 
 080000b6 <test_5_ok>:
- 80000b6:	4819      	ldr	r0, [pc, #100]	@ (800011c <done+0x6>)
+ 80000b6:	481b      	ldr	r0, [pc, #108]	@ (8000124 <done+0xe>)
  80000b8:	f380 8809 	msr	PSP, r0
  80000bc:	f3ef 8109 	mrs	r1, PSP
  80000c0:	4281      	cmp	r1, r0
@@ -86,8 +86,8 @@ Disassembly of section .text:
  80000d4:	ea01 0102 	and.w	r1, r1, r2
  80000d8:	4291      	cmp	r1, r2
  80000da:	d115      	bne.n	8000108 <fail_7>
- 80000dc:	4810      	ldr	r0, [pc, #64]	@ (8000120 <done+0xa>)
- 80000de:	4911      	ldr	r1, [pc, #68]	@ (8000124 <done+0xe>)
+ 80000dc:	4812      	ldr	r0, [pc, #72]	@ (8000128 <done+0x12>)
+ 80000de:	4913      	ldr	r1, [pc, #76]	@ (800012c <done+0x16>)
  80000e0:	6008      	str	r0, [r1, #0]
  80000e2:	e018      	b.n	8000116 <done>
 
@@ -119,17 +119,21 @@ Disassembly of section .text:
  8000108:	f04f 0207 	mov.w	r2, #7
 
 0800010c <fail>:
- 800010c:	4806      	ldr	r0, [pc, #24]	@ (8000128 <done+0x12>)
- 800010e:	4905      	ldr	r1, [pc, #20]	@ (8000124 <done+0xe>)
+ 800010c:	4808      	ldr	r0, [pc, #32]	@ (8000130 <done+0x1a>)
+ 800010e:	4907      	ldr	r1, [pc, #28]	@ (800012c <done+0x16>)
  8000110:	6008      	str	r0, [r1, #0]
- 8000112:	4906      	ldr	r1, [pc, #24]	@ (800012c <done+0x16>)
+ 8000112:	4908      	ldr	r1, [pc, #32]	@ (8000134 <done+0x1e>)
  8000114:	600a      	str	r2, [r1, #0]
 
 08000116 <done>:
- 8000116:	e7fe      	b.n	8000116 <done>
- 8000118:	20010000 	.word	0x20010000
- 800011c:	20018000 	.word	0x20018000
- 8000120:	cafecafe 	.word	0xcafecafe
- 8000124:	20000100 	.word	0x20000100
- 8000128:	deaddead 	.word	0xdeaddead
- 800012c:	20000104 	.word	0x20000104
+ 8000116:	f04f 0018 	mov.w	r0, #24
+ 800011a:	4907      	ldr	r1, [pc, #28]	@ (8000138 <done+0x22>)
+ 800011c:	beab      	bkpt	0x00ab
+ 800011e:	e7fe      	b.n	800011e <done+0x8>
+ 8000120:	20010000 	.word	0x20010000
+ 8000124:	20018000 	.word	0x20018000
+ 8000128:	cafecafe 	.word	0xcafecafe
+ 800012c:	20000100 	.word	0x20000100
+ 8000130:	deaddead 	.word	0xdeaddead
+ 8000134:	20000104 	.word	0x20000104
+ 8000138:	00020026 	.word	0x00020026

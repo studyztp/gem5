@@ -448,12 +448,22 @@ MISA::handleLockedRead(const RequestPtr &req)
 bool
 MISA::handleLockedWrite(const RequestPtr &req, Addr cacheBlockMask)
 {
-    if (lockedAddr == req->getPaddr()) {
-        // Address matches — exclusive write succeeds
+    // Compare at cache-line granularity, matching the A-profile ISA behavior.
+    // LDREX marks the entire cache line; STREX to any address within the
+    // same cache line should succeed.
+    // DDI0403E A3.4.5: "The size of the marked block is
+    // IMPLEMENTATION DEFINED, between one word and 2^10 words."
+    if ((lockedAddr & cacheBlockMask) ==
+        (req->getPaddr() & cacheBlockMask)) {
+        // Same cache line — exclusive write succeeds
         lockedAddr = INVALID_LOCK_ADDR;
         return true;
     }
-    // Address mismatch — exclusive write fails
+    // Different cache line — exclusive write fails.
+    // Must set extraData so AtomicSimpleCPU::writeMem can read the
+    // result via req->getExtraData() without hitting an assertion.
+    // (A-profile's lockedWriteHandler does the same thing.)
+    req->setExtraData(0);
     lockedAddr = INVALID_LOCK_ADDR;
     return false;
 }

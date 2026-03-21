@@ -23,7 +23,15 @@ LDFLAGS = -T cortexm4.ld --no-warn-rwx-segments
 TESTS = cortexm4_basic test_cps test_mrs_msr test_bx_exc_return \
         test_load_store test_blocked_insts test_sp_sync \
         test_pop_pc_exc_return test_nested_exceptions \
-        test_data_processing
+        test_data_processing \
+        test_psp_exception \
+        test_deliberate_fail \
+        test_exc_return_mask test_blx_no_exc_return test_bx_bit0_fault \
+        test_srs_rfe_blocked test_coproc_detection test_ldrex_strex_granule \
+        test_nested_priority \
+        test_systick_active_pending \
+        test_ipr_byte_access \
+        test_scs_checkpoint
 
 all: $(addsuffix .elf, $(TESTS))
 

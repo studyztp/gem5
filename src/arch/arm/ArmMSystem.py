@@ -24,6 +24,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from m5.objects.ArmSemihosting import ArmSemihosting
 from m5.objects.ArmSystem import ArmRelease
 from m5.objects.System import System
 from m5.params import *
@@ -156,6 +157,13 @@ class ArmMSystem(System):
         ArmMReleaseCortexM4(),
         "Arm M-profile Release (default: Cortex-M4 with DSP + FPU). "
         "Use ArmMReleaseCortexM0/M3/M7 for other variants.",
+    )
+
+    semihosting = Param.ArmSemihosting(
+        NULL,
+        "Enable ARM semihosting support. M-profile uses BKPT #0xAB "
+        "as the trigger instruction (per ARM semihosting spec). "
+        "Set to ArmSemihosting() to enable.",
     )
 
     # NOTE: The SCS device is owned by ArmMPlatform (not ArmMSystem).

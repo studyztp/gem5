@@ -122,7 +122,11 @@ fail:
     ldr     r1, =TEST_SUBTEST
     str     r2, [r1]
 done:
-    b       done
+    /* Exit via ARM semihosting SYS_EXIT */
+    mov     r0, #0x18           /* SYS_EXIT */
+    ldr     r1, =0x20026        /* ADP_Stopped_ApplicationExit */
+    bkpt    #0xab               /* M-profile semihosting trigger */
+    b       .                   /* unreachable */
 
     .thumb_func
 SVCall_Handler:

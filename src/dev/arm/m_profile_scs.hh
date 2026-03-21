@@ -87,6 +87,31 @@ class MProfileSCS : public BasicPioDevice
     /** Register with ArmMSystem; acquire ThreadContext. */
     void init() override;
 
+    /** Acquire ThreadContext after all init() completes. */
+    void startup() override;
+
+    /**
+     * Serialize NVIC and SysTick state for checkpoint.
+     *
+     * Saves all runtime state that is not reconstructable from Python
+     * params: NVIC enabled/pending/active/priority arrays, cached
+     * priority state, SysTick control/load/startTick, and the
+     * SysTick expiry event schedule.  SCB registers (SHCSR, SHPR1-3,
+     * ICSR, VTOR, etc.) are stored in ISA misc regs and serialized
+     * by MISA — they do not need to be saved here.
+     */
+    void serialize(CheckpointOut &cp) const override;
+
+    /**
+     * Restore NVIC and SysTick state from checkpoint.
+     *
+     * Sets restoredFromCheckpoint flag so that startup() calls
+     * updatePending() after tc is available.  updatePending() cannot
+     * be called here because tc is not set until startup() — gem5
+     * restore order is: unserialize() → startup().
+     */
+    void unserialize(CheckpointIn &cp) override;
+
   protected:
     // -- Address dispatch handlers --
     // Offset is relative to the sub-module's register block.
@@ -142,10 +167,16 @@ class MProfileSCS : public BasicPioDevice
     bool hasSysTick;       // SysTick present? (some M0: no)
     bool hasBasepri;       // BASEPRI/FAULTMASK? (M0: no)
 
-    // -- System references (set during init()) --
+    // -- System references (mSystem set in ctor, tc set in startup()) --
 
     ThreadContext *tc = nullptr;
     ArmMSystem *mSystem = nullptr;
+
+    /** Set by unserialize() so startup() knows to call updatePending()
+     *  after tc is available.  updatePending() needs tc to read ICSR
+     *  and compute executionPriority(), but tc is not set until
+     *  startup() — which runs after unserialize() in the restore path. */
+    bool restoredFromCheckpoint = false;
 
     // -- Internal helpers --
 

@@ -29,7 +29,11 @@
 #include "arch/arm/m_mmu.hh"
 
 #include "arch/arm/m_faults.hh"
+#include "arch/arm/m_interrupts.hh"
 #include "arch/arm/page_size.hh"
+#include "arch/arm/pcstate.hh"
+#include "cpu/base.hh"
+#include "cpu/thread_context.hh"
 #include "sim/faults.hh"
 
 namespace gem5
@@ -63,15 +67,30 @@ MTLB::translateAtomic(const RequestPtr &req, ThreadContext *tc,
     // mProfileExcReturn() which pops the exception frame.
     //
     // DDI0403E B1.5.8: Exception return occurs when PC is loaded
-    // with a value where bits[31:28] = 0xF (EXC_RETURN prefix).
-    // The exact value encodes which SP and mode to restore to.
+    // with a value where bits[31:4] are all 1s (EXC_RETURN prefix).
+    // Valid range: 0xFFFFFFF0–0xFFFFFFFF.  The low 4 bits encode
+    // which SP and mode to restore to.
     if (mode == BaseMMU::Execute &&
-        (vaddr & 0xFFFFFF00) == 0xFFFFFF00) {
-        // Trigger exception return via mProfileExcReturn.
-        mProfileExcReturn(tc, (uint32_t)vaddr);
-        // Return a fault to prevent the fetch from proceeding.
-        // Use a no-op fault that doesn't generate an exception.
-        // The PC has already been updated by mProfileExcReturn.
+        (vaddr & 0xFFFFFFF0) == 0xFFFFFFF0) {
+        // Exception return: deactivate via interrupt controller, then
+        // unstack CPU state.  MProfileInterrupts::excReturn() handles both.
+        // excReturn() calls mProfileExcReturnUnstack() which uses
+        // pc.npc(retAddr).  In this MMU path, advancePC() is NOT called
+        // (the fault path skips curStaticInst->advancePC()), so we must
+        // manually advance the PC after excReturn returns.
+        auto *mintr = dynamic_cast<MProfileInterrupts *>(
+            tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        assert(mintr && "M-profile CPU must use MProfileInterrupts");
+        mintr->excReturn(tc, (uint32_t)vaddr);
+        // excReturn set _npc = retAddr.  Advance _pc = _npc now so
+        // that the next fetch (after ReExec::invoke no-op) comes from retAddr,
+        // not from 0xFFFFFFF8 again (which would re-trigger this path).
+        auto &pc_base = tc->pcState();
+        auto pc = pc_base.as<PCState>();
+        pc.advance();  // _pc = _npc (retAddr)
+        tc->pcState(pc);
+        // Return a fault to skip fetchInstMem() and preExecute().
+        // ReExec::invoke is a no-op; the CPU re-checks PC on the next tick.
         return std::make_shared<ReExec>();
     }
 
@@ -86,8 +105,37 @@ MTLB::translateTiming(const RequestPtr &req, ThreadContext *tc,
                       BaseMMU::Translation *translation,
                       BaseMMU::Mode mode)
 {
+    Addr vaddr = req->getVaddr();
+
+    // EXC_RETURN detection — same logic as translateAtomic().
+    // Without this, TimingSimpleCPU/MinorCPU panic trying to fetch
+    // from 0xFFFFFFF_ (no memory at that address).
+    //
+    // Timing note: the detection itself is correctly placed (the real
+    // bus matrix intercepts this address before it reaches memory, so
+    // no icache latency should be charged).  However,
+    // mProfileExcReturnUnstack() reads the 8-word exception frame via
+    // physProxy (functional port) — zero memory latency.  On real
+    // Cortex-M4 this unstacking takes ~12 cycles through the bus
+    // matrix → SRAM.  A future fix should route these reads through
+    // the timed memory system.  The same inaccuracy exists in
+    // translateAtomic() and in ArmMFault::invoke() (frame push).
+    if (mode == BaseMMU::Execute &&
+        (vaddr & 0xFFFFFFF0) == 0xFFFFFFF0) {
+        auto *mintr = dynamic_cast<MProfileInterrupts *>(
+            tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        assert(mintr && "M-profile CPU must use MProfileInterrupts");
+        mintr->excReturn(tc, (uint32_t)vaddr);
+        auto &pc_base = tc->pcState();
+        auto pc = pc_base.as<PCState>();
+        pc.advance();
+        tc->pcState(pc);
+        translation->finish(std::make_shared<ReExec>(), req, tc, mode);
+        return;
+    }
+
     // Pass-through: complete immediately with identity translation.
-    req->setPaddr(req->getVaddr());
+    req->setPaddr(vaddr);
     translation->finish(NoFault, req, tc, mode);
 }
 

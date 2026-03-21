@@ -1,0 +1,128 @@
+
+test_bx_bit0_fault.elf:     file format elf32-littlearm
+
+SYMBOL TABLE:
+08000000 l    d  .isr_vector	00000000 .isr_vector
+08000040 l    d  .text	00000000 .text
+08000100 l    d  .rodata	00000000 .rodata
+20000000 l    d  .data	00000000 .data
+20000000 l    d  .bss	00000000 .bss
+00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
+00000000 l    df *ABS*	00000000 test_bx_bit0_fault.o
+20000100 l       *ABS*	00000000 TEST_RESULT
+20000104 l       *ABS*	00000000 TEST_SUBTEST
+20000108 l       *ABS*	00000000 TEST_SCRATCH
+cafecafe l       *ABS*	00000000 PASS_VAL
+deaddead l       *ABS*	00000000 FAIL_VAL
+08000000 l       .isr_vector	00000000 __isr_vector
+080000de l     F .text	00000000 default_handler
+080000be l     F .text	00000000 HardFault_Handler
+080000ac l     F .text	00000000 UsageFault_Handler
+08000040 l     F .text	00000000 add_five
+08000086 l       .text	00000000 fail_1
+0800006c l       .text	00000000 after_fault_bx
+0800008c l       .text	00000000 fail_2
+08000092 l       .text	00000000 fail_3
+080000a2 l       .text	00000000 done
+08000098 l       .text	00000000 fail
+08000046 g     F .text	00000000 Reset_Handler
+20020000 g       *ABS*	00000000 _estack
+
+
+
+Disassembly of section .text:
+
+08000040 <add_five>:
+ 8000040:	f100 0005 	add.w	r0, r0, #5
+ 8000044:	4770      	bx	lr
+
+08000046 <Reset_Handler>:
+ 8000046:	4826      	ldr	r0, [pc, #152]	@ (80000e0 <default_handler+0x2>)
+ 8000048:	6801      	ldr	r1, [r0, #0]
+ 800004a:	f441 2180 	orr.w	r1, r1, #262144	@ 0x40000
+ 800004e:	6001      	str	r1, [r0, #0]
+ 8000050:	f04f 0007 	mov.w	r0, #7
+ 8000054:	4923      	ldr	r1, [pc, #140]	@ (80000e4 <default_handler+0x6>)
+ 8000056:	4788      	blx	r1
+ 8000058:	280c      	cmp	r0, #12
+ 800005a:	d114      	bne.n	8000086 <fail_1>
+ 800005c:	4c22      	ldr	r4, [pc, #136]	@ (80000e8 <default_handler+0xa>)
+ 800005e:	f04f 0000 	mov.w	r0, #0
+ 8000062:	6020      	str	r0, [r4, #0]
+ 8000064:	491f      	ldr	r1, [pc, #124]	@ (80000e4 <default_handler+0x6>)
+ 8000066:	f021 0101 	bic.w	r1, r1, #1
+ 800006a:	4708      	bx	r1
+
+0800006c <after_fault_bx>:
+ 800006c:	6820      	ldr	r0, [r4, #0]
+ 800006e:	2855      	cmp	r0, #85	@ 0x55
+ 8000070:	d10c      	bne.n	800008c <fail_2>
+ 8000072:	f04f 0014 	mov.w	r0, #20
+ 8000076:	491b      	ldr	r1, [pc, #108]	@ (80000e4 <default_handler+0x6>)
+ 8000078:	4788      	blx	r1
+ 800007a:	2819      	cmp	r0, #25
+ 800007c:	d109      	bne.n	8000092 <fail_3>
+ 800007e:	481b      	ldr	r0, [pc, #108]	@ (80000ec <default_handler+0xe>)
+ 8000080:	491b      	ldr	r1, [pc, #108]	@ (80000f0 <default_handler+0x12>)
+ 8000082:	6008      	str	r0, [r1, #0]
+ 8000084:	e00d      	b.n	80000a2 <done>
+
+08000086 <fail_1>:
+ 8000086:	f04f 0201 	mov.w	r2, #1
+ 800008a:	e005      	b.n	8000098 <fail>
+
+0800008c <fail_2>:
+ 800008c:	f04f 0202 	mov.w	r2, #2
+ 8000090:	e002      	b.n	8000098 <fail>
+
+08000092 <fail_3>:
+ 8000092:	f04f 0203 	mov.w	r2, #3
+ 8000096:	e7ff      	b.n	8000098 <fail>
+
+08000098 <fail>:
+ 8000098:	4816      	ldr	r0, [pc, #88]	@ (80000f4 <default_handler+0x16>)
+ 800009a:	4915      	ldr	r1, [pc, #84]	@ (80000f0 <default_handler+0x12>)
+ 800009c:	6008      	str	r0, [r1, #0]
+ 800009e:	4916      	ldr	r1, [pc, #88]	@ (80000f8 <default_handler+0x1a>)
+ 80000a0:	600a      	str	r2, [r1, #0]
+
+080000a2 <done>:
+ 80000a2:	f04f 0018 	mov.w	r0, #24
+ 80000a6:	4915      	ldr	r1, [pc, #84]	@ (80000fc <default_handler+0x1e>)
+ 80000a8:	beab      	bkpt	0x00ab
+ 80000aa:	e7fe      	b.n	80000aa <done+0x8>
+
+080000ac <UsageFault_Handler>:
+ 80000ac:	480e      	ldr	r0, [pc, #56]	@ (80000e8 <default_handler+0xa>)
+ 80000ae:	f04f 0155 	mov.w	r1, #85	@ 0x55
+ 80000b2:	6001      	str	r1, [r0, #0]
+ 80000b4:	9806      	ldr	r0, [sp, #24]
+ 80000b6:	f100 0002 	add.w	r0, r0, #2
+ 80000ba:	9006      	str	r0, [sp, #24]
+ 80000bc:	4770      	bx	lr
+
+080000be <HardFault_Handler>:
+ 80000be:	480a      	ldr	r0, [pc, #40]	@ (80000e8 <default_handler+0xa>)
+ 80000c0:	f04f 01ee 	mov.w	r1, #238	@ 0xee
+ 80000c4:	6001      	str	r1, [r0, #0]
+ 80000c6:	480b      	ldr	r0, [pc, #44]	@ (80000f4 <default_handler+0x16>)
+ 80000c8:	4909      	ldr	r1, [pc, #36]	@ (80000f0 <default_handler+0x12>)
+ 80000ca:	6008      	str	r0, [r1, #0]
+ 80000cc:	f04f 0202 	mov.w	r2, #2
+ 80000d0:	4909      	ldr	r1, [pc, #36]	@ (80000f8 <default_handler+0x1a>)
+ 80000d2:	600a      	str	r2, [r1, #0]
+ 80000d4:	f04f 0018 	mov.w	r0, #24
+ 80000d8:	4908      	ldr	r1, [pc, #32]	@ (80000fc <default_handler+0x1e>)
+ 80000da:	beab      	bkpt	0x00ab
+ 80000dc:	e7fe      	b.n	80000dc <HardFault_Handler+0x1e>
+
+080000de <default_handler>:
+ 80000de:	e7fe      	b.n	80000de <default_handler>
+ 80000e0:	e000ed24 	.word	0xe000ed24
+ 80000e4:	08000041 	.word	0x08000041
+ 80000e8:	20000108 	.word	0x20000108
+ 80000ec:	cafecafe 	.word	0xcafecafe
+ 80000f0:	20000100 	.word	0x20000100
+ 80000f4:	deaddead 	.word	0xdeaddead
+ 80000f8:	20000104 	.word	0x20000104
+ 80000fc:	00020026 	.word	0x00020026

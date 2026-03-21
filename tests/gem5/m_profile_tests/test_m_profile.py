@@ -49,12 +49,15 @@ import re
 from testlib import *
 
 
-def m_profile_test(name, firmware_name):
+def m_profile_test(name, firmware_name, expected_result="pass"):
     """Register an M-profile integration test.
 
     Args:
         name: Test name (e.g., "test_cps")
         firmware_name: ELF filename (e.g., "test_cps.elf")
+        expected_result: "pass" (default) or "fail" — what the firmware
+            is expected to report.  Controls --expected-result flag
+            passed to run_m4_test.py.
     """
     firmware_path = joinpath(
         config.base_dir,
@@ -70,14 +73,10 @@ def m_profile_test(name, firmware_name):
         return
 
     # Verifier: check that simulation completed without panic/crash.
-    # The firmware enters an infinite loop at the end, so the
-    # simulation exits due to tick limit — that's expected.
+    # The simulation exits either via semihosting SYS_EXIT (bkpt #0xab)
+    # or by hitting the tick limit.  Both are valid exits.
     verifiers = [
-        verifier.MatchRegex(
-            re.compile(
-                r"Exiting @ tick \d+ because simulate\(\) limit reached"
-            )
-        ),
+        verifier.MatchRegex(re.compile(r"Exiting @ tick \d+ because")),
     ]
 
     gem5_verify_config(
@@ -95,8 +94,8 @@ def m_profile_test(name, firmware_name):
         config_args=[
             "--firmware",
             firmware_path,
-            "--tick-limit",
-            "1000000",
+            "--expected-result",
+            expected_result,
         ],
         valid_isas=(constants.all_compiled_tag,),
         valid_hosts=constants.supported_hosts,
@@ -117,3 +116,114 @@ m_profile_test("sp_sync", "test_sp_sync.elf")
 m_profile_test("pop_pc_exc_return", "test_pop_pc_exc_return.elf")
 m_profile_test("nested_exceptions", "test_nested_exceptions.elf")
 m_profile_test("data_processing", "test_data_processing.elf")
+m_profile_test("psp_exception", "test_psp_exception.elf")
+m_profile_test(
+    "deliberate_fail", "test_deliberate_fail.elf", expected_result="fail"
+)
+m_profile_test("exc_return_mask", "test_exc_return_mask.elf")
+m_profile_test("blx_no_exc_return", "test_blx_no_exc_return.elf")
+m_profile_test("bx_bit0_fault", "test_bx_bit0_fault.elf")
+m_profile_test("srs_rfe_blocked", "test_srs_rfe_blocked.elf")
+m_profile_test("coproc_detection", "test_coproc_detection.elf")
+m_profile_test("ldrex_strex_granule", "test_ldrex_strex_granule.elf")
+m_profile_test("nested_priority", "test_nested_priority.elf")
+m_profile_test("systick_active_pending", "test_systick_active_pending.elf")
+m_profile_test("ipr_byte_access", "test_ipr_byte_access.elf")
+
+
+def m_profile_checkpoint_test(name, firmware_name):
+    """Register an M-profile checkpoint/restore test.
+
+    Uses run_checkpoint_test.py which runs two gem5 simulations
+    (save + restore) via multiprocessing.Process.
+    """
+    firmware_path = joinpath(
+        config.base_dir,
+        "tests",
+        "gem5",
+        "m_profile_tests",
+        "programs",
+        firmware_name,
+    )
+
+    if not os.path.exists(firmware_path):
+        return
+
+    verifiers = [
+        verifier.MatchRegex(re.compile(r"Exiting @ tick \d+ because")),
+    ]
+
+    gem5_verify_config(
+        name=f"m_profile_{name}",
+        verifiers=verifiers,
+        fixtures=(),
+        config=joinpath(
+            config.base_dir,
+            "tests",
+            "gem5",
+            "m_profile_tests",
+            "configs",
+            "run_checkpoint_test.py",
+        ),
+        config_args=[
+            "--firmware",
+            firmware_path,
+        ],
+        valid_isas=(constants.all_compiled_tag,),
+        valid_hosts=constants.supported_hosts,
+        length=constants.quick_tag,
+    )
+
+
+m_profile_checkpoint_test("scs_checkpoint", "test_scs_checkpoint.elf")
+
+
+# FreeRTOS holistic test — uses the same run_m4_test.py but with a longer
+# tick limit (FreeRTOS needs many SysTick periods for context switches).
+# The firmware is in the freertos/ subdirectory.
+def m_profile_freertos_test():
+    firmware_path = joinpath(
+        config.base_dir,
+        "tests",
+        "gem5",
+        "m_profile_tests",
+        "programs",
+        "freertos",
+        "freertos_test.elf",
+    )
+
+    if not os.path.exists(firmware_path):
+        return
+
+    verifiers = [
+        verifier.MatchRegex(re.compile(r"Exiting @ tick \d+ because")),
+    ]
+
+    gem5_verify_config(
+        name="m_profile_freertos_boot",
+        verifiers=verifiers,
+        fixtures=(),
+        config=joinpath(
+            config.base_dir,
+            "tests",
+            "gem5",
+            "m_profile_tests",
+            "configs",
+            "run_m4_test.py",
+        ),
+        config_args=[
+            "--firmware",
+            firmware_path,
+            "--tick-limit",
+            # 3 SysTick periods (TARGET_TICKS=3) ≈ 3B ticks, but 3 tasks
+            # each doing vTaskDelay(1) means ~9 scheduling rounds + startup
+            # + monitor polling.  10B ticks gives sufficient headroom.
+            "10000000000",
+        ],
+        valid_isas=(constants.all_compiled_tag,),
+        valid_hosts=constants.supported_hosts,
+        length=constants.quick_tag,
+    )
+
+
+m_profile_freertos_test()

@@ -29,6 +29,7 @@
 #include "arch/arm/m_faults.hh"
 
 #include "arch/arm/pcstate.hh"
+#include "arch/arm/regs/cc.hh"
 #include "arch/arm/regs/int.hh"
 #include "arch/arm/regs/misc.hh"
 #include "arch/arm/regs/misc_types.hh"
@@ -137,9 +138,46 @@ ArmMFault::pushExceptionFrame(ThreadContext *tc,
     if (excAdvancesPC(_excNumber) && inst != nullStaticInstPtr)
         returnAddr += inst->size();
 
-    // Build the stacked xPSR — sync T-bit from PCState.
+    // Build the stacked xPSR.
+    //
+    // IMPORTANT: CC flat register → xPSR sync.
+    //
+    // gem5 reuses A-profile instruction implementations for M-profile.
+    // These instructions store NZCV and GE condition flags in flat CC
+    // registers (cc_reg::Nz, C, V, Ge) rather than in MISCREG_M_XPSR.
+    // During normal execution this is fine — instructions read/write
+    // the CC regs directly and never consult xPSR.
+    //
+    // But when we stack xPSR for an exception frame, the NZCV/GE bits
+    // in MISCREG_M_XPSR are STALE (last written by MSR, not by the
+    // most recent ALU instruction).  We must capture the live CC reg
+    // values into xPSR before pushing the frame.
+    //
+    // On real Cortex-M hardware this isn't an issue because the ALU
+    // flags and the xPSR register are the same physical bits — the
+    // hardware captures them atomically when pushing the exception
+    // frame.  In gem5, the CC regs and xPSR are separate storage, so
+    // we must sync explicitly.
+    //
+    // This mirrors A-profile faults.cc:501-504 which syncs CC regs
+    // into saved_cpsr before writing SPSR on exception entry.
+    //
+    // Without this sync, NZCV flags are silently corrupted across
+    // any exception boundary.  The bug is latent for simple tests
+    // (flags happen to survive by luck) but causes FreeRTOS to fail
+    // after thousands of context switches when a PendSV fires between
+    // a CMP and a conditional branch.
     XPSR xpsr = tc->readMiscRegNoEffect(MISCREG_M_XPSR);
-    xpsr.t = pcState.thumb() ? 1 : 0;
+
+    // cc_reg::Nz stores N and Z as a 2-bit value: bit[1]=N, bit[0]=Z.
+    // XPSR has separate n (bit 31) and z (bit 30) fields.
+    RegVal ccNz = tc->getReg(cc_reg::Nz);
+    xpsr.n  = bits(ccNz, 1);            // xPSR[31] = N
+    xpsr.z  = bits(ccNz, 0);            // xPSR[30] = Z
+    xpsr.c  = tc->getReg(cc_reg::C);    // xPSR[29] = C
+    xpsr.v  = tc->getReg(cc_reg::V);    // xPSR[28] = V
+    xpsr.ge = tc->getReg(cc_reg::Ge);   // xPSR[19:16] = GE[3:0]
+    xpsr.t  = pcState.thumb() ? 1 : 0;  // xPSR[24] = T (Thumb)
 
     // Stack alignment (DDI0403E B1.5.6):
     // If STKALIGN is set and SP is not 8-byte aligned, insert 4 bytes
@@ -221,9 +259,23 @@ ArmMFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
     CCR_t ccr = tc->readMiscRegNoEffect(MISCREG_M_CCR);
     uint32_t newSP = pushExceptionFrame(tc, inst, sp, ccr.stkalign);
 
-    // Write back SP to both R13 and the misc reg copy.
-    tc->setReg(int_reg::Sp, (RegVal)newSP);
+    // Update active-stack misc reg with post-push value.
     tc->setMiscRegNoEffect(spReg, newSP);
+
+    // Bug 1 fix: when entering from Thread/PSP, R13 must switch to MSP.
+    // Handler mode always uses MSP; PSP was only used for frame storage.
+    // DDI0403E B1.5.6: on exception entry SP_main becomes the active SP.
+    if (usePSP) {
+        uint32_t msp = (uint32_t)tc->readMiscRegNoEffect(MISCREG_M_MSP);
+        tc->setReg(int_reg::Sp, (RegVal)msp);
+    } else {
+        tc->setReg(int_reg::Sp, (RegVal)newSP);
+    }
+
+    // Bug 2 fix: clear CONTROL.SPSEL to 0 — handler always uses MSP.
+    // DDI0403E B1.4.4: CONTROL.SPSEL is 0 in Handler mode.
+    ctrl.spsel = 0;
+    tc->setMiscRegNoEffect(MISCREG_M_CONTROL, ctrl);
 
     // ---- 3. Set LR to EXC_RETURN ----
 
@@ -242,6 +294,25 @@ ArmMFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
     xpsr.iciIt1 = 0;
     xpsr.iciIt2 = 0;
     tc->setMiscRegNoEffect(MISCREG_M_XPSR, xpsr);
+
+    // ---- 5b. Set SHCSR active bit for synchronous exceptions ----
+    //
+    // Async exceptions (SysTick, PendSV, external IRQs) have their
+    // active bits set by activateIRQ() in MProfileSCS, which is called
+    // from MProfileInterrupts::updateIntrInfo() after the CPU enters
+    // the handler.  Synchronous exceptions (SVCall, UsageFault, etc.)
+    // bypass that path — they enter directly via ArmMFault::invoke().
+    // We must set the SHCSR active bit here so that executionPriority()
+    // can see this exception as active for preemption decisions.
+    // DDI0403E B3.2.10: SHCSR active bit positions.
+    {
+        int shcsrBit = mProfileShcsrActiveBit(_excNumber);
+        if (shcsrBit >= 0) {
+            RegVal shcsr = tc->readMiscRegNoEffect(MISCREG_M_SHCSR);
+            shcsr |= (1u << shcsrBit);
+            tc->setMiscRegNoEffect(MISCREG_M_SHCSR, shcsr);
+        }
+    }
 
     // ---- 6. Branch to handler ----
 
@@ -325,11 +396,17 @@ MProfileReset::invoke(ThreadContext *tc, const StaticInstPtr &inst)
 }
 
 // ---------------------------------------------------------------------------
-// mProfileExcReturn — M-profile exception return (unstack)
+// mProfileExcReturnUnstack — M-profile exception return (CPU state restore)
 // ---------------------------------------------------------------------------
+//
+// Pops the 8-word exception frame from the stack indicated by
+// EXC_RETURN and restores CPU state (r0-r3, r12, LR, SP, xPSR, NPC).
+// This is the CPU-state-only half of exception return.  The interrupt
+// controller half (deactivateIRQ) is handled by
+// MProfileInterrupts::excReturn(), which calls this function.
 
 void
-mProfileExcReturn(ThreadContext *tc, uint32_t exc_return)
+mProfileExcReturnUnstack(ThreadContext *tc, uint32_t exc_return)
 {
     // Decode EXC_RETURN (DDI0403E B1.5.8).
     //   bit[3] = 0: return to Handler mode, 1: return to Thread mode
@@ -337,9 +414,31 @@ mProfileExcReturn(ThreadContext *tc, uint32_t exc_return)
     bool returnToThread = (exc_return & 0x8);
     bool restoreFromPSP = (exc_return & 0x4);
 
-    // R13 is the authoritative SP (same as invoke).
     MiscRegIndex spReg = restoreFromPSP ? MISCREG_M_PSP : MISCREG_M_MSP;
-    uint32_t frameptr = (uint32_t)tc->getReg(int_reg::Sp);
+
+    // Read the frame pointer from the correct stack source.
+    //
+    // For MSP frames (bit[2]=0): read from R13 (int_reg::Sp).
+    //   Handler mode R13 IS MSP.  Reading R13 is correct even after
+    //   nested exceptions, because inner exception entries overwrite
+    //   MISCREG_M_MSP (via setMiscRegNoEffect in invoke()) but the
+    //   handler's PUSH/POP only track R13.  After the handler's
+    //   software POP, R13 points to the hardware exception frame.
+    //   MISCREG_M_MSP may still hold a stale value from an inner
+    //   exception's entry — using it would pop from the wrong address.
+    //
+    // For PSP frames (bit[2]=1): read from MISCREG_M_PSP.
+    //   Handler mode R13 = MSP ≠ PSP.  The frame was pushed to PSP
+    //   before R13 switched to MSP on exception entry, so we must
+    //   use the misc reg to find it.
+    //
+    // DDI0403E B1.5.8: SP_process / SP_main selected by EXC_RETURN bit[2].
+    uint32_t frameptr;
+    if (restoreFromPSP) {
+        frameptr = (uint32_t)tc->readMiscRegNoEffect(MISCREG_M_PSP);
+    } else {
+        frameptr = (uint32_t)tc->getReg(int_reg::Sp);
+    }
 
     // Read the exception frame from physical memory.
     // TODO: Unstacking goes through the MPU on real hardware.
@@ -378,6 +477,17 @@ mProfileExcReturn(ThreadContext *tc, uint32_t exc_return)
     tc->setReg(int_reg::Sp, (RegVal)sp);
     tc->setMiscRegNoEffect(spReg, sp);
 
+    // Bug 4 fix: restore CONTROL.SPSEL from EXC_RETURN bit[2].
+    // Returning to Thread/PSP (bit[2]=1) → SPSEL=1.
+    // Returning to Thread/MSP or Handler (bit[2]=0) → SPSEL=0.
+    // DDI0403E B1.4.4: CONTROL.SPSEL is only meaningful in Thread mode
+    // and is restored by exception return.
+    {
+        CONTROL_M ctrl = tc->readMiscRegNoEffect(MISCREG_M_CONTROL);
+        ctrl.spsel = restoreFromPSP ? 1 : 0;
+        tc->setMiscRegNoEffect(MISCREG_M_CONTROL, ctrl);
+    }
+
     // Restore xPSR.  The stacked value already contains the correct
     // IPSR for the interrupted context (0 for Thread mode, non-zero
     // for a nested Handler).  Clear frameptralign since it is only
@@ -385,14 +495,49 @@ mProfileExcReturn(ThreadContext *tc, uint32_t exc_return)
     xpsr.frameptralign = 0;
     tc->setMiscRegNoEffect(MISCREG_M_XPSR, xpsr);
 
-    // Set PC to the stacked return address.
-    // TODO: Same Thumb decoder dependency — see ArmMFault::invoke().
-    PCState pc(retAddr & ~0x1);
-    pc.thumb(true);
-    pc.nextThumb(true);
-    pc.aarch64(false);
-    pc.nextAArch64(false);
+    // IMPORTANT: xPSR → CC flat register sync.
+    //
+    // The inverse of the sync in ArmMFault::pushExceptionFrame().
+    // The stacked xPSR captured the live NZCV/GE flags at exception
+    // entry.  Now we must propagate them back to the CC flat registers
+    // so that the resumed code's conditional instructions (beq, bne,
+    // it, etc.) see the correct flag values.
+    //
+    // Without this, the CC regs retain the exception HANDLER's flags,
+    // not the interrupted code's flags.  This corrupts condition codes
+    // on every exception return.
+    //
+    // See the comment in pushExceptionFrame() for the full explanation
+    // of why gem5 has separate CC regs and xPSR storage.
+    // cc_reg::Nz expects a 2-bit value: bit[1]=N, bit[0]=Z.
+    // XPSR has separate n (bit 31) and z (bit 30) fields.
+    RegVal ccNz = ((RegVal)(uint8_t)xpsr.n << 1)
+               |  (RegVal)(uint8_t)xpsr.z;
+    tc->setReg(cc_reg::Nz, ccNz);                       // N, Z
+    tc->setReg(cc_reg::C,  (RegVal)(uint8_t)xpsr.c);   // C
+    tc->setReg(cc_reg::V,  (RegVal)(uint8_t)xpsr.v);   // V
+    tc->setReg(cc_reg::Ge, (RegVal)(uint8_t)xpsr.ge);  // GE[3:0]
+
+    // Set NPC to the stacked return address.
+    //
+    // mProfileExcReturn() is called from execute() (via BxMProfile or
+    // ExcReturnFromPC), so advancePC() will call advance() afterwards:
+    //   advance(): _pc = _npc; _npc = _pc + instSize
+    // We must therefore set _npc = retAddr, NOT use the PCState(addr)
+    // constructor (which calls set() → _npc = addr+2 → off by two).
+    //
+    // Contrast with ArmMFault::invoke() / MProfileReset::invoke(): those
+    // are true fault handlers where the fault path does NOT call advance()
+    // after tc->pcState(pc), so PCState(addr) is correct there.
+    //
+    // Here we take the current pcState and only change _npc and the
+    // Thumb-state flag.  _pc, _aarch64, etc. are already correct since we
+    // are mid-execution on an M-profile (Thumb, AArch32) instruction.
+    auto pc = tc->pcState().as<PCState>();
+    pc.nextThumb(true);                    // M-profile always returns to Thumb
     pc.illegalExec(false);
+    // NPC = return address; advance() copies to PC.
+    pc.npc(retAddr & ~(Addr)0x1);
     tc->pcState(pc);
 
     DPRINTF(Faults, "M-profile exception return: EXC_RETURN=%#x "

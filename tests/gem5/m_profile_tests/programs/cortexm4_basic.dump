@@ -4,7 +4,7 @@ cortexm4_basic.elf:     file format elf32-littlearm
 SYMBOL TABLE:
 08000000 l    d  .isr_vector	00000000 .isr_vector
 08000040 l    d  .text	00000000 .text
-08000128 l    d  .rodata	00000000 .rodata
+08000134 l    d  .rodata	00000000 .rodata
 20000000 l    d  .data	00000000 .data
 20000000 l    d  .bss	00000000 .bss
 00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
@@ -18,14 +18,14 @@ e000ed20 l       *ABS*	00000000 SCB_SHPR3
 20000100 l       *ABS*	00000000 TEST_RESULTS
 cafecafe l       *ABS*	00000000 TEST_PASS_VAL
 deaddead l       *ABS*	00000000 TEST_FAIL_VAL
-0800010c l     F .text	00000000 NMI_Handler
-0800010c l     F .text	00000000 HardFault_Handler
-0800010c l     F .text	00000000 MemManage_Handler
-0800010c l     F .text	00000000 BusFault_Handler
-0800010c l     F .text	00000000 UsageFault_Handler
-080000fc l     F .text	00000000 SVCall_Handler
-0800010c l     F .text	00000000 PendSV_Handler
-08000104 l     F .text	00000000 SysTick_Handler
+08000114 l     F .text	00000000 NMI_Handler
+08000114 l     F .text	00000000 HardFault_Handler
+08000114 l     F .text	00000000 MemManage_Handler
+08000114 l     F .text	00000000 BusFault_Handler
+08000114 l     F .text	00000000 UsageFault_Handler
+08000104 l     F .text	00000000 SVCall_Handler
+08000114 l     F .text	00000000 PendSV_Handler
+0800010c l     F .text	00000000 SysTick_Handler
 080000f4 l       .text	00000000 test_fail
 080000d2 l       .text	00000000 systick_wait
 080000e4 l       .text	00000000 systick_done
@@ -70,24 +70,24 @@ Disassembly of section .text:
  8000090:	f3ef 8010 	mrs	r0, PRIMASK
  8000094:	2800      	cmp	r0, #0
  8000096:	d12d      	bne.n	80000f4 <test_fail>
- 8000098:	4c1d      	ldr	r4, [pc, #116]	@ (8000110 <BusFault_Handler+0x4>)
+ 8000098:	4c1f      	ldr	r4, [pc, #124]	@ (8000118 <BusFault_Handler+0x4>)
  800009a:	f04f 0000 	mov.w	r0, #0
  800009e:	6020      	str	r0, [r4, #0]
  80000a0:	df00      	svc	0
  80000a2:	6820      	ldr	r0, [r4, #0]
- 80000a4:	491b      	ldr	r1, [pc, #108]	@ (8000114 <BusFault_Handler+0x8>)
+ 80000a4:	491d      	ldr	r1, [pc, #116]	@ (800011c <BusFault_Handler+0x8>)
  80000a6:	4288      	cmp	r0, r1
  80000a8:	d124      	bne.n	80000f4 <test_fail>
- 80000aa:	4c19      	ldr	r4, [pc, #100]	@ (8000110 <BusFault_Handler+0x4>)
+ 80000aa:	4c1b      	ldr	r4, [pc, #108]	@ (8000118 <BusFault_Handler+0x4>)
  80000ac:	f04f 0000 	mov.w	r0, #0
  80000b0:	6060      	str	r0, [r4, #4]
- 80000b2:	4819      	ldr	r0, [pc, #100]	@ (8000118 <BusFault_Handler+0xc>)
+ 80000b2:	481b      	ldr	r0, [pc, #108]	@ (8000120 <BusFault_Handler+0xc>)
  80000b4:	f04f 0163 	mov.w	r1, #99	@ 0x63
  80000b8:	6001      	str	r1, [r0, #0]
- 80000ba:	4818      	ldr	r0, [pc, #96]	@ (800011c <BusFault_Handler+0x10>)
+ 80000ba:	481a      	ldr	r0, [pc, #104]	@ (8000124 <BusFault_Handler+0x10>)
  80000bc:	f04f 0100 	mov.w	r1, #0
  80000c0:	6001      	str	r1, [r0, #0]
- 80000c2:	4817      	ldr	r0, [pc, #92]	@ (8000120 <BusFault_Handler+0x14>)
+ 80000c2:	4819      	ldr	r0, [pc, #100]	@ (8000128 <BusFault_Handler+0x14>)
  80000c4:	f04f 0107 	mov.w	r1, #7
  80000c8:	6001      	str	r1, [r0, #0]
  80000ca:	f04f 0600 	mov.w	r6, #0
@@ -95,7 +95,7 @@ Disassembly of section .text:
 
 080000d2 <systick_wait>:
  80000d2:	6860      	ldr	r0, [r4, #4]
- 80000d4:	490f      	ldr	r1, [pc, #60]	@ (8000114 <BusFault_Handler+0x8>)
+ 80000d4:	4911      	ldr	r1, [pc, #68]	@ (800011c <BusFault_Handler+0x8>)
  80000d6:	4288      	cmp	r0, r1
  80000d8:	d004      	beq.n	80000e4 <systick_done>
  80000da:	f106 0601 	add.w	r6, r6, #1
@@ -104,42 +104,46 @@ Disassembly of section .text:
  80000e2:	e7f6      	b.n	80000d2 <systick_wait>
 
 080000e4 <systick_done>:
- 80000e4:	480e      	ldr	r0, [pc, #56]	@ (8000120 <BusFault_Handler+0x14>)
+ 80000e4:	4810      	ldr	r0, [pc, #64]	@ (8000128 <BusFault_Handler+0x14>)
  80000e6:	f04f 0100 	mov.w	r1, #0
  80000ea:	6001      	str	r1, [r0, #0]
 
 080000ec <test_pass>:
- 80000ec:	4c08      	ldr	r4, [pc, #32]	@ (8000110 <BusFault_Handler+0x4>)
- 80000ee:	4809      	ldr	r0, [pc, #36]	@ (8000114 <BusFault_Handler+0x8>)
+ 80000ec:	4c0a      	ldr	r4, [pc, #40]	@ (8000118 <BusFault_Handler+0x4>)
+ 80000ee:	480b      	ldr	r0, [pc, #44]	@ (800011c <BusFault_Handler+0x8>)
  80000f0:	60a0      	str	r0, [r4, #8]
  80000f2:	e002      	b.n	80000fa <test_done>
 
 080000f4 <test_fail>:
- 80000f4:	4c06      	ldr	r4, [pc, #24]	@ (8000110 <BusFault_Handler+0x4>)
- 80000f6:	480b      	ldr	r0, [pc, #44]	@ (8000124 <BusFault_Handler+0x18>)
+ 80000f4:	4c08      	ldr	r4, [pc, #32]	@ (8000118 <BusFault_Handler+0x4>)
+ 80000f6:	480d      	ldr	r0, [pc, #52]	@ (800012c <BusFault_Handler+0x18>)
  80000f8:	60a0      	str	r0, [r4, #8]
 
 080000fa <test_done>:
- 80000fa:	e7fe      	b.n	80000fa <test_done>
+ 80000fa:	f04f 0018 	mov.w	r0, #24
+ 80000fe:	490c      	ldr	r1, [pc, #48]	@ (8000130 <BusFault_Handler+0x1c>)
+ 8000100:	beab      	bkpt	0x00ab
+ 8000102:	e7fe      	b.n	8000102 <test_done+0x8>
 
-080000fc <SVCall_Handler>:
- 80000fc:	4804      	ldr	r0, [pc, #16]	@ (8000110 <BusFault_Handler+0x4>)
- 80000fe:	4905      	ldr	r1, [pc, #20]	@ (8000114 <BusFault_Handler+0x8>)
- 8000100:	6001      	str	r1, [r0, #0]
- 8000102:	4770      	bx	lr
-
-08000104 <SysTick_Handler>:
- 8000104:	4802      	ldr	r0, [pc, #8]	@ (8000110 <BusFault_Handler+0x4>)
- 8000106:	4903      	ldr	r1, [pc, #12]	@ (8000114 <BusFault_Handler+0x8>)
- 8000108:	6041      	str	r1, [r0, #4]
+08000104 <SVCall_Handler>:
+ 8000104:	4804      	ldr	r0, [pc, #16]	@ (8000118 <BusFault_Handler+0x4>)
+ 8000106:	4905      	ldr	r1, [pc, #20]	@ (800011c <BusFault_Handler+0x8>)
+ 8000108:	6001      	str	r1, [r0, #0]
  800010a:	4770      	bx	lr
 
-0800010c <BusFault_Handler>:
- 800010c:	e7fe      	b.n	800010c <BusFault_Handler>
- 800010e:	0000      	.short	0x0000
- 8000110:	20000100 	.word	0x20000100
- 8000114:	cafecafe 	.word	0xcafecafe
- 8000118:	e000e014 	.word	0xe000e014
- 800011c:	e000e018 	.word	0xe000e018
- 8000120:	e000e010 	.word	0xe000e010
- 8000124:	deaddead 	.word	0xdeaddead
+0800010c <SysTick_Handler>:
+ 800010c:	4802      	ldr	r0, [pc, #8]	@ (8000118 <BusFault_Handler+0x4>)
+ 800010e:	4903      	ldr	r1, [pc, #12]	@ (800011c <BusFault_Handler+0x8>)
+ 8000110:	6041      	str	r1, [r0, #4]
+ 8000112:	4770      	bx	lr
+
+08000114 <BusFault_Handler>:
+ 8000114:	e7fe      	b.n	8000114 <BusFault_Handler>
+ 8000116:	0000      	.short	0x0000
+ 8000118:	20000100 	.word	0x20000100
+ 800011c:	cafecafe 	.word	0xcafecafe
+ 8000120:	e000e014 	.word	0xe000e014
+ 8000124:	e000e018 	.word	0xe000e018
+ 8000128:	e000e010 	.word	0xe000e010
+ 800012c:	deaddead 	.word	0xdeaddead
+ 8000130:	00020026 	.word	0x00020026

@@ -39,13 +39,18 @@
 #include <sstream>
 
 #include "arch/arm/m_faults.hh"
+#include "arch/arm/m_interrupts.hh"
+#include "arch/arm/m_system.hh"
 #include "arch/arm/pcstate.hh"
 #include "arch/arm/regs/int.hh"
 #include "arch/arm/regs/misc.hh"
+#include "arch/arm/semihosting.hh"
+#include "arch/generic/memhelpers.hh"
 #include "base/trace.hh"
 #include "cpu/base.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/thread_context.hh"
+#include "mem/request.hh"
 
 namespace gem5
 {
@@ -300,19 +305,39 @@ BxMProfile::execute(ExecContext *xc,
     RegVal target = tc->getReg(RegId(intRegClass, op1));
 
     // EXC_RETURN detection (DDI0403E B1.5.8):
-    // If bits[31:8] are all 1s, this is an exception return magic
-    // value, not a branch address.
-    if ((target & 0xFFFFFF00) == 0xFFFFFF00) {
-        mProfileExcReturn(tc, (uint32_t)target);
+    // If bits[31:4] are all 1s, this is an exception return magic value,
+    // not a branch address.  Valid range: 0xFFFFFFF0–0xFFFFFFFF.
+    if ((target & 0xFFFFFFF0) == 0xFFFFFFF0) {
+        // Exception return: deactivate via interrupt controller, then
+        // unstack CPU state.  MProfileInterrupts::excReturn() handles both.
+        auto *mintr = dynamic_cast<MProfileInterrupts *>(
+            tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        assert(mintr && "M-profile CPU must use MProfileInterrupts");
+        mintr->excReturn(tc, (uint32_t)target);
         return NoFault;
     }
 
-    // Normal branch — set PC to target.
-    // Bit[0] determines Thumb state (always 1 on M-profile).
+    // M-profile is always Thumb.  BX with bit[0]=0 is a UsageFault
+    // (INVSTATE).  DDI0403E A7.7.20: "If the value of bit[0] of Rm
+    // is 0, the result is UNPREDICTABLE."  On M-profile, the ARMv7-M
+    // ARM clarifies this is INVSTATE UsageFault (B1.5.8).
+    if (!(target & 1)) {
+        return std::make_shared<ArmMFault>(MPEXC_USAGEFAULT);
+    }
+
+    // Sanity check: M-profile must always be in Thumb mode, never AArch64.
     auto pc = tc->pcState().as<PCState>();
-    pc.thumb(target & 1);
-    pc.nextThumb(target & 1);
-    pc.set(target & ~(Addr)1);
+    assert(pc.thumb() && "M-profile PC must be in Thumb mode");
+    assert(!pc.aarch64() && "M-profile cannot be in AArch64 mode");
+
+    // Normal branch — set NPC to target.
+    // In gem5's execution model, branches must write to pc.npc(), NOT
+    // pc.set().  pc.set(val) sets _pc=val AND _npc=val+instSize; after
+    // advancePC() calls advance(), _pc becomes _npc = val+2 (off by two).
+    // pc.npc(val) sets only _npc=val; advance() then gives _pc=val. Correct.
+    // DDI0403E §A7.7.20: PC = R[m]<31:1>:0
+    pc.nextThumb(target & 1);   // thumb state for the branch target
+    pc.npc(target & ~(Addr)1);  // NPC = branch target (advance() copies to PC)
     tc->pcState(pc);
 
     return NoFault;
@@ -339,11 +364,10 @@ BlxRegMProfile::execute(ExecContext *xc,
     ThreadContext *tc = xc->tcBase();
     RegVal target = tc->getReg(RegId(intRegClass, op1));
 
-    // EXC_RETURN detection (same as BX)
-    if ((target & 0xFFFFFF00) == 0xFFFFFF00) {
-        mProfileExcReturn(tc, (uint32_t)target);
-        return NoFault;
-    }
+    // DDI0403E B1.5.8: BLX does NOT trigger EXC_RETURN.
+    // Only BX, POP {PC}, LDM {PC}, and LDR Rd=PC can trigger exception
+    // return.  BLX with an EXC_RETURN value is UNPREDICTABLE; we treat
+    // it as a normal branch (which will fault if the address is unmapped).
 
     // Set LR to return address (next instruction after BLX).
     // Thumb-16 BLX is 2 bytes.  Bit[0]=1 indicates Thumb state.
@@ -352,10 +376,11 @@ BlxRegMProfile::execute(ExecContext *xc,
     lr |= 1;
     tc->setReg(int_reg::Lr, lr);
 
-    // Branch to target
+    // Branch to target — same pc.npc() rationale as BxMProfile above.
+    // DDI0403E §A7.7.19: PC = R[m]<31:1>:0; LR = (return_addr)|1
     pc.thumb(target & 1);
     pc.nextThumb(target & 1);
-    pc.set(target & ~(Addr)1);
+    pc.npc(target & ~(Addr)1);  // NPC = branch target (not pc.set!)
     tc->pcState(pc);
 
     return NoFault;
@@ -476,8 +501,12 @@ ExcReturnFromPC::execute(ExecContext *xc,
 {
     ThreadContext *tc = xc->tcBase();
     // The EXC_RETURN value was the address the CPU tried to fetch from.
-    // mProfileExcReturn() pops the exception frame and restores state.
-    mProfileExcReturn(tc, excReturnVal);
+    // Exception return: deactivate via interrupt controller, then
+    // unstack CPU state.  MProfileInterrupts::excReturn() handles both.
+    auto *mintr = dynamic_cast<MProfileInterrupts *>(
+        tc->getCpuPtr()->getInterruptController(tc->threadId()));
+    assert(mintr && "M-profile CPU must use MProfileInterrupts");
+    mintr->excReturn(tc, excReturnVal);
     return NoFault;
 }
 
@@ -487,6 +516,116 @@ ExcReturnFromPC::generateDisassembly(Addr pc,
 {
     std::stringstream ss;
     ss << "  exc_return #" << std::hex << excReturnVal;
+    return ss.str();
+}
+
+// =========================================================================
+// BkptSemiMProfile::execute — BKPT #0xAB semihosting
+// =========================================================================
+
+Fault
+BkptSemiMProfile::execute(ExecContext *xc,
+                          trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+
+    // Get semihosting handler from ArmMSystem.
+    auto *sys = dynamic_cast<ArmMSystem *>(tc->getSystemPtr());
+    if (!sys || !sys->haveSemihosting()) {
+        // No semihosting configured — treat as normal BKPT (debug fault).
+        // Let the standard decoder handle it on fallthrough.
+        return std::make_shared<UndefinedInstruction>(
+            machInst, false, ExceptionClass::SOFTWARE_BREAKPOINT);
+    }
+
+    // Dispatch the semihosting call.
+    // ABI: R0 = operation code, R1 = parameter block pointer.
+    // call32() reads R0/R1 internally via ArmSemihosting::Abi32.
+    sys->semihosting->call32(tc, true);
+
+    return NoFault;
+}
+
+std::string
+BkptSemiMProfile::generateDisassembly(Addr pc,
+    const loader::SymbolTable *symtab) const
+{
+    return "  bkpt  #0xab  ; semihosting";
+}
+
+// =========================================================================
+// LdrexMProfile::execute — LDREX / LDREXB / LDREXH
+// =========================================================================
+//
+// M-profile replacement for the ISA-generated LDREX instruction classes.
+// The generated versions call ArmISA::ISA::getSelfDebug() which does a
+// static_cast<ISA*> on MISA*, causing undefined behavior.  This version
+// performs the same LLSC memory read but skips the SelfDebug call.
+
+Fault
+LdrexMProfile::execute(ExecContext *xc,
+                       trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    Addr addr = tc->getReg(RegId(intRegClass, base)) + imm;
+
+    // Perform the exclusive load via the standard memory interface.
+    // Request::LLSC triggers handleLockedRead() on the ISA (MISA),
+    // which records the exclusive address in the local monitor.
+    // The low bits of memAccessFlags encode alignment requirements
+    // (matching the ISA-generated code: 2=word, 1=half, 0=byte).
+    Request::Flags memFlags = Request::LLSC;
+    if (accessSize == 4)
+        memFlags = Request::Flags(2 | Request::LLSC);
+    else if (accessSize == 2)
+        memFlags = Request::Flags(1 | Request::LLSC);
+
+    RegVal result = 0;
+    if (accessSize == 4) {
+        uint32_t data = 0;
+        Fault fault = readMemAtomicLE(xc, traceData, addr, data, memFlags);
+        if (fault != NoFault)
+            return fault;
+        result = data;
+    } else if (accessSize == 2) {
+        uint16_t data = 0;
+        Fault fault = readMemAtomicLE(xc, traceData, addr, data, memFlags);
+        if (fault != NoFault)
+            return fault;
+        result = data;
+    } else {
+        uint8_t data = 0;
+        Fault fault = readMemAtomicLE(xc, traceData, addr, data, memFlags);
+        if (fault != NoFault)
+            return fault;
+        result = data;
+    }
+
+    tc->setReg(RegId(intRegClass, dest), result);
+
+    if (traceData)
+        traceData->setData(result);
+
+    return NoFault;
+}
+
+std::string
+LdrexMProfile::generateDisassembly(Addr pc,
+    const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    if (accessSize == 1)
+        ss << "  ldrexb  ";
+    else if (accessSize == 2)
+        ss << "  ldrexh  ";
+    else
+        ss << "  ldrex   ";
+    printIntReg(ss, dest);
+    ss << ", [";
+    printIntReg(ss, base);
+    if (imm)
+        ss << ", #" << imm;
+    ss << "]";
     return ss.str();
 }
 

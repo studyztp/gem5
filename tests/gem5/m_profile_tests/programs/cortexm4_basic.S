@@ -218,8 +218,11 @@ test_fail:
     str     r0, [r4, #8]        /* final result = FAIL */
 
 test_done:
-    /* Infinite loop — gem5 will terminate via tick limit */
-    b       test_done
+    /* Exit via ARM semihosting SYS_EXIT */
+    mov     r0, #0x18           /* SYS_EXIT */
+    ldr     r1, =0x20026        /* ADP_Stopped_ApplicationExit */
+    bkpt    #0xab               /* M-profile semihosting trigger */
+    b       .                   /* unreachable */
 
 /* ================================================================
  * Exception Handlers

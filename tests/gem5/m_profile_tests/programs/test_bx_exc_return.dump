@@ -4,7 +4,7 @@ test_bx_exc_return.elf:     file format elf32-littlearm
 SYMBOL TABLE:
 08000000 l    d  .isr_vector	00000000 .isr_vector
 08000040 l    d  .text	00000000 .text
-080000b4 l    d  .rodata	00000000 .rodata
+080000c0 l    d  .rodata	00000000 .rodata
 20000000 l    d  .data	00000000 .data
 20000000 l    d  .bss	00000000 .bss
 00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
@@ -14,8 +14,8 @@ SYMBOL TABLE:
 cafecafe l       *ABS*	00000000 PASS_VAL
 deaddead l       *ABS*	00000000 FAIL_VAL
 08000000 l       .isr_vector	00000000 __isr_vector
-0800009c l     F .text	00000000 default_handler
-08000092 l     F .text	00000000 SVCall_Handler
+080000a4 l     F .text	00000000 default_handler
+0800009a l     F .text	00000000 SVCall_Handler
 08000040 l     F .text	00000000 add_one
 08000076 l       .text	00000000 fail_1
 0800007c l       .text	00000000 fail_2
@@ -35,24 +35,24 @@ Disassembly of section .text:
 
 08000046 <Reset_Handler>:
  8000046:	f04f 000a 	mov.w	r0, #10
- 800004a:	4915      	ldr	r1, [pc, #84]	@ (80000a0 <default_handler+0x4>)
+ 800004a:	4917      	ldr	r1, [pc, #92]	@ (80000a8 <default_handler+0x4>)
  800004c:	4788      	blx	r1
  800004e:	280b      	cmp	r0, #11
  8000050:	d111      	bne.n	8000076 <fail_1>
  8000052:	f04f 0000 	mov.w	r0, #0
- 8000056:	4c13      	ldr	r4, [pc, #76]	@ (80000a4 <default_handler+0x8>)
+ 8000056:	4c15      	ldr	r4, [pc, #84]	@ (80000ac <default_handler+0x8>)
  8000058:	6020      	str	r0, [r4, #0]
  800005a:	df00      	svc	0
  800005c:	6820      	ldr	r0, [r4, #0]
  800005e:	2842      	cmp	r0, #66	@ 0x42
  8000060:	d10c      	bne.n	800007c <fail_2>
  8000062:	f04f 0014 	mov.w	r0, #20
- 8000066:	490e      	ldr	r1, [pc, #56]	@ (80000a0 <default_handler+0x4>)
+ 8000066:	4910      	ldr	r1, [pc, #64]	@ (80000a8 <default_handler+0x4>)
  8000068:	4788      	blx	r1
  800006a:	2815      	cmp	r0, #21
  800006c:	d109      	bne.n	8000082 <fail_3>
- 800006e:	480e      	ldr	r0, [pc, #56]	@ (80000a8 <default_handler+0xc>)
- 8000070:	490e      	ldr	r1, [pc, #56]	@ (80000ac <default_handler+0x10>)
+ 800006e:	4810      	ldr	r0, [pc, #64]	@ (80000b0 <default_handler+0xc>)
+ 8000070:	4910      	ldr	r1, [pc, #64]	@ (80000b4 <default_handler+0x10>)
  8000072:	6008      	str	r0, [r1, #0]
  8000074:	e00c      	b.n	8000090 <done>
 
@@ -68,26 +68,30 @@ Disassembly of section .text:
  8000082:	f04f 0203 	mov.w	r2, #3
 
 08000086 <fail>:
- 8000086:	480a      	ldr	r0, [pc, #40]	@ (80000b0 <default_handler+0x14>)
- 8000088:	4908      	ldr	r1, [pc, #32]	@ (80000ac <default_handler+0x10>)
+ 8000086:	480c      	ldr	r0, [pc, #48]	@ (80000b8 <default_handler+0x14>)
+ 8000088:	490a      	ldr	r1, [pc, #40]	@ (80000b4 <default_handler+0x10>)
  800008a:	6008      	str	r0, [r1, #0]
- 800008c:	4905      	ldr	r1, [pc, #20]	@ (80000a4 <default_handler+0x8>)
+ 800008c:	4907      	ldr	r1, [pc, #28]	@ (80000ac <default_handler+0x8>)
  800008e:	600a      	str	r2, [r1, #0]
 
 08000090 <done>:
- 8000090:	e7fe      	b.n	8000090 <done>
+ 8000090:	f04f 0018 	mov.w	r0, #24
+ 8000094:	4909      	ldr	r1, [pc, #36]	@ (80000bc <default_handler+0x18>)
+ 8000096:	beab      	bkpt	0x00ab
+ 8000098:	e7fe      	b.n	8000098 <done+0x8>
 
-08000092 <SVCall_Handler>:
- 8000092:	4804      	ldr	r0, [pc, #16]	@ (80000a4 <default_handler+0x8>)
- 8000094:	f04f 0142 	mov.w	r1, #66	@ 0x42
- 8000098:	6001      	str	r1, [r0, #0]
- 800009a:	4770      	bx	lr
+0800009a <SVCall_Handler>:
+ 800009a:	4804      	ldr	r0, [pc, #16]	@ (80000ac <default_handler+0x8>)
+ 800009c:	f04f 0142 	mov.w	r1, #66	@ 0x42
+ 80000a0:	6001      	str	r1, [r0, #0]
+ 80000a2:	4770      	bx	lr
 
-0800009c <default_handler>:
- 800009c:	e7fe      	b.n	800009c <default_handler>
- 800009e:	0000      	.short	0x0000
- 80000a0:	08000041 	.word	0x08000041
- 80000a4:	20000104 	.word	0x20000104
- 80000a8:	cafecafe 	.word	0xcafecafe
- 80000ac:	20000100 	.word	0x20000100
- 80000b0:	deaddead 	.word	0xdeaddead
+080000a4 <default_handler>:
+ 80000a4:	e7fe      	b.n	80000a4 <default_handler>
+ 80000a6:	0000      	.short	0x0000
+ 80000a8:	08000041 	.word	0x08000041
+ 80000ac:	20000104 	.word	0x20000104
+ 80000b0:	cafecafe 	.word	0xcafecafe
+ 80000b4:	20000100 	.word	0x20000100
+ 80000b8:	deaddead 	.word	0xdeaddead
+ 80000bc:	00020026 	.word	0x00020026

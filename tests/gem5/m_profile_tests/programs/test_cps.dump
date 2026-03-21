@@ -4,7 +4,7 @@ test_cps.elf:     file format elf32-littlearm
 SYMBOL TABLE:
 08000000 l    d  .isr_vector	00000000 .isr_vector
 08000040 l    d  .text	00000000 .text
-080000e0 l    d  .rodata	00000000 .rodata
+080000ec l    d  .rodata	00000000 .rodata
 20000000 l    d  .data	00000000 .data
 20000000 l    d  .bss	00000000 .bss
 00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
@@ -63,8 +63,8 @@ Disassembly of section .text:
  8000090:	f3ef 8013 	mrs	r0, FAULTMASK
  8000094:	2800      	cmp	r0, #0
  8000096:	d112      	bne.n	80000be <fail_6>
- 8000098:	480d      	ldr	r0, [pc, #52]	@ (80000d0 <done+0x4>)
- 800009a:	490e      	ldr	r1, [pc, #56]	@ (80000d4 <done+0x8>)
+ 8000098:	480f      	ldr	r0, [pc, #60]	@ (80000d8 <done+0xc>)
+ 800009a:	4910      	ldr	r1, [pc, #64]	@ (80000dc <done+0x10>)
  800009c:	6008      	str	r0, [r1, #0]
  800009e:	e015      	b.n	80000cc <done>
 
@@ -92,16 +92,20 @@ Disassembly of section .text:
  80000be:	f04f 0206 	mov.w	r2, #6
 
 080000c2 <fail>:
- 80000c2:	4805      	ldr	r0, [pc, #20]	@ (80000d8 <done+0xc>)
- 80000c4:	4903      	ldr	r1, [pc, #12]	@ (80000d4 <done+0x8>)
+ 80000c2:	4807      	ldr	r0, [pc, #28]	@ (80000e0 <done+0x14>)
+ 80000c4:	4905      	ldr	r1, [pc, #20]	@ (80000dc <done+0x10>)
  80000c6:	6008      	str	r0, [r1, #0]
- 80000c8:	4904      	ldr	r1, [pc, #16]	@ (80000dc <done+0x10>)
+ 80000c8:	4906      	ldr	r1, [pc, #24]	@ (80000e4 <done+0x18>)
  80000ca:	600a      	str	r2, [r1, #0]
 
 080000cc <done>:
- 80000cc:	e7fe      	b.n	80000cc <done>
- 80000ce:	0000      	.short	0x0000
- 80000d0:	cafecafe 	.word	0xcafecafe
- 80000d4:	20000100 	.word	0x20000100
- 80000d8:	deaddead 	.word	0xdeaddead
- 80000dc:	20000104 	.word	0x20000104
+ 80000cc:	f04f 0018 	mov.w	r0, #24
+ 80000d0:	4905      	ldr	r1, [pc, #20]	@ (80000e8 <done+0x1c>)
+ 80000d2:	beab      	bkpt	0x00ab
+ 80000d4:	e7fe      	b.n	80000d4 <done+0x8>
+ 80000d6:	0000      	.short	0x0000
+ 80000d8:	cafecafe 	.word	0xcafecafe
+ 80000dc:	20000100 	.word	0x20000100
+ 80000e0:	deaddead 	.word	0xdeaddead
+ 80000e4:	20000104 	.word	0x20000104
+ 80000e8:	00020026 	.word	0x00020026

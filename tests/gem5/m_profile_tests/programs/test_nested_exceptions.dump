@@ -4,7 +4,7 @@ test_nested_exceptions.elf:     file format elf32-littlearm
 SYMBOL TABLE:
 08000000 l    d  .isr_vector	00000000 .isr_vector
 08000040 l    d  .text	00000000 .text
-08000114 l    d  .rodata	00000000 .rodata
+08000120 l    d  .rodata	00000000 .rodata
 20000000 l    d  .data	00000000 .data
 20000000 l    d  .bss	00000000 .bss
 00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
@@ -15,8 +15,8 @@ SYMBOL TABLE:
 cafecafe l       *ABS*	00000000 PASS_VAL
 deaddead l       *ABS*	00000000 FAIL_VAL
 08000000 l       .isr_vector	00000000 __isr_vector
-080000fe l     F .text	00000000 default_handler
-080000e2 l     F .text	00000000 SVCall_Handler
+08000106 l     F .text	00000000 default_handler
+080000ea l     F .text	00000000 SVCall_Handler
 080000c0 l       .text	00000000 fail_1
 080000c6 l       .text	00000000 fail_2
 080000cc l       .text	00000000 fail_3
@@ -31,7 +31,7 @@ deaddead l       *ABS*	00000000 FAIL_VAL
 Disassembly of section .text:
 
 08000040 <Reset_Handler>:
- 8000040:	4c2f      	ldr	r4, [pc, #188]	@ (8000100 <default_handler+0x2>)
+ 8000040:	4c31      	ldr	r4, [pc, #196]	@ (8000108 <default_handler+0x2>)
  8000042:	f04f 0000 	mov.w	r0, #0
  8000046:	6020      	str	r0, [r4, #0]
  8000048:	466d      	mov	r5, sp
@@ -81,8 +81,8 @@ Disassembly of section .text:
  80000b0:	f04f 3444 	mov.w	r4, #1145324612	@ 0x44444444
  80000b4:	42a3      	cmp	r3, r4
  80000b6:	d10c      	bne.n	80000d2 <fail_4>
- 80000b8:	4812      	ldr	r0, [pc, #72]	@ (8000104 <default_handler+0x6>)
- 80000ba:	4913      	ldr	r1, [pc, #76]	@ (8000108 <default_handler+0xa>)
+ 80000b8:	4814      	ldr	r0, [pc, #80]	@ (800010c <default_handler+0x6>)
+ 80000ba:	4915      	ldr	r1, [pc, #84]	@ (8000110 <default_handler+0xa>)
  80000bc:	6008      	str	r0, [r1, #0]
  80000be:	e00f      	b.n	80000e0 <done>
 
@@ -102,30 +102,34 @@ Disassembly of section .text:
  80000d2:	f04f 0204 	mov.w	r2, #4
 
 080000d6 <fail>:
- 80000d6:	480d      	ldr	r0, [pc, #52]	@ (800010c <default_handler+0xe>)
- 80000d8:	490b      	ldr	r1, [pc, #44]	@ (8000108 <default_handler+0xa>)
+ 80000d6:	480f      	ldr	r0, [pc, #60]	@ (8000114 <default_handler+0xe>)
+ 80000d8:	490d      	ldr	r1, [pc, #52]	@ (8000110 <default_handler+0xa>)
  80000da:	6008      	str	r0, [r1, #0]
- 80000dc:	490c      	ldr	r1, [pc, #48]	@ (8000110 <default_handler+0x12>)
+ 80000dc:	490e      	ldr	r1, [pc, #56]	@ (8000118 <default_handler+0x12>)
  80000de:	600a      	str	r2, [r1, #0]
 
 080000e0 <done>:
- 80000e0:	e7fe      	b.n	80000e0 <done>
+ 80000e0:	f04f 0018 	mov.w	r0, #24
+ 80000e4:	490d      	ldr	r1, [pc, #52]	@ (800011c <default_handler+0x16>)
+ 80000e6:	beab      	bkpt	0x00ab
+ 80000e8:	e7fe      	b.n	80000e8 <done+0x8>
 
-080000e2 <SVCall_Handler>:
- 80000e2:	4807      	ldr	r0, [pc, #28]	@ (8000100 <default_handler+0x2>)
- 80000e4:	6801      	ldr	r1, [r0, #0]
- 80000e6:	f101 0101 	add.w	r1, r1, #1
- 80000ea:	6001      	str	r1, [r0, #0]
- 80000ec:	f04f 00de 	mov.w	r0, #222	@ 0xde
- 80000f0:	f04f 01ad 	mov.w	r1, #173	@ 0xad
- 80000f4:	f04f 02be 	mov.w	r2, #190	@ 0xbe
- 80000f8:	f04f 03ef 	mov.w	r3, #239	@ 0xef
- 80000fc:	4770      	bx	lr
+080000ea <SVCall_Handler>:
+ 80000ea:	4807      	ldr	r0, [pc, #28]	@ (8000108 <default_handler+0x2>)
+ 80000ec:	6801      	ldr	r1, [r0, #0]
+ 80000ee:	f101 0101 	add.w	r1, r1, #1
+ 80000f2:	6001      	str	r1, [r0, #0]
+ 80000f4:	f04f 00de 	mov.w	r0, #222	@ 0xde
+ 80000f8:	f04f 01ad 	mov.w	r1, #173	@ 0xad
+ 80000fc:	f04f 02be 	mov.w	r2, #190	@ 0xbe
+ 8000100:	f04f 03ef 	mov.w	r3, #239	@ 0xef
+ 8000104:	4770      	bx	lr
 
-080000fe <default_handler>:
- 80000fe:	e7fe      	b.n	80000fe <default_handler>
- 8000100:	20000108 	.word	0x20000108
- 8000104:	cafecafe 	.word	0xcafecafe
- 8000108:	20000100 	.word	0x20000100
- 800010c:	deaddead 	.word	0xdeaddead
- 8000110:	20000104 	.word	0x20000104
+08000106 <default_handler>:
+ 8000106:	e7fe      	b.n	8000106 <default_handler>
+ 8000108:	20000108 	.word	0x20000108
+ 800010c:	cafecafe 	.word	0xcafecafe
+ 8000110:	20000100 	.word	0x20000100
+ 8000114:	deaddead 	.word	0xdeaddead
+ 8000118:	20000104 	.word	0x20000104
+ 800011c:	00020026 	.word	0x00020026

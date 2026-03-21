@@ -137,9 +137,9 @@ MDecoder::moreBytes(const PCStateBase &_pc, Addr fetchPC)
     // so that decode() returns an exception-return instruction
     // instead of trying to decode from that address.
     //
-    // EXC_RETURN values have bits[31:8] all set (DDI0403E B1.5.8).
-    // Normal code addresses never have this pattern.
-    if ((pc.instAddr() & 0xFFFFFF00) == 0xFFFFFF00) {
+    // EXC_RETURN values have bits[31:4] all set (DDI0403E B1.5.8).
+    // Valid range: 0xFFFFFFF0–0xFFFFFFFF.
+    if ((pc.instAddr() & 0xFFFFFFF0) == 0xFFFFFFF0) {
         _pendingExcReturn = true;
         _excReturnVal = (uint32_t)pc.instAddr();
         // Don't try to fetch — the data at 0xFFFFFFF_ is unmapped.
@@ -290,6 +290,7 @@ MDecoder::tryMProfileDecode(ExtMachInst mach_inst)
 //   BLX Rm     — [15:7] = 010001111  → EXC_RETURN detection
 //   CPS        — [15:5] = 10110110011 → PRIMASK/FAULTMASK
 //   SVC imm8   — [15:8] = 11011111   → M-profile SVCALL exception
+//   BKPT #0xAB — inst = 0xBEAB       → M-profile semihosting
 //   WFE        — hint instruction     → M-profile sleep semantics
 //   WFI        — hint instruction     → M-profile sleep semantics
 //   POP {PC}   — [15:9] = 1011110, bit[8]=1 → EXC_RETURN check
@@ -350,12 +351,22 @@ MDecoder::tryMProfileDecode16(ExtMachInst mach_inst)
         return new MProfileUndefined(mach_inst, "SETEND");
     }
 
+    // ---- BKPT #0xAB (Semihosting) ----
+    // Encoding: 1011 1110 imm8
+    //   bits[15:8] = 0xBE, imm8 = 0xAB → inst = 0xBEAB
+    // Per the ARM semihosting spec, M-profile uses BKPT #0xAB as the
+    // semihosting trigger (not SVC #0xAB which is used by A/R-profile).
+    // ABI: R0 = operation code, R1 = parameter block pointer.
+    if (bits(inst, 15, 0) == 0xBEAB) {
+        return new BkptSemiMProfile(mach_inst);
+    }
+
     // ---- WFI ----
     // Encoding: 10111111 0011 0000
     //   inst = 0xBF30
     // gem5 A-profile: formats/data.isa (Thumb16Misc, hint group)
     // DDI0403E A7.7.184 (WFI)
-    if (inst == 0xBF30) {
+    if (bits(inst, 15, 0) == 0xBF30) {
         return new WfiMProfile(mach_inst);
     }
 
@@ -363,7 +374,7 @@ MDecoder::tryMProfileDecode16(ExtMachInst mach_inst)
     // Encoding: 10111111 0010 0000
     //   inst = 0xBF20
     // DDI0403E A7.7.183 (WFE)
-    if (inst == 0xBF20) {
+    if (bits(inst, 15, 0) == 0xBF20) {
         return new WfeMProfile(mach_inst);
     }
 
@@ -409,30 +420,34 @@ MDecoder::tryMProfileDecode32(ExtMachInst mach_inst)
 {
     const uint32_t inst = (uint32_t)mach_inst;
 
-    // Thumb-32 encoding: first halfword [31:16], second halfword [15:0]
-    // The ISA description uses these field names:
-    //   HTOPCODE = bits[31:20] of the combined 32-bit value
+    // Thumb-32: hw1 in [31:16], hw2 in [15:0]
+    // The ISA description uses these field names (defined in types.hh):
+    //   HTOPCODE_N = hw1[N] = combined[N+16]
     //   LTOPCODE = bits[15:0] (second halfword)
     //
-    // For the "Branches and Misc Ctrl" group:
-    //   HTOPCODE_12_11 = bits[27:26] of combined instruction
+    // Key fields (from types.hh Bitfield definitions):
+    //   HTOPCODE_12_11 = Bitfield<28,27> = hw1[12:11]
+    //   HTOPCODE_10_9  = Bitfield<26,25> = hw1[10:9]
+    //   HTOPCODE_8_7   = Bitfield<24,23> = hw1[8:7]
+    //   HTOPCODE_6     = Bitfield<22>    = hw1[6]
     //   LTOPCODE_15 = bit[15]
     //   op = bits[26:20]
     //   op1 = bits[14:12]
 
     const uint32_t htopcode_12_11 = bits(inst, 28, 27);
-    const uint32_t htopcode_10_9 = bits(inst, 25, 24);
+    const uint32_t htopcode_10_9 = bits(inst, 26, 25);
 
     // ================================================================
     // SRS / RFE group — A-profile only
     // ================================================================
     // Thumb-32: HTOPCODE_12_11=0x1, HTOPCODE_10_9=0x0,
     //           HTOPCODE_6=0, HTOPCODE_8_7={0x0, 0x3}
-    // gem5 A-profile: thumb.isa:71 (Thumb32SrsRfe)
+    // gem5 A-profile: thumb.isa:68-71 (Thumb32SrsRfe)
+    // DDI0403D Table A5-9: op1=01, op2=00xx0xx → Load/Store Multiple
     // DDI0403E: SRS and RFE are UNDEFINED on M-profile.
     if (htopcode_12_11 == 0x1 && htopcode_10_9 == 0x0) {
-        if (bits(inst, 21) == 0) {  // HTOPCODE_6 = bit[21]
-            uint32_t htop_8_7 = bits(inst, 23, 22);
+        if (bits(inst, 22) == 0) {  // HTOPCODE_6 = hw1[6]
+            uint32_t htop_8_7 = bits(inst, 24, 23); // hw1[8:7]
             if (htop_8_7 == 0x0 || htop_8_7 == 0x3) {
                 return new MProfileUndefined(mach_inst, "SRS/RFE");
             }
@@ -569,15 +584,16 @@ MDecoder::tryMProfileDecode32(ExtMachInst mach_inst)
         const uint32_t ltcoproc = bits(inst, 11, 8);
         // Check if this is a coprocessor instruction by looking at
         // the top-level encoding group.  Coprocessor instructions
-        // have HTOPCODE_12_11 = 0x1 or 0x3, HTOPCODE_10_9 = 0x2/0x3.
+        // have HTOPCODE_12_11 = 0x1 or 0x3, HTOPCODE_10_9 >= 0x2.
+        // DDI0403D Table A5-9:
+        //   op1=01, op2=1xxxxxx → Coprocessor (HTOPCODE_10_9 >= 2)
+        //   op1=11, op2=1xxxxxx → Coprocessor (HTOPCODE_10_9 >= 2)
+        // gem5 A-profile: thumb.isa:78,124,142 (coprocessor decode paths)
         bool is_coproc = false;
         if (htopcode_12_11 == 0x1 || htopcode_12_11 == 0x3) {
-            uint32_t h_9_8 = bits(inst, 25, 24);
-            if (h_9_8 == 0x2 || h_9_8 == 0x3)
-                is_coproc = true;
-            // Also check the default coproc path (h_9_8 = 0x0/0x1
-            // in the second half of HTOPCODE_12_11=0x3)
-            if (htopcode_12_11 == 0x3 && (h_9_8 == 0x0 || h_9_8 == 0x1))
+            // HTOPCODE_10_9 (already extracted above) determines the group.
+            // Only values >= 2 (hw1[10]=1) are coprocessor instructions.
+            if (htopcode_10_9 >= 0x2)
                 is_coproc = true;
         }
         if (is_coproc) {
@@ -592,6 +608,44 @@ MDecoder::tryMProfileDecode32(ExtMachInst mach_inst)
             // CP10/CP11 (0xa, 0xb) = FPU — let fall through
             // (VMRS/VMSR will be handled by standard decoder for now;
             // see step8_cpsr_alias_proof.md VMRS analysis)
+        }
+    }
+
+    // ================================================================
+    // LDREX / LDREXB / LDREXH — exclusive load
+    // ================================================================
+    // The ISA-generated LDREX instruction classes call
+    // ArmISA::ISA::getSelfDebug() which static_cast<ISA*>(getIsaPtr()).
+    // On M-profile the ISA is MISA (not a subclass of ISA), so the
+    // cast is undefined behavior.  Intercept here and return
+    // M-profile-specific LDREX classes that skip the SelfDebug call.
+    //
+    // LDREX  T1: inst[31:20]=0xE85
+    // LDREXB T1: inst[31:20]=0xE8D, inst[7:4]=0x4
+    // LDREXH T1: inst[31:20]=0xE8D, inst[7:4]=0x5
+    {
+        const uint32_t op_high = bits(inst, 31, 20);
+        if (op_high == 0xE85) {
+            // LDREX Rt, [Rn, #imm]
+            const RegIndex rt = (RegIndex)bits(inst, 15, 12);
+            const RegIndex rn = (RegIndex)bits(inst, 19, 16);
+            const uint32_t imm8 = bits(inst, 7, 0) << 2;
+            return new LdrexMProfile(mach_inst, rt, rn, imm8, 4);
+        }
+        if (op_high == 0xE8D) {
+            const uint32_t op_low = bits(inst, 7, 4);
+            if (op_low == 0x4) {
+                // LDREXB Rt, [Rn]
+                const RegIndex rt = (RegIndex)bits(inst, 15, 12);
+                const RegIndex rn = (RegIndex)bits(inst, 19, 16);
+                return new LdrexMProfile(mach_inst, rt, rn, 0, 1);
+            }
+            if (op_low == 0x5) {
+                // LDREXH Rt, [Rn]
+                const RegIndex rt = (RegIndex)bits(inst, 15, 12);
+                const RegIndex rn = (RegIndex)bits(inst, 19, 16);
+                return new LdrexMProfile(mach_inst, rt, rn, 0, 2);
+            }
         }
     }
 

@@ -115,6 +115,22 @@ class MProfileInterrupts : public BaseInterrupts
      */
     void updateIntrInfo() override;
 
+    /**
+     * Handle M-profile exception return (EXC_RETURN).
+     * Deactivates the returning exception via SCS, then calls
+     * mProfileExcReturnUnstack() to restore CPU state from the
+     * exception frame.
+     *
+     * On real Cortex-M hardware, deactivation is automatic during
+     * exception return (no software EOIR write like A-profile GIC).
+     * This method models that hardware-automatic behavior.
+     *
+     * Called from BxMProfile::execute(), ExcReturnFromPC::execute(),
+     * and MTLB::translateAtomic/Timing() when an EXC_RETURN address
+     * is detected.
+     */
+    void excReturn(ThreadContext *tc, uint32_t exc_return);
+
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
 };

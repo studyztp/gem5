@@ -4,7 +4,7 @@ test_blocked_insts.elf:     file format elf32-littlearm
 SYMBOL TABLE:
 08000000 l    d  .isr_vector	00000000 .isr_vector
 08000040 l    d  .text	00000000 .text
-08000128 l    d  .rodata	00000000 .rodata
+08000134 l    d  .rodata	00000000 .rodata
 20000000 l    d  .data	00000000 .data
 20000000 l    d  .bss	00000000 .bss
 00000000 l    d  .ARM.attributes	00000000 .ARM.attributes
@@ -81,8 +81,8 @@ Disassembly of section .text:
  80000cc:	fab0 f180 	clz	r1, r0
  80000d0:	291f      	cmp	r1, #31
  80000d2:	d118      	bne.n	8000106 <fail_8>
- 80000d4:	4810      	ldr	r0, [pc, #64]	@ (8000118 <done+0x4>)
- 80000d6:	4911      	ldr	r1, [pc, #68]	@ (800011c <done+0x8>)
+ 80000d4:	4812      	ldr	r0, [pc, #72]	@ (8000120 <done+0xc>)
+ 80000d6:	4913      	ldr	r1, [pc, #76]	@ (8000124 <done+0x10>)
  80000d8:	6008      	str	r0, [r1, #0]
  80000da:	e01b      	b.n	8000114 <done>
 
@@ -118,16 +118,20 @@ Disassembly of section .text:
  8000106:	f04f 0208 	mov.w	r2, #8
 
 0800010a <fail>:
- 800010a:	4805      	ldr	r0, [pc, #20]	@ (8000120 <done+0xc>)
- 800010c:	4903      	ldr	r1, [pc, #12]	@ (800011c <done+0x8>)
+ 800010a:	4807      	ldr	r0, [pc, #28]	@ (8000128 <done+0x14>)
+ 800010c:	4905      	ldr	r1, [pc, #20]	@ (8000124 <done+0x10>)
  800010e:	6008      	str	r0, [r1, #0]
- 8000110:	4904      	ldr	r1, [pc, #16]	@ (8000124 <done+0x10>)
+ 8000110:	4906      	ldr	r1, [pc, #24]	@ (800012c <done+0x18>)
  8000112:	600a      	str	r2, [r1, #0]
 
 08000114 <done>:
- 8000114:	e7fe      	b.n	8000114 <done>
- 8000116:	0000      	.short	0x0000
- 8000118:	cafecafe 	.word	0xcafecafe
- 800011c:	20000100 	.word	0x20000100
- 8000120:	deaddead 	.word	0xdeaddead
- 8000124:	20000104 	.word	0x20000104
+ 8000114:	f04f 0018 	mov.w	r0, #24
+ 8000118:	4905      	ldr	r1, [pc, #20]	@ (8000130 <done+0x1c>)
+ 800011a:	beab      	bkpt	0x00ab
+ 800011c:	e7fe      	b.n	800011c <done+0x8>
+ 800011e:	0000      	.short	0x0000
+ 8000120:	cafecafe 	.word	0xcafecafe
+ 8000124:	20000100 	.word	0x20000100
+ 8000128:	deaddead 	.word	0xdeaddead
+ 800012c:	20000104 	.word	0x20000104
+ 8000130:	00020026 	.word	0x00020026
