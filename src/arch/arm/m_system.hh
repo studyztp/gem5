@@ -59,6 +59,11 @@ class ArmMSystem : public System
     /** SCS/NVIC device pointer, set by MProfileSCS::init(). */
     MProfileSCS *_scs = nullptr;
 
+    /** CPUID register value (DDI0403E B3.2.3).
+     *  Set from Python param (provided by platform).  Identifies the
+     *  core variant to firmware via SCB->CPUID at 0xE000ED00. */
+    const uint32_t _cpuid;
+
   public:
     /** Semihosting handler, or nullptr if disabled. */
     ArmSemihosting *const semihosting;
@@ -67,6 +72,9 @@ class ArmMSystem : public System
     ArmMSystem(const Params &p);
 
     const ArmRelease *releaseFS() const { return release; }
+
+    /** CPUID register value for this core variant. */
+    uint32_t getCPUID() const { return _cpuid; }
 
     bool has(ArmExtension ext) const;
 

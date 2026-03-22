@@ -123,6 +123,46 @@ ArmMFault::computeExcReturn(bool was_handler, bool used_psp)
         return 0xFFFFFFF9;  // Thread, MSP
 }
 
+// =========================================================================
+// CC flat register ↔ xPSR NZCV/GE sync helpers (BUG-5)
+// =========================================================================
+
+void
+syncCCRegsToXpsr(ThreadContext *tc)
+{
+    // Read current xPSR and overwrite NZCV + GE from CC flat regs.
+    // CC flat regs are authoritative — xPSR's NZCV/GE bits are stale
+    // because A-profile ALU instructions only update CC regs.
+    XPSR xpsr = tc->readMiscRegNoEffect(MISCREG_M_XPSR);
+
+    // cc_reg::Nz stores N and Z as a 2-bit value: bit[1]=N, bit[0]=Z
+    RegVal ccNz = tc->getReg(cc_reg::Nz);
+    xpsr.n  = bits(ccNz, 1);            // xPSR[31] = N
+    xpsr.z  = bits(ccNz, 0);            // xPSR[30] = Z
+    xpsr.c  = tc->getReg(cc_reg::C);    // xPSR[29] = C
+    xpsr.v  = tc->getReg(cc_reg::V);    // xPSR[28] = V
+    xpsr.ge = tc->getReg(cc_reg::Ge);   // xPSR[19:16] = GE[3:0]
+
+    tc->setMiscRegNoEffect(MISCREG_M_XPSR, xpsr);
+}
+
+void
+syncXpsrToCCRegs(ThreadContext *tc)
+{
+    // Read xPSR and push NZCV + GE into CC flat regs.
+    // Used after xPSR is written (MSR APSR, exception return unstack,
+    // unserialize) so that subsequent conditional instructions see
+    // the correct flags.
+    XPSR xpsr = tc->readMiscRegNoEffect(MISCREG_M_XPSR);
+
+    // Pack N and Z into the 2-bit Nz format: bit[1]=N, bit[0]=Z
+    RegVal ccNz = ((uint64_t)xpsr.n << 1) | (uint64_t)xpsr.z;
+    tc->setReg(cc_reg::Nz, ccNz);
+    tc->setReg(cc_reg::C,  (RegVal)xpsr.c);
+    tc->setReg(cc_reg::V,  (RegVal)xpsr.v);
+    tc->setReg(cc_reg::Ge, (RegVal)xpsr.ge);
+}
+
 uint32_t
 ArmMFault::pushExceptionFrame(ThreadContext *tc,
                               const StaticInstPtr &inst,
@@ -167,16 +207,12 @@ ArmMFault::pushExceptionFrame(ThreadContext *tc,
     // (flags happen to survive by luck) but causes FreeRTOS to fail
     // after thousands of context switches when a PendSV fires between
     // a CMP and a conditional branch.
-    XPSR xpsr = tc->readMiscRegNoEffect(MISCREG_M_XPSR);
+    // BUG-5: use shared helper to sync CC flat regs → MISCREG_M_XPSR.
+    // This updates the stored xPSR with live NZCV/GE from CC regs.
+    syncCCRegsToXpsr(tc);
 
-    // cc_reg::Nz stores N and Z as a 2-bit value: bit[1]=N, bit[0]=Z.
-    // XPSR has separate n (bit 31) and z (bit 30) fields.
-    RegVal ccNz = tc->getReg(cc_reg::Nz);
-    xpsr.n  = bits(ccNz, 1);            // xPSR[31] = N
-    xpsr.z  = bits(ccNz, 0);            // xPSR[30] = Z
-    xpsr.c  = tc->getReg(cc_reg::C);    // xPSR[29] = C
-    xpsr.v  = tc->getReg(cc_reg::V);    // xPSR[28] = V
-    xpsr.ge = tc->getReg(cc_reg::Ge);   // xPSR[19:16] = GE[3:0]
+    // Now read the freshly-synced xPSR and set the T bit from PCState.
+    XPSR xpsr = tc->readMiscRegNoEffect(MISCREG_M_XPSR);
     xpsr.t  = pcState.thumb() ? 1 : 0;  // xPSR[24] = T (Thumb)
 
     // Stack alignment (DDI0403E B1.5.6):
@@ -287,6 +323,14 @@ ArmMFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
     Addr handlerAddr = getHandlerAddress(tc);
 
     // ---- 5. Enter Handler mode ----
+
+    // BUG-5 fix: re-read xPSR from the register after pushExceptionFrame()
+    // because pushExceptionFrame() called syncCCRegsToXpsr(tc) which
+    // updated MISCREG_M_XPSR with live NZCV/GE from CC flat regs.
+    // The local 'xpsr' from line 279 has stale NZCV.  On real hardware
+    // the handler inherits the interrupted code's flags; re-reading
+    // ensures the handler's xPSR has the same correct NZCV.
+    xpsr = tc->readMiscRegNoEffect(MISCREG_M_XPSR);
 
     // Set xPSR.IPSR = exception number (non-zero → Handler mode).
     // Clear ICI/IT state (DDI0403E B1.5.6).
@@ -405,9 +449,57 @@ MProfileReset::invoke(ThreadContext *tc, const StaticInstPtr &inst)
 // controller half (deactivateIRQ) is handled by
 // MProfileInterrupts::excReturn(), which calls this function.
 
+// MISSING-1: Validate EXC_RETURN value.
+// Returns true if valid, false if invalid (with reason string).
+// DDI0403E B1.5.8: invalid EXC_RETURN should generate UsageFault (INVPC).
+// Full fault generation is not implemented — the caller uses fatal_if
+// to halt on invalid values, since they indicate firmware bugs (LR
+// corruption) that are nearly impossible in correct code.
+static bool
+validateExcReturn(ThreadContext *tc, uint32_t exc_return,
+                  const char *&reason)
+{
+    // Check 1: bits[31:4] must be 0xFFFFFFF (reserved encoding)
+    if ((exc_return & 0xFFFFFFF0) != 0xFFFFFFF0) {
+        reason = "reserved (bits[31:4] != 0xFFFFFFF)";
+        return false;
+    }
+
+    // Check 2: Handler mode (bit[3]=0) + PSP (bit[2]=1) is impossible
+    // — Handler mode always uses MSP
+    if (!(exc_return & 0x8) && (exc_return & 0x4)) {
+        reason = "Handler mode + PSP is invalid";
+        return false;
+    }
+
+    // Check 3: return to Thread (bit[3]=1) from Thread mode (IPSR==0)
+    // — can only do exception return from Handler mode
+    uint32_t ipsr = bits(
+        tc->readMiscRegNoEffect(MISCREG_M_XPSR), 8, 0);
+    if ((exc_return & 0x8) && ipsr == 0) {
+        reason = "return to Thread from Thread mode (IPSR==0)";
+        return false;
+    }
+
+    return true;
+}
+
 void
 mProfileExcReturnUnstack(ThreadContext *tc, uint32_t exc_return)
 {
+    // MISSING-1: validate EXC_RETURN — halt on invalid values.
+    // Invalid EXC_RETURN indicates firmware bug (LR corruption).
+    // On real hardware this would generate UsageFault (INVPC).
+    const char *reason = nullptr;
+    fatal_if(!validateExcReturn(tc, exc_return, reason),
+             "Invalid EXC_RETURN 0x%08x: %s. "
+             "This indicates a firmware bug (corrupted LR). "
+             "Valid values: 0xFFFFFFF1 (Handler/MSP), "
+             "0xFFFFFFF9 (Thread/MSP), 0xFFFFFFFD (Thread/PSP). "
+             "(DDI0403E B1.5.8)",
+             exc_return, reason);
+
+
     // Decode EXC_RETURN (DDI0403E B1.5.8).
     //   bit[3] = 0: return to Handler mode, 1: return to Thread mode
     //   bit[2] = 0: restore from MSP,       1: restore from PSP
@@ -495,28 +587,11 @@ mProfileExcReturnUnstack(ThreadContext *tc, uint32_t exc_return)
     xpsr.frameptralign = 0;
     tc->setMiscRegNoEffect(MISCREG_M_XPSR, xpsr);
 
-    // IMPORTANT: xPSR → CC flat register sync.
-    //
-    // The inverse of the sync in ArmMFault::pushExceptionFrame().
-    // The stacked xPSR captured the live NZCV/GE flags at exception
-    // entry.  Now we must propagate them back to the CC flat registers
-    // so that the resumed code's conditional instructions (beq, bne,
-    // it, etc.) see the correct flag values.
-    //
-    // Without this, the CC regs retain the exception HANDLER's flags,
-    // not the interrupted code's flags.  This corrupts condition codes
-    // on every exception return.
-    //
-    // See the comment in pushExceptionFrame() for the full explanation
-    // of why gem5 has separate CC regs and xPSR storage.
-    // cc_reg::Nz expects a 2-bit value: bit[1]=N, bit[0]=Z.
-    // XPSR has separate n (bit 31) and z (bit 30) fields.
-    RegVal ccNz = ((RegVal)(uint8_t)xpsr.n << 1)
-               |  (RegVal)(uint8_t)xpsr.z;
-    tc->setReg(cc_reg::Nz, ccNz);                       // N, Z
-    tc->setReg(cc_reg::C,  (RegVal)(uint8_t)xpsr.c);   // C
-    tc->setReg(cc_reg::V,  (RegVal)(uint8_t)xpsr.v);   // V
-    tc->setReg(cc_reg::Ge, (RegVal)(uint8_t)xpsr.ge);  // GE[3:0]
+    // BUG-5: use shared helper to sync xPSR → CC flat regs.
+    // The stacked xPSR has the interrupted code's NZCV/GE flags.
+    // After restoring xPSR above, push those flags into CC flat regs
+    // so conditional instructions in the resumed code see correct values.
+    syncXpsrToCCRegs(tc);
 
     // Set NPC to the stacked return address.
     //

@@ -36,6 +36,7 @@ namespace gem5
 ArmMSystem::ArmMSystem(const Params &p)
     : System(p),
       release(p.release),
+      _cpuid(p.cpuid),
       semihosting(p.semihosting)
 {
     fatal_if(!release->has(ArmExtension::M_PROFILE),

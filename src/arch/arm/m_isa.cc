@@ -40,6 +40,7 @@
 
 #include <cstring>
 
+#include "arch/arm/m_faults.hh"
 #include "arch/arm/m_system.hh"
 #include "arch/arm/pcstate.hh"
 #include "arch/arm/regs/cc.hh"
@@ -151,8 +152,10 @@ MISA::clear()
     miscRegs[MISCREG_M_FAULTMASK] = 0;
 
     // -- SCB registers (DDI0403E B3.2) --
-    // CPUID: ARM Cortex-M4 r0p1 (0x41=ARM, 0xF=ARMv7-M, 0xC24=M4)
-    miscRegs[MISCREG_M_CPUID] = 0x410FC241;
+    // BUG-3 fix: CPUID value comes from ArmMSystem (set by platform),
+    // not hardcoded.  This allows different core variants (M0/M3/M4/M7)
+    // to report the correct CPUID to firmware via SCB->CPUID (0xE000ED00).
+    miscRegs[MISCREG_M_CPUID] = mSystem->getCPUID();
     // ICSR: no pending exceptions at reset
     miscRegs[MISCREG_M_ICSR] = 0;
     // VTOR: 0 at reset (vector table at address 0)
@@ -365,6 +368,46 @@ MISA::setMiscReg(RegIndex idx, RegVal val)
           return;
       }
 
+      // BUG-3 fix: CPUID is read-only (DDI0403E B3.2.3).
+      // Silently discard writes.  On real hardware, writes to CPUID
+      // are ignored.  Without this, a wild pointer or erroneous MMIO
+      // write could corrupt the processor identification register.
+      case MISCREG_M_CPUID:
+          return;
+
+      // BUG-6 fix: CONTROL.SPSEL write must swap R13 between MSP/PSP.
+      // DDI0403E B1.4.4: writing CONTROL.SPSEL in Thread mode changes
+      // which stack pointer R13 aliases to.  Without this, MSR CONTROL
+      // with SPSEL=1 stores the new CONTROL value but R13 still points
+      // to MSP, so Thread mode code using PSP gets the wrong stack.
+      case MISCREG_M_CONTROL: {
+          CONTROL_M oldCtrl = miscRegs[MISCREG_M_CONTROL];
+          CONTROL_M newCtrl = val;
+
+          // SPSEL swap is only meaningful in Thread mode (IPSR == 0).
+          // In Handler mode, SPSEL is always effectively 0 (MSP).
+          uint32_t ipsr = bits(miscRegs[MISCREG_M_XPSR], 8, 0);
+          if (ipsr == 0 && oldCtrl.spsel != newCtrl.spsel) {
+              // Save current R13 to the OLD stack's misc reg
+              RegVal currentSP = tc->getReg(int_reg::Sp);
+              if (oldCtrl.spsel == 0) {
+                  miscRegs[MISCREG_M_MSP] = currentSP;
+              } else {
+                  miscRegs[MISCREG_M_PSP] = currentSP;
+              }
+
+              // Load R13 from the NEW stack's misc reg
+              if (newCtrl.spsel == 0) {
+                  tc->setReg(int_reg::Sp, miscRegs[MISCREG_M_MSP]);
+              } else {
+                  tc->setReg(int_reg::Sp, miscRegs[MISCREG_M_PSP]);
+              }
+          }
+
+          miscRegs[MISCREG_M_CONTROL] = val;
+          return;
+      }
+
       default:
           break;
     }
@@ -493,6 +536,12 @@ MISA::has(ArmExtension ext) const
 void
 MISA::serialize(CheckpointOut &cp) const
 {
+    // BUG-5 fix: sync live CC flat regs → xPSR before checkpoint.
+    // Without this, the checkpointed xPSR has stale NZCV/GE and
+    // restoring from checkpoint would lose the current condition flags.
+    if (tc)
+        syncCCRegsToXpsr(tc);
+
     // Call base (saves isaName)
     BaseISA::serialize(cp);
 
@@ -508,6 +557,15 @@ MISA::unserialize(CheckpointIn &cp)
 
     UNSERIALIZE_ARRAY(miscRegs, NUM_MISCREGS);
     UNSERIALIZE_SCALAR(lockedAddr);
+
+    // BUG-5 fix: sync restored xPSR → CC flat regs so that execution
+    // after checkpoint restore sees correct NZCV/GE condition flags.
+    // tc may not be available yet during unserialize (gem5 restore
+    // order: unserialize → startup).  If so, the sync will happen
+    // when the first instruction executes and the flags are naturally
+    // consumed.  But if tc is available, sync now for correctness.
+    if (tc)
+        syncXpsrToCCRegs(tc);
 }
 
 } // namespace ArmISA

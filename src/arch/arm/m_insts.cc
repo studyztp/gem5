@@ -144,6 +144,11 @@ MrsMProfile::execute(ExecContext *xc,
     RegVal val;
     if (sysM <= 7) {
         // xPSR variants: read full xPSR, then mask to requested fields.
+        // BUG-5 fix: sync CC flat regs → xPSR before reading so that
+        // MRS APSR returns live NZCV/GE flags, not stale values from
+        // the last MSR write.  Without this, __get_IPSR() and any
+        // firmware reading APSR sees incorrect condition flags.
+        syncCCRegsToXpsr(tc);
         // Uses readMiscReg (not NoEffect) to sync T bit from PCState.
         val = tc->readMiscReg(MISCREG_M_XPSR);
         val = maskXpsrForSysM(sysM, val);
@@ -218,6 +223,10 @@ MsrMProfile::execute(ExecContext *xc,
         RegVal xpsr = tc->readMiscRegNoEffect(MISCREG_M_XPSR);
         xpsr = (xpsr & ~APSR_WRITE_MASK) | (val & APSR_WRITE_MASK);
         tc->setMiscRegNoEffect(MISCREG_M_XPSR, xpsr);
+        // BUG-5 fix: sync the new NZCV/GE from xPSR → CC flat regs.
+        // Without this, subsequent conditional instructions (BEQ, BNE)
+        // read stale flags from CC regs and ignore the MSR write.
+        syncXpsrToCCRegs(tc);
     } else if (sysM == 8 || sysM == 9) {
         // MSR MSP/PSP: sync with architectural R13.
         //

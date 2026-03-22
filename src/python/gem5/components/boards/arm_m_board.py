@@ -202,6 +202,13 @@ class ArmMBoard(ArmMSystem):
         """
         super().__init__()
 
+        # ---- CPUID from platform ----
+        # The platform defines which core variant it uses (M0/M3/M4/M7)
+        # and provides the corresponding CPUID value via cpuid() method.
+        # Pass it to ArmMSystem (our parent) so MISA can initialize
+        # MISCREG_M_CPUID during construction.
+        self.cpuid = platform.cpuid()
+
         # ---- Store references ----
         self._platform = platform
         self._cache_hierarchy = cache_hierarchy

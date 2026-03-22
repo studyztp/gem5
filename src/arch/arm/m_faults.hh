@@ -237,6 +237,31 @@ class MProfileReset : public ArmMFault
  */
 void mProfileExcReturnUnstack(ThreadContext *tc, uint32_t exc_return);
 
+// =========================================================================
+// CC flat register ↔ xPSR NZCV/GE sync helpers (BUG-5)
+// =========================================================================
+//
+// gem5 reuses A-profile Thumb instruction implementations for M-profile.
+// A-profile ALU instructions store NZCV and GE flags in CC flat registers
+// (cc_reg::Nz, C, V, Ge), NOT in MISCREG_M_XPSR.  This means xPSR's
+// NZCV/GE bits [31:28,19:16] are always stale with respect to the last
+// ALU instruction.
+//
+// These helpers sync between the two representations at boundaries where
+// both must agree:
+//
+//   syncCCRegsToXpsr():  CC flat regs → MISCREG_M_XPSR
+//     Used before: exception frame stacking, MRS APSR read, serialize
+//
+//   syncXpsrToCCRegs():  MISCREG_M_XPSR → CC flat regs
+//     Used after:  exception frame unstacking, MSR APSR write, unserialize
+
+/** Sync live CC flat registers into MISCREG_M_XPSR (NZCV + GE bits). */
+void syncCCRegsToXpsr(ThreadContext *tc);
+
+/** Sync MISCREG_M_XPSR NZCV + GE bits into CC flat registers. */
+void syncXpsrToCCRegs(ThreadContext *tc);
+
 } // namespace ArmISA
 } // namespace gem5
 

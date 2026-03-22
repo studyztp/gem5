@@ -29,9 +29,13 @@
 #define configSUPPORT_STATIC_ALLOCATION          0
 #define configSUPPORT_DYNAMIC_ALLOCATION         1
 
-/* Hook functions — disabled for minimal test */
+/* Hook functions — disabled by default for minimal test.
+ * Use #ifndef so tests can override via -D on the command line
+ * (e.g., the ICSR test needs configUSE_TICK_HOOK=1). */
 #define configUSE_IDLE_HOOK                     0
+#ifndef configUSE_TICK_HOOK
 #define configUSE_TICK_HOOK                     0
+#endif
 #define configUSE_MALLOC_FAILED_HOOK            0
 #define configCHECK_FOR_STACK_OVERFLOW          0
 

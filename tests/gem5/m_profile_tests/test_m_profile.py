@@ -49,7 +49,9 @@ import re
 from testlib import *
 
 
-def m_profile_test(name, firmware_name, expected_result="pass"):
+def m_profile_test(
+    name, firmware_name, expected_result="pass", extra_args=None
+):
     """Register an M-profile integration test.
 
     Args:
@@ -58,6 +60,8 @@ def m_profile_test(name, firmware_name, expected_result="pass"):
         expected_result: "pass" (default) or "fail" — what the firmware
             is expected to report.  Controls --expected-result flag
             passed to run_m4_test.py.
+        extra_args: Optional list of additional CLI args for run_m4_test.py
+            (e.g., ["--num-irqs", "240"]).
     """
     firmware_path = joinpath(
         config.base_dir,
@@ -79,6 +83,15 @@ def m_profile_test(name, firmware_name, expected_result="pass"):
         verifier.MatchRegex(re.compile(r"Exiting @ tick \d+ because")),
     ]
 
+    config_args = [
+        "--firmware",
+        firmware_path,
+        "--expected-result",
+        expected_result,
+    ]
+    if extra_args:
+        config_args.extend(extra_args)
+
     gem5_verify_config(
         name=f"m_profile_{name}",
         verifiers=verifiers,
@@ -91,12 +104,7 @@ def m_profile_test(name, firmware_name, expected_result="pass"):
             "configs",
             "run_m4_test.py",
         ),
-        config_args=[
-            "--firmware",
-            firmware_path,
-            "--expected-result",
-            expected_result,
-        ],
+        config_args=config_args,
         valid_isas=(constants.all_compiled_tag,),
         valid_hosts=constants.supported_hosts,
         length=constants.quick_tag,
@@ -129,6 +137,35 @@ m_profile_test("ldrex_strex_granule", "test_ldrex_strex_granule.elf")
 m_profile_test("nested_priority", "test_nested_priority.elf")
 m_profile_test("systick_active_pending", "test_systick_active_pending.elf")
 m_profile_test("ipr_byte_access", "test_ipr_byte_access.elf")
+# BUG-1: NVIC array OOB — 240-IRQ config tests corruption detection (Phase A),
+# high-IRQ register read/write (Phase B), and nested preemption (Phase C).
+# Requires num_irqs=240 because Phase C delivers IRQs 224 and 239 which
+# need updatePending() to scan word 7 of the NVIC arrays.
+m_profile_test(
+    "nvic_oob_240", "test_nvic_oob.elf", extra_args=["--num-irqs", "240"]
+)
+# BUG-2: ICSR dynamic field read — basic static check with SVCall handler
+m_profile_test("icsr_read", "test_icsr_read.elf")
+# BUG-3: CPUID read-only enforcement
+m_profile_test("cpuid_readonly", "test_cpuid_readonly.elf")
+# BUG-4: NVIC unimplemented IRQ bit masking (RAZ/WI)
+m_profile_test("nvic_irq_mask", "test_nvic_irq_mask.elf")
+# BUG-5: CC flat reg ↔ xPSR NZCV sync
+m_profile_test("xpsr_nzcv_sync", "test_xpsr_nzcv_sync.elf")
+# BUG-6: CONTROL.SPSEL write swaps R13 between MSP/PSP
+m_profile_test("control_spsel", "test_control_spsel.elf")
+# BUG-7: SCB sub-word (byte/halfword) access
+m_profile_test("scb_byte_access", "test_scb_byte_access.elf")
+# MISSING-1: Invalid EXC_RETURN validation
+m_profile_test("exc_return_validate", "test_exc_return_validate.elf")
+# C-1: FAULTMASK priority — executionPriority() returns uint8_t, thread-mode
+# default is 0xFF instead of 256.  With 8 priority bits, IRQ at priority 0xFF
+# cannot be delivered from Thread mode (0xFF < 0xFF = false).
+m_profile_test(
+    "faultmask_priority",
+    "test_faultmask_priority.elf",
+    extra_args=["--priority-bits", "8"],
+)
 
 
 def m_profile_checkpoint_test(name, firmware_name):
@@ -227,3 +264,51 @@ def m_profile_freertos_test():
 
 
 m_profile_freertos_test()
+
+
+# BUG-2: FreeRTOS ICSR test — verifies ICSR dynamic fields in a real RTOS
+# environment with SysTick handler, tick hook, and external IRQ pending.
+def m_profile_freertos_icsr_test():
+    firmware_path = joinpath(
+        config.base_dir,
+        "tests",
+        "gem5",
+        "m_profile_tests",
+        "programs",
+        "freertos",
+        "freertos_icsr_test.elf",
+    )
+
+    if not os.path.exists(firmware_path):
+        return
+
+    verifiers = [
+        verifier.MatchRegex(re.compile(r"Exiting @ tick \d+ because")),
+    ]
+
+    gem5_verify_config(
+        name="m_profile_freertos_icsr",
+        verifiers=verifiers,
+        fixtures=(),
+        config=joinpath(
+            config.base_dir,
+            "tests",
+            "gem5",
+            "m_profile_tests",
+            "configs",
+            "run_m4_test.py",
+        ),
+        config_args=[
+            "--firmware",
+            firmware_path,
+            "--tick-limit",
+            # 2 SysTick periods for tick hook to run + task scheduling.
+            "10000000000",
+        ],
+        valid_isas=(constants.all_compiled_tag,),
+        valid_hosts=constants.supported_hosts,
+        length=constants.quick_tag,
+    )
+
+
+m_profile_freertos_icsr_test()

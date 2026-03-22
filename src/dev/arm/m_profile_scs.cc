@@ -95,6 +95,7 @@
 
 #include "dev/arm/m_profile_scs.hh"
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 
@@ -162,7 +163,7 @@ MProfileSCS::SysTick::SysTick(MProfileSCS &parent)
 MProfileSCS::MProfileSCS(const Params &p)
     : BasicPioDevice(p, 0x1000),  // 4KB SCS region
       highestPendingExc(-1),
-      highestPendingPri(0xFF),
+      highestPendingPri(256),
       sysTick(*this),
       numIRQs(std::min(p.num_irqs, (uint32_t)MAX_IRQS)),
       priorityBits(p.priority_bits),
@@ -259,48 +260,49 @@ MProfileSCS::read(PacketPtr pkt)
     Addr daddr = pkt->getAddr() - pioAddr;
     unsigned size = pkt->getSize();
 
-    // NVIC IPR registers (0x400-0x4EF) are byte-accessible per
-    // DDI0403E B3.4.9.  CMSIS reads individual priority bytes via
-    // LDRB at 0xE000E400+irq.  Handle sub-word IPR reads here;
-    // 32-bit IPR reads fall through to readNVIC() below.
-    if (daddr >= 0x400 && daddr <= 0x4EF && size < 4) {
-        if (size == 1) {
-            int irq = daddr - 0x400;
-            uint8_t pri = (irq < (int)numIRQs)
-                              ? nvicPriority[irq] : 0;
-            pkt->setLE<uint8_t>(pri);
-        } else if (size == 2) {
-            uint16_t val = 0;
-            for (int i = 0; i < 2; ++i) {
-                int irq = (daddr - 0x400) + i;
-                uint8_t pri = (irq < (int)numIRQs)
-                                  ? nvicPriority[irq] : 0;
-                val |= ((uint16_t)pri) << (i * 8);
-            }
-            pkt->setLE<uint16_t>(val);
-        }
-        pkt->makeAtomicResponse();
-        return pioDelay;
-    }
+    // BUG-7 fix: generic sub-word read support for ALL SCS registers.
+    // LDRB/LDRH packets have 1/2-byte buffers.  We always read the
+    // full aligned 32-bit word via the register handler, then extract
+    // the requested byte(s) based on the byte offset within the word.
+    // This handles IPR byte reads, SHPR byte reads, and any other
+    // sub-word access uniformly.
+    //
+    // For 32-bit reads (the common case), this adds no overhead —
+    // the switch falls through to the default case.
 
+    // Align to 32-bit word boundary for the handler dispatch
+    Addr alignedAddr = daddr & ~0x3;
+
+    // Read the full 32-bit register value at the aligned address
     uint32_t data = 0;
 
-    if (daddr >= 0x010 && daddr <= 0x01F) {
-        // SysTick registers (only if this variant has SysTick)
+    if (alignedAddr >= 0x010 && alignedAddr <= 0x01F) {
         if (hasSysTick)
-            readSysTick(daddr - 0x010, data);
-    } else if (daddr >= 0x100 && daddr <= 0x4EF) {
-        // NVIC registers (ISER/ICER/ISPR/ICPR/IABR/IPR)
-        // Range 0x100-0x4EF covers all NVIC banks including IABR at 0x300.
-        readNVIC(daddr, data);
-    } else if (daddr >= 0xD00 && daddr <= 0xD3F) {
-        // SCB registers (bridged to ISA misc regs)
-        readSCB(daddr - 0xD00, data);
+            readSysTick(alignedAddr - 0x010, data);
+    } else if (alignedAddr >= 0x100 && alignedAddr <= 0x4EF) {
+        readNVIC(alignedAddr, data);
+    } else if (alignedAddr >= 0xD00 && alignedAddr <= 0xD3F) {
+        readSCB(alignedAddr - 0xD00, data);
     } else {
         warn("MProfileSCS: read from unimplemented offset %#x", daddr);
     }
 
-    pkt->setLE<uint32_t>(data);
+    // Extract the requested byte(s) and write to the packet
+    switch (size) {
+      case 1: {
+        int byteOffset = daddr & 0x3;
+        pkt->setLE<uint8_t>((data >> (byteOffset * 8)) & 0xFF);
+        break;
+      }
+      case 2: {
+        int byteOffset = daddr & 0x2;
+        pkt->setLE<uint16_t>((data >> (byteOffset * 8)) & 0xFFFF);
+        break;
+      }
+      default:
+        pkt->setLE<uint32_t>(data);
+        break;
+    }
     pkt->makeAtomicResponse();
     return pioDelay;
 }
@@ -311,44 +313,53 @@ MProfileSCS::write(PacketPtr pkt)
     Addr daddr = pkt->getAddr() - pioAddr;
     unsigned size = pkt->getSize();
 
-    // NVIC IPR registers (0x400-0x4EF) are byte-accessible per
-    // DDI0403E B3.4.9.  CMSIS writes individual priority bytes via
-    // STRB at 0xE000E400+irq.  Handle sub-word IPR writes here;
-    // 32-bit IPR writes fall through to writeNVIC() below.
-    if (daddr >= 0x400 && daddr <= 0x4EF && size < 4) {
-        if (size == 1) {
-            int irq = daddr - 0x400;
-            if (irq < (int)numIRQs) {
-                nvicPriority[irq] =
-                    pkt->getLE<uint8_t>() & priorityMask;
-            }
-        } else if (size == 2) {
-            uint16_t val = pkt->getLE<uint16_t>();
-            for (int i = 0; i < 2; ++i) {
-                int irq = (daddr - 0x400) + i;
-                if (irq < (int)numIRQs) {
-                    nvicPriority[irq] =
-                        (uint8_t)((val >> (i * 8)) & priorityMask);
-                }
-            }
+    // BUG-7 fix: generic sub-word write support for ALL SCS registers.
+    // STRB/STRH packets have 1/2-byte buffers.  For sub-word writes,
+    // we do read-modify-write: read the existing 32-bit word at the
+    // aligned address, merge the written byte(s), then pass the full
+    // 32-bit value to the handler.  This replaces the old IPR-only
+    // sub-word special case with a uniform approach for all registers.
+
+    // Build the 32-bit data value to pass to handlers
+    uint32_t data;
+    if (size < 4) {
+        // Sub-word write: read existing value at aligned address
+        Addr alignedAddr = daddr & ~0x3;
+        uint32_t existing = 0;
+        if (alignedAddr >= 0x010 && alignedAddr <= 0x01F) {
+            if (hasSysTick)
+                readSysTick(alignedAddr - 0x010, existing);
+        } else if (alignedAddr >= 0x100 && alignedAddr <= 0x4EF) {
+            readNVIC(alignedAddr, existing);
+        } else if (alignedAddr >= 0xD00 && alignedAddr <= 0xD3F) {
+            readSCB(alignedAddr - 0xD00, existing);
         }
-        updatePending();
-        pkt->makeAtomicResponse();
-        return pioDelay;
+
+        // Merge the sub-word write data into the existing value
+        int byteOffset = daddr & 0x3;
+        if (size == 1) {
+            uint8_t byte = pkt->getLE<uint8_t>();
+            existing &= ~(0xFFu << (byteOffset * 8));
+            existing |= ((uint32_t)byte << (byteOffset * 8));
+        } else {  // size == 2
+            uint16_t hw = pkt->getLE<uint16_t>();
+            existing &= ~(0xFFFFu << (byteOffset * 8));
+            existing |= ((uint32_t)hw << (byteOffset * 8));
+        }
+        data = existing;
+        // Use aligned address for handler dispatch
+        daddr = alignedAddr;
+    } else {
+        data = pkt->getLE<uint32_t>();
     }
 
-    uint32_t data = pkt->getLE<uint32_t>();
-
     if (daddr >= 0x010 && daddr <= 0x01F) {
-        // SysTick registers (only if this variant has SysTick)
         if (hasSysTick)
             writeSysTick(daddr - 0x010, data);
     } else if ((daddr >= 0x100 && daddr <= 0x4EF) ||
                (daddr == 0xF00)) {
-        // NVIC registers (ISER/ICER/ISPR/ICPR/IPR/STIR)
         writeNVIC(daddr, data);
     } else if (daddr >= 0xD00 && daddr <= 0xD3F) {
-        // SCB registers (bridged to ISA misc regs)
         writeSCB(daddr - 0xD00, data);
     } else {
         warn("MProfileSCS: write to unimplemented offset %#x", daddr);
@@ -378,6 +389,69 @@ MProfileSCS::write(PacketPtr pkt)
 Tick
 MProfileSCS::readSCB(Addr offset, uint32_t &data)
 {
+    using namespace ArmISA;
+
+    // BUG-2 fix: ICSR (offset 0x04) has dynamic read-only fields that
+    // must be computed on-the-fly from live state (DDI0403E B3.2.4).
+    // The stored MISCREG_M_ICSR only tracks PENDSVSET/PENDSTSET bits
+    // managed by writeSCB().  Without this, VECTACTIVE, RETTOBASE,
+    // VECTPENDING, and ISRPENDING always read as 0, breaking CMSIS
+    // __get_IPSR() and FreeRTOS xPortIsInsideInterrupt().
+    if (offset == 0x04) {
+        // Start with stored value (has PENDSVSET bit 28, PENDSTSET bit 26)
+        uint32_t icsr = (uint32_t)tc->readMiscRegNoEffect(MISCREG_M_ICSR);
+
+        // VECTACTIVE [8:0] — current exception number from xPSR.IPSR.
+        // 0 = Thread mode, 11 = SVCall, 14 = PendSV, 15 = SysTick,
+        // 16+ = external IRQ (IRQ N = exception N+16).
+        ArmMISA::XPSR xpsr = tc->readMiscRegNoEffect(MISCREG_M_XPSR);
+        icsr = insertBits(icsr, 8, 0, (uint32_t)xpsr.exception);
+
+        // VECTPENDING [20:12] — highest-priority pending exception number.
+        // Maintained by updatePending() in highestPendingExc (-1 = none).
+        if (highestPendingExc >= 0) {
+            icsr = insertBits(icsr, 20, 12, (uint32_t)highestPendingExc);
+        } else {
+            icsr = insertBits(icsr, 20, 12, 0);
+        }
+
+        // ISRPENDING [22] — 1 if any external IRQ is pending.
+        // Scan nvicPending & nvicEnabled for any set bit.
+        bool anyExtPending = false;
+        for (int w = 0; w < NVIC_WORDS; ++w) {
+            if (nvicPending[w] & nvicEnabled[w]) {
+                anyExtPending = true;
+                break;
+            }
+        }
+        icsr = insertBits(icsr, 22, 22, anyExtPending ? 1 : 0);
+
+        // RETTOBASE [11] — 1 if the current exception is the only one
+        // active, or 0 if there are nested active exceptions.
+        // Count active exceptions from SHCSR active bits and nvicActive[].
+        // We only need to know if count > 1, so stop early once we hit 2.
+        int activeCount = 0;
+        uint32_t shcsr = tc->readMiscRegNoEffect(MISCREG_M_SHCSR);
+        // SHCSR active bit positions (DDI0403E B3.2.10):
+        //   bit 0:  MEMFAULTACT   (exc 4)
+        //   bit 1:  BUSFAULTACT   (exc 5)
+        //   bit 3:  USGFAULTACT   (exc 6)
+        //   bit 7:  SVCALLACT     (exc 11)
+        //   bit 8:  MONITORACT    (exc 12)
+        //   bit 10: PENDSVACT     (exc 14)
+        //   bit 11: SYSTICKACT    (exc 15)
+        constexpr uint32_t shcsrActiveMask = (1u << 0) | (1u << 1) |
+            (1u << 3) | (1u << 7) | (1u << 8) | (1u << 10) | (1u << 11);
+        activeCount += __builtin_popcount(shcsr & shcsrActiveMask);
+        // Count external IRQ active bits — stop early if already > 1
+        for (int w = 0; w < NVIC_WORDS && activeCount < 2; ++w)
+            activeCount += __builtin_popcount(nvicActive[w]);
+        icsr = insertBits(icsr, 11, 11, (activeCount <= 1) ? 1 : 0);
+
+        data = icsr;
+        return pioDelay;
+    }
+
     auto it = scbRegMap.find(offset);
     if (it != scbRegMap.end()) {
         data = tc->readMiscReg(it->second);
@@ -457,7 +531,7 @@ MProfileSCS::writeSCB(Addr offset, uint32_t data)
 //
 //   IABR (Active):       read-only; returns which IRQs are being serviced
 //
-//   IPR (Priority):      8-bit priority per IRQ, byte-accessible
+//   IPR (Priority):      per-IRQ priority (byte-accessible MMIO)
 //                         only top N bits implemented (N = priorityBits)
 //                         unimplemented low bits always read 0
 //
@@ -466,44 +540,67 @@ MProfileSCS::writeSCB(Addr offset, uint32_t data)
 // All writes that change interrupt state call updatePending() to
 // re-evaluate whether the CPU should be signalled.
 
+// BUG-4 fix: bitmask of implemented IRQs for a given 32-bit word.
+// Unimplemented IRQ bits must be RAZ/WI (DDI0403E B3.4.3).
+// Examples with numIRQs=82:
+//   word 0 (IRQs 0-31):   all implemented → 0xFFFFFFFF
+//   word 2 (IRQs 64-95):  18 implemented  → 0x0003FFFF
+//   word 3 (IRQs 96-127): none            → 0x00000000
+uint32_t
+MProfileSCS::irqMaskForWord(int word) const
+{
+    int firstIrq = word * 32;
+    if (firstIrq >= (int)numIRQs)
+        return 0;                          // entire word unimplemented
+    int bitsInWord = std::min(32, (int)numIRQs - firstIrq);
+    if (bitsInWord >= 32)
+        return 0xFFFFFFFF;                 // full word implemented
+    return (1u << bitsInWord) - 1;         // partial word
+}
+
 Tick
 MProfileSCS::readNVIC(Addr offset, uint32_t &data)
 {
     if (offset >= 0x100 && offset <= 0x11F) {
         // ISER[0..7]: read returns enabled state
+        // BUG-4 fix: mask unimplemented IRQ bits to RAZ
         int word = (offset - 0x100) / 4;
-        data = nvicEnabled[word];
+        data = nvicEnabled[word] & irqMaskForWord(word);
 
     } else if (offset >= 0x180 && offset <= 0x19F) {
         // ICER[0..7]: read also returns enabled state (not the clear mask)
         int word = (offset - 0x180) / 4;
-        data = nvicEnabled[word];
+        data = nvicEnabled[word] & irqMaskForWord(word);
 
     } else if (offset >= 0x200 && offset <= 0x21F) {
         // ISPR[0..7]: read returns pending state
         int word = (offset - 0x200) / 4;
-        data = nvicPending[word];
+        data = nvicPending[word] & irqMaskForWord(word);
 
     } else if (offset >= 0x280 && offset <= 0x29F) {
         // ICPR[0..7]: read also returns pending state
         int word = (offset - 0x280) / 4;
-        data = nvicPending[word];
+        data = nvicPending[word] & irqMaskForWord(word);
 
     } else if (offset >= 0x300 && offset <= 0x31F) {
         // IABR[0..7]: read-only active bits
         int word = (offset - 0x300) / 4;
-        data = nvicActive[word];
+        data = nvicActive[word] & irqMaskForWord(word);
 
     } else if (offset >= 0x400 && offset <= 0x4EF) {
-        // IPR[0..59]: 4 priority bytes packed into each 32-bit word.
-        // Firmware often reads a whole word and extracts bytes.
-        int base_irq = ((offset - 0x400) / 4) * 4;
-        data = 0;
-        for (int i = 0; i < 4; ++i) {
-            int irq = base_irq + i;
-            uint8_t pri = (irq < (int)numIRQs) ? nvicPriority[irq] : 0;
-            data |= ((uint32_t)pri) << (i * 8);
-        }
+        // IPR[0..59]: 4 priorities packed into each 32-bit MMIO word.
+        // Each priority occupies one byte.  Unimplemented IRQs read as 0.
+        uint32_t base = ((offset - 0x400) / 4) * 4;
+        uint8_t b0 = (base < numIRQs)
+            ? (uint8_t)nvicPriority[base] : 0;
+        uint8_t b1 = (base + 1 < numIRQs)
+            ? (uint8_t)nvicPriority[base + 1] : 0;
+        uint8_t b2 = (base + 2 < numIRQs)
+            ? (uint8_t)nvicPriority[base + 2] : 0;
+        uint8_t b3 = (base + 3 < numIRQs)
+            ? (uint8_t)nvicPriority[base + 3] : 0;
+        data = b0 | (b1 << 8) | (b2 << 16)
+               | (b3 << 24);
 
     } else {
         warn("MProfileSCS: NVIC read at unknown offset %#x", offset);
@@ -516,40 +613,49 @@ MProfileSCS::writeNVIC(Addr offset, uint32_t data)
 {
     if (offset >= 0x100 && offset <= 0x11F) {
         // ISER[0..7]: write-1-to-set (set enable bits)
+        // BUG-4 fix: mask write data so unimplemented IRQ bits are WI
         int word = (offset - 0x100) / 4;
-        nvicEnabled[word] |= data;
+        nvicEnabled[word] |= (data & irqMaskForWord(word));
         updatePending();
 
     } else if (offset >= 0x180 && offset <= 0x19F) {
         // ICER[0..7]: write-1-to-clear (clear enable bits)
+        // Mask not strictly needed for clear (clearing a zero bit is no-op),
+        // but apply for consistency and to prevent stale bits from persisting
         int word = (offset - 0x180) / 4;
-        nvicEnabled[word] &= ~data;
+        nvicEnabled[word] &= ~(data & irqMaskForWord(word));
         updatePending();
 
     } else if (offset >= 0x200 && offset <= 0x21F) {
         // ISPR[0..7]: write-1-to-set (set pending bits)
         int word = (offset - 0x200) / 4;
-        nvicPending[word] |= data;
+        nvicPending[word] |= (data & irqMaskForWord(word));
         updatePending();
 
     } else if (offset >= 0x280 && offset <= 0x29F) {
         // ICPR[0..7]: write-1-to-clear (clear pending bits)
         int word = (offset - 0x280) / 4;
-        nvicPending[word] &= ~data;
+        nvicPending[word] &= ~(data & irqMaskForWord(word));
         updatePending();
 
     } else if (offset >= 0x400 && offset <= 0x4EF) {
-        // IPR[0..59]: 4 priority bytes packed per word.
-        // Only the top priorityBits bits are implemented;
-        // unimplemented low bits are ignored on write.
-        int base_irq = ((offset - 0x400) / 4) * 4;
-        for (int i = 0; i < 4; ++i) {
-            int irq = base_irq + i;
-            if (irq < (int)numIRQs) {
-                nvicPriority[irq] =
-                    (uint8_t)((data >> (i * 8)) & priorityMask);
-            }
-        }
+        // IPR[0..59]: 4 priorities packed per 32-bit MMIO word.
+        // Each occupies one byte; only the top priorityBits bits are
+        // implemented.  Unimplemented low bits are ignored on write.
+        uint32_t base_irq = ((offset - 0x400) / 4) * 4;
+        // IPR word: byte 0-3 = IRQ[base] through IRQ[base+3]
+        if (base_irq < numIRQs)
+            nvicPriority[base_irq] =
+                maskedPriority(data);
+        if (base_irq + 1 < numIRQs)
+            nvicPriority[base_irq + 1] =
+                maskedPriority(data >> 8);
+        if (base_irq + 2 < numIRQs)
+            nvicPriority[base_irq + 2] =
+                maskedPriority(data >> 16);
+        if (base_irq + 3 < numIRQs)
+            nvicPriority[base_irq + 3] =
+                maskedPriority(data >> 24);
         updatePending();
 
     } else if (offset == 0xF00) {
@@ -581,83 +687,100 @@ MProfileSCS::writeNVIC(Addr offset, uint32_t data)
 //   - Fixed priorities: Reset=-3, NMI=-2, HardFault=-1
 //   - Configurable: everything else, 0..255 (only top N bits matter)
 //   - FAULTMASK=1: boosts execution priority to -1 (blocks everything
-//     except NMI).  We map this to unsigned 0 for comparison purposes
-//     since no configurable exception has priority < 0.
+//     except NMI).
 //   - PRIMASK=1: boosts execution priority to 0 (blocks all
 //     configurable-priority exceptions).
-//   - BASEPRI!=0: sets a priority ceiling (exceptions with priority
-//     >= BASEPRI are blocked).
+//   - BASEPRI!=0: sets a priority ceiling — used as the starting
+//     point for the active-exception scan so the result is
+//     min(BASEPRI, active_priorities).
 //   - Active exceptions: the priority of the highest-priority active
 //     exception becomes the execution priority.
 //
-// Lower number = higher priority.  0xFF = lowest (Thread mode, no masks).
+// Lower number = higher priority.  256 = lowest (Thread mode, no masks).
 
-uint8_t
+MExceptionPriority
 MProfileSCS::executionPriority() const
 {
-    using namespace ArmISA;
+
+    // Check with order Reset: -3, NMI: -2, HardFault: -1, FAULTMASK: -1.
+    // Then follow with SVCall, PendSV, SysTick, and all configurable IRQs.
+
+    // Check with order Reset: -3, NMI: -2, HardFault: -1
+    ArmISA::ArmMISA::XPSR xpsr = tc->readMiscRegNoEffect(
+        ArmISA::MISCREG_M_XPSR);
+    switch(xpsr.exception) {
+        case ArmISA::MPEXC_RESET:
+            // Reset handler runs in Thread mode (IPSR=0) per B1.5.5.
+            // IPSR should never contain 1 during normal execution.
+            warn("executionPriority: IPSR contains Reset exception "
+                 "number — this should not happen.");
+            return -3;
+        case ArmISA::MPEXC_NMI:
+            return -2;
+        case ArmISA::MPEXC_HARDFAULT:
+            return -1;
+        default:
+            break;
+    }
 
     // FAULTMASK: if set, execution priority is -1 (blocks everything
-    // except NMI).  Only available on M3/M4/M7 (not M0/M0+).
-    // We represent -1 as 0 in unsigned, which is correct because
-    // no configurable exception can have priority < 0.
+    // except NMI).
+    // Only available on M3/M4/M7 (not M0/M0+).
     if (hasBasepri) {
-        RegVal faultmask = tc->readMiscRegNoEffect(MISCREG_M_FAULTMASK);
+        RegVal faultmask = tc->readMiscRegNoEffect(
+            ArmISA::MISCREG_M_FAULTMASK);
         if (faultmask & 1)
-            return 0;
+            return -1;
     }
 
     // PRIMASK: if set, execution priority is 0 (blocks all
-    // configurable-priority exceptions, i.e., everything except
-    // NMI and HardFault).
-    RegVal primask = tc->readMiscRegNoEffect(MISCREG_M_PRIMASK);
+    // configurable-priority exceptions).
+    RegVal primask = tc->readMiscRegNoEffect(ArmISA::MISCREG_M_PRIMASK);
     if (primask & 1)
         return 0;
 
-    // BASEPRI: if nonzero, acts as a priority ceiling.  Exceptions
-    // with priority >= BASEPRI are blocked.  Only on M3/M4/M7.
-    if (hasBasepri) {
-        RegVal basepri = tc->readMiscRegNoEffect(MISCREG_M_BASEPRI);
-        uint8_t bp = (uint8_t)(basepri & priorityMask);
-        if (bp != 0)
-            return bp;
-    }
-
     // Scan active exception priorities to find the execution priority.
-    // DDI0403E B1.5.4: the execution priority is the highest priority
-    // (lowest number) among all active exceptions and priority masks.
-    uint8_t execPri = 0xFF;  // default: Thread mode, no active exceptions
-
-    // Check fixed-priority exceptions via xPSR.IPSR.
-    // HardFault (exc 3): fixed priority -1, mapped to 0 in unsigned.
-    // NMI (exc 2): fixed priority -2, also mapped to 0.
-    // These don't have SHCSR active bits; IPSR is the only indicator.
-    ArmISA::ArmMISA::XPSR xpsr = tc->readMiscRegNoEffect(MISCREG_M_XPSR);
-    if (xpsr.exception == MPEXC_HARDFAULT ||
-        xpsr.exception == MPEXC_NMI)
-        return 0;  // nothing configurable can preempt
+    // DDI0403E B1.5.4: the execution priority is the minimum (lowest
+    // number = highest priority) among all active exceptions AND any
+    // priority ceiling from BASEPRI.
+    //
+    // BASEPRI acts as a ceiling but must NOT short-circuit the scan:
+    // an active exception may have higher priority (lower number) than
+    // BASEPRI.  E.g., BASEPRI=0x80 with active SVCall at priority 0x20
+    // → execution priority is 0x20, not 0x80.
+    //
+    // Start with BASEPRI as the ceiling (if nonzero), otherwise 256
+    // (one beyond max configurable priority = Thread mode default).
+    MExceptionPriority execPri = 256;
+    if (hasBasepri) {
+        RegVal basepri = tc->readMiscRegNoEffect(
+            ArmISA::MISCREG_M_BASEPRI);
+        MExceptionPriority bp = maskedPriority(basepri);
+        if (bp != 0)
+            execPri = bp;
+    }
 
     // Check SHCSR active bits for system exceptions with configurable
     // priority.  DDI0403E B3.2.10 defines the active bit positions.
     // Group by SHPR register to minimize misc reg reads.
-    RegVal shcsr = tc->readMiscRegNoEffect(MISCREG_M_SHCSR);
+    RegVal shcsr = tc->readMiscRegNoEffect(ArmISA::MISCREG_M_SHCSR);
 
     // SHPR1 covers exceptions 4-7 (MemManage, BusFault, UsageFault)
     //   bit 0: MEMFAULTACT  (exc 4) → SHPR1[7:0]
     //   bit 1: BUSFAULTACT  (exc 5) → SHPR1[15:8]
     //   bit 3: USGFAULTACT  (exc 6) → SHPR1[23:16]
     if (shcsr & ((1u << 0) | (1u << 1) | (1u << 3))) {
-        RegVal shpr1 = tc->readMiscRegNoEffect(MISCREG_M_SHPR1);
+        RegVal shpr1 = tc->readMiscRegNoEffect(ArmISA::MISCREG_M_SHPR1);
         if (shcsr & (1u << 0)) {  // MEMFAULTACT
-            uint8_t pri = (uint8_t)(shpr1 & priorityMask);
+            MExceptionPriority pri = maskedPriority(shpr1);
             if (pri < execPri) execPri = pri;
         }
         if (shcsr & (1u << 1)) {  // BUSFAULTACT
-            uint8_t pri = (uint8_t)((shpr1 >> 8) & priorityMask);
+            MExceptionPriority pri = maskedPriority(shpr1 >> 8);
             if (pri < execPri) execPri = pri;
         }
         if (shcsr & (1u << 3)) {  // USGFAULTACT
-            uint8_t pri = (uint8_t)((shpr1 >> 16) & priorityMask);
+            MExceptionPriority pri = maskedPriority(shpr1 >> 16);
             if (pri < execPri) execPri = pri;
         }
     }
@@ -665,8 +788,8 @@ MProfileSCS::executionPriority() const
     // SHPR2 covers exceptions 8-11
     //   bit 7: SVCALLACT (exc 11) → SHPR2[31:24]
     if (shcsr & (1u << 7)) {
-        RegVal shpr2 = tc->readMiscRegNoEffect(MISCREG_M_SHPR2);
-        uint8_t pri = (uint8_t)((shpr2 >> 24) & priorityMask);
+        RegVal shpr2 = tc->readMiscRegNoEffect(ArmISA::MISCREG_M_SHPR2);
+        MExceptionPriority pri = maskedPriority(shpr2 >> 24);
         if (pri < execPri) execPri = pri;
     }
 
@@ -675,31 +798,34 @@ MProfileSCS::executionPriority() const
     //   bit 10: PENDSVACT   (exc 14) → SHPR3[23:16]
     //   bit 11: SYSTICKACT  (exc 15) → SHPR3[31:24]
     if (shcsr & ((1u << 8) | (1u << 10) | (1u << 11))) {
-        RegVal shpr3 = tc->readMiscRegNoEffect(MISCREG_M_SHPR3);
+        RegVal shpr3 = tc->readMiscRegNoEffect(ArmISA::MISCREG_M_SHPR3);
         if (shcsr & (1u << 8)) {  // MONITORACT
-            uint8_t pri = (uint8_t)(shpr3 & priorityMask);
+            MExceptionPriority pri = maskedPriority(shpr3);
             if (pri < execPri) execPri = pri;
         }
         if (shcsr & (1u << 10)) {  // PENDSVACT
-            uint8_t pri = (uint8_t)((shpr3 >> 16) & priorityMask);
+            MExceptionPriority pri = maskedPriority(shpr3 >> 16);
             if (pri < execPri) execPri = pri;
         }
         if (shcsr & (1u << 11)) {  // SYSTICKACT
-            uint8_t pri = (uint8_t)((shpr3 >> 24) & priorityMask);
+            MExceptionPriority pri = maskedPriority(shpr3 >> 24);
             if (pri < execPri) execPri = pri;
         }
     }
 
     // Scan NVIC active bits for external IRQs (exc >= 16).
     // Each bit in nvicActive[] corresponds to one IRQ.
-    for (int w = 0; w < MAX_IRQS / 32; ++w) {
+    // BUG-1 fix: use NVIC_WORDS (ceiling division) instead of
+    // MAX_IRQS / 32 (truncated), so IRQs 224-239 in word 7 are scanned.
+    for (int w = 0; w < NVIC_WORDS; ++w) {
         uint32_t active = nvicActive[w];
         while (active) {
             int bit = __builtin_ctz(active);  // lowest set bit
             int irq = w * 32 + bit;
             if (irq < (int)numIRQs) {
-                uint8_t pri = nvicPriority[irq] & priorityMask;
-                if (pri < execPri) execPri = pri;
+                // nvicPriority[] is already masked on write
+                if (nvicPriority[irq] < execPri)
+                    execPri = nvicPriority[irq];
             }
             active &= ~(1u << bit);
         }
@@ -730,7 +856,11 @@ MProfileSCS::updatePending()
     using namespace ArmISA;
 
     highestPendingExc = -1;
-    highestPendingPri = 0xFF;
+    // DDI0403E B1.5.4: 256 is one beyond the maximum configurable
+    // priority (0-255), serving as a "no pending interrupt" sentinel.
+    // Must be 256 (not 0xFF) so that an IRQ at priority 0xFF is
+    // correctly recorded (0xFF < 256 = true).
+    highestPendingPri = 256;
 
     // --- Scan external IRQs ---
     // For each 32-bit word of IRQs, compute the set that is
@@ -742,9 +872,9 @@ MProfileSCS::updatePending()
         while (deliverable) {
             int bit = __builtin_ctz(deliverable);
             int irq = word * 32 + bit;
-            uint8_t pri = nvicPriority[irq] & priorityMask;
-            if (pri < highestPendingPri) {
-                highestPendingPri = pri;
+            // nvicPriority[] is already masked on write
+            if (nvicPriority[irq] < highestPendingPri) {
+                highestPendingPri = nvicPriority[irq];
                 highestPendingExc = MPEXC_EXTERNAL_BASE + irq;
             }
             deliverable &= deliverable - 1;  // clear lowest set bit
@@ -762,7 +892,7 @@ MProfileSCS::updatePending()
     // SysTick: ICSR bit 26 = PENDSTSET
     if (hasSysTick && (icsr & (1u << 26))) {
         RegVal shpr3 = tc->readMiscRegNoEffect(MISCREG_M_SHPR3);
-        uint8_t pri = (uint8_t)((shpr3 >> 24) & priorityMask);
+        MExceptionPriority pri = maskedPriority(shpr3 >> 24);
         if (pri < highestPendingPri) {
             highestPendingPri = pri;
             highestPendingExc = MPEXC_SYSTICK;
@@ -772,7 +902,7 @@ MProfileSCS::updatePending()
     // PendSV: ICSR bit 28 = PENDSVSET
     if (icsr & (1u << 28)) {
         RegVal shpr3 = tc->readMiscRegNoEffect(MISCREG_M_SHPR3);
-        uint8_t pri = (uint8_t)((shpr3 >> 16) & priorityMask);
+        MExceptionPriority pri = maskedPriority(shpr3 >> 16);
         if (pri < highestPendingPri) {
             highestPendingPri = pri;
             highestPendingExc = MPEXC_PENDSV;
@@ -1120,9 +1250,9 @@ void
 MProfileSCS::serialize(CheckpointOut &cp) const
 {
     // NVIC interrupt state arrays (bit-vectors and per-IRQ priorities)
-    SERIALIZE_ARRAY(nvicEnabled, MAX_IRQS / 32);
-    SERIALIZE_ARRAY(nvicPending, MAX_IRQS / 32);
-    SERIALIZE_ARRAY(nvicActive,  MAX_IRQS / 32);
+    SERIALIZE_ARRAY(nvicEnabled, NVIC_WORDS);
+    SERIALIZE_ARRAY(nvicPending, NVIC_WORDS);
+    SERIALIZE_ARRAY(nvicActive,  NVIC_WORDS);
     SERIALIZE_ARRAY(nvicPriority, MAX_IRQS);
 
     // Cached highest-pending state (rebuilt by updatePending() on
@@ -1149,9 +1279,9 @@ void
 MProfileSCS::unserialize(CheckpointIn &cp)
 {
     // NVIC interrupt state arrays
-    UNSERIALIZE_ARRAY(nvicEnabled, MAX_IRQS / 32);
-    UNSERIALIZE_ARRAY(nvicPending, MAX_IRQS / 32);
-    UNSERIALIZE_ARRAY(nvicActive,  MAX_IRQS / 32);
+    UNSERIALIZE_ARRAY(nvicEnabled, NVIC_WORDS);
+    UNSERIALIZE_ARRAY(nvicPending, NVIC_WORDS);
+    UNSERIALIZE_ARRAY(nvicActive,  NVIC_WORDS);
     UNSERIALIZE_ARRAY(nvicPriority, MAX_IRQS);
 
     // Cached highest-pending state

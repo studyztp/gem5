@@ -47,6 +47,21 @@ namespace gem5
 class ArmMSystem;
 class ThreadContext;
 
+/**
+ * M-profile exception priority type.
+ *
+ * Must be signed and wider than 8 bits to represent the full range:
+ *   -3  Reset (fixed)
+ *   -2  NMI (fixed)
+ *   -1  HardFault (fixed) / FAULTMASK execution priority
+ *    0  PRIMASK execution priority / highest configurable
+ *  1-255  Configurable exception priorities
+ *  256  Thread mode default (no masks, no active exceptions)
+ *
+ * DDI0403E B1.5.4.
+ */
+using MExceptionPriority = int16_t;
+
 class MProfileSCS : public BasicPioDevice
 {
   public:
@@ -123,21 +138,33 @@ class MProfileSCS : public BasicPioDevice
     Tick readSCB(Addr offset, uint32_t &data);
     Tick writeSCB(Addr offset, uint32_t data);
 
+    // BUG-4 fix: Returns a bitmask of implemented IRQs for a given
+    // 32-bit word.  Unimplemented IRQ bits must be RAZ/WI per
+    // DDI0403E B3.4.3.  Example: numIRQs=82, word 2 → 0x0003FFFF
+    // (18 implemented bits), word 3 → 0x00000000 (all unimplemented).
+    uint32_t irqMaskForWord(int word) const;
+
     // -- NVIC state (external IRQs 0..numIRQs-1) --
     // Bit-vector arrays following the GicV2 pattern.  Sized for the
     // architectural maximum; only words covering 0..numIRQs-1 matter.
 
     static constexpr int MAX_IRQS = 240;
-    uint32_t nvicEnabled[MAX_IRQS / 32];   // ISER/ICER
-    uint32_t nvicPending[MAX_IRQS / 32];   // ISPR/ICPR
-    uint32_t nvicActive[MAX_IRQS / 32];    // IABR (read-only)
-    uint8_t  nvicPriority[MAX_IRQS];       // IPR (8-bit per IRQ)
+    // BUG-1 fix: use ceiling division for bit-vector word count.
+    // MAX_IRQS / 32 = 7 (truncated), which only covers IRQs 0-223.
+    // IRQs 224-239 need word index 7, so we need 8 words.
+    static constexpr int NVIC_WORDS = (MAX_IRQS + 31) / 32;  // = 8
+    static_assert(NVIC_WORDS * 32 >= MAX_IRQS,
+                  "NVIC_WORDS must cover all MAX_IRQS");
+    uint32_t nvicEnabled[NVIC_WORDS];   // ISER/ICER
+    uint32_t nvicPending[NVIC_WORDS];   // ISPR/ICPR
+    uint32_t nvicActive[NVIC_WORDS];    // IABR (read-only)
+    MExceptionPriority nvicPriority[MAX_IRQS]; // IPR (per-IRQ priority)
 
     /** Cached highest-priority pending exception (-1 = none). */
     int highestPendingExc;
 
-    /** Priority of highestPendingExc (0xFF = none pending). */
-    uint8_t highestPendingPri;
+    /** Priority of highestPendingExc (256 = none pending). */
+    MExceptionPriority highestPendingPri;
 
     // -- SysTick state --
     // 24-bit countdown timer.  When enabled, a gem5 event fires
@@ -161,8 +188,8 @@ class MProfileSCS : public BasicPioDevice
     // See MProfileSCS.py for per-knob rationale.
 
     uint32_t numIRQs;      // External IRQ count (max 240)
-    uint8_t priorityBits;  // Implemented priority bits (2-8)
-    uint8_t priorityMask;  // Mask of implemented high bits
+    uint8_t priorityBits;   // Implemented priority bits (2-8)
+    uint8_t priorityMask;  // Bitmask of implemented high bits
                            // e.g. 4 bits -> 0xF0
     bool hasSysTick;       // SysTick present? (some M0: no)
     bool hasBasepri;       // BASEPRI/FAULTMASK? (M0: no)
@@ -196,13 +223,27 @@ class MProfileSCS : public BasicPioDevice
     uint32_t sysTickCurrentValue() const;
 
     /**
+     * Extract the implemented priority bits from a raw 8-bit value.
+     *
+     * Masks with priorityMask (e.g. 0xF0 for 4-bit priority) and
+     * returns the result as MExceptionPriority.  Centralizes all
+     * bitwise masking so callers don't need raw & operations or casts.
+     */
+    MExceptionPriority maskedPriority(uint32_t raw) const
+    {
+        return static_cast<MExceptionPriority>(raw & priorityMask);
+    }
+
+    /**
      * Compute current execution priority (lower = higher priority).
      *
      * Checks FAULTMASK (if hasBasepri), PRIMASK, BASEPRI (if
      * hasBasepri), and active exception priorities.  Thread mode
-     * with no masks returns 0xFF (lowest priority).
+     * with no masks returns 256 (lowest priority, one beyond max
+     * configurable 255).  Returns MExceptionPriority to represent
+     * -1 (FAULTMASK) through 256 (Thread mode default).
      */
-    uint8_t executionPriority() const;
+     MExceptionPriority executionPriority() const;
 };
 
 } // namespace gem5

@@ -159,6 +159,22 @@ class ArmMSystem(System):
         "Use ArmMReleaseCortexM0/M3/M7 for other variants.",
     )
 
+    # CPUID register value (DDI0403E B3.2.3).  Identifies the core
+    # variant to firmware via SCB->CPUID at 0xE000ED00.  Must match
+    # the release variant.  No default — platforms must set this
+    # explicitly so firmware sees the correct core identity.
+    # Common values:
+    #   Cortex-M0:  0x410CC200
+    #   Cortex-M3:  0x411FC231
+    #   Cortex-M4:  0x410FC241
+    #   Cortex-M7:  0x411FC271
+    # TODO: When more variants are tested, consider moving this to
+    # the ArmMRelease subclasses so each variant auto-sets its CPUID.
+    cpuid = Param.UInt32(
+        "CPUID register value — must be set by the platform. "
+        "See DDI0403E B3.2.3 for encoding."
+    )
+
     semihosting = Param.ArmSemihosting(
         NULL,
         "Enable ARM semihosting support. M-profile uses BKPT #0xAB "

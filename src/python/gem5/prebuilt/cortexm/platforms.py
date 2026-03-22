@@ -132,6 +132,10 @@ class STM32F405Platform(ArmMPlatform):
         has_basepri=True,
     )
 
+    def cpuid(self):
+        """CPUID for Cortex-M4 r0p1 (DDI0403E B3.2.3)."""
+        return 0x410FC241
+
     def default_memories(self):
         """
         Create default SimpleMemory objects matching this chip's layout.
@@ -248,6 +252,10 @@ class STM32G474REPlatform(ArmMPlatform):
         has_systick=True,
         has_basepri=True,
     )
+
+    def cpuid(self):
+        """CPUID for Cortex-M4 r0p1 (DDI0403E B3.2.3)."""
+        return 0x410FC241
 
     def default_memories(self):
         """

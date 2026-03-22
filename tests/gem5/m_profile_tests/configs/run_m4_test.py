@@ -83,6 +83,19 @@ parser.add_argument(
     default="pass",
     help="Expected test outcome: pass (default) or fail",
 )
+parser.add_argument(
+    "--num-irqs",
+    type=int,
+    default=0,
+    help="Override NVIC external IRQ count (0 = use platform default)",
+)
+parser.add_argument(
+    "--priority-bits",
+    type=int,
+    default=0,
+    help="Override NVIC priority bit width (0 = use platform default, "
+    "valid range 2-8)",
+)
 args = parser.parse_args()
 
 # ---------------------------------------------------------------------------
@@ -91,6 +104,16 @@ args = parser.parse_args()
 from gem5.prebuilt.cortexm.platforms import STM32F405Platform
 
 platform = STM32F405Platform()
+
+# Override NVIC IRQ count if requested (e.g., for testing high-numbered IRQs).
+# The default (0) leaves the platform's num_irqs unchanged.
+if args.num_irqs > 0:
+    platform.scs.num_irqs = args.num_irqs
+
+# Override priority bit width if requested (e.g., 8 bits for C-1 test).
+# The default (0) leaves the platform's priority_bits unchanged.
+if args.priority_bits > 0:
+    platform.scs.priority_bits = args.priority_bits
 
 # ---------------------------------------------------------------------------
 # CPU

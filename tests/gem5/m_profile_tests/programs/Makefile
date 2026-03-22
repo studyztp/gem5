@@ -31,9 +31,23 @@ TESTS = cortexm4_basic test_cps test_mrs_msr test_bx_exc_return \
         test_nested_priority \
         test_systick_active_pending \
         test_ipr_byte_access \
-        test_scs_checkpoint
+        test_scs_checkpoint \
+        test_nvic_oob \
+        test_icsr_read \
+        test_cpuid_readonly \
+        test_nvic_irq_mask \
+        test_xpsr_nzcv_sync \
+        test_control_spsel \
+        test_scb_byte_access \
+        test_exc_return_validate \
+        test_faultmask_priority
 
-all: $(addsuffix .elf, $(TESTS))
+all: $(addsuffix .elf, $(TESTS)) freertos-tests
+
+# Recurse into freertos/ to build FreeRTOS-based tests
+.PHONY: freertos-tests
+freertos-tests:
+	$(MAKE) -C freertos
 
 %.o: %.S
 	$(AS) $(ASFLAGS) $< -o $@
