@@ -280,6 +280,11 @@ class MMMU : public BaseMMU
 
     // -- Stacking engine state --
 
+    /** Requestor ID for stacking port memory requests.
+     *  Registered during init() — gem5 requires requestor IDs
+     *  to be registered before regStats(). */
+    RequestorID stackingRequestorId = Request::invldRequestorId;
+
     /** Number of timing responses still outstanding.
      *  When this reaches 0, the barrier is released. */
     uint32_t pendingResponses = 0;

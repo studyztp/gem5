@@ -128,8 +128,10 @@ class STM32F405Platform(ArmMPlatform):
     scs = MProfileSCS(
         num_irqs=82,
         priority_bits=4,
-        has_systick=True,
+        num_systick=1,
         has_basepri=True,
+        systick_calib=0x8019A27F,  # NOREF=1, SKEW=0, TENMS=1679999
+        # (10ms at 168MHz HCLK)
     )
 
     def cpuid(self):
@@ -249,8 +251,10 @@ class STM32G474REPlatform(ArmMPlatform):
     scs = MProfileSCS(
         num_irqs=102,
         priority_bits=4,
-        has_systick=True,
+        num_systick=1,
         has_basepri=True,
+        systick_calib=0x8019F0BF,  # NOREF=1, SKEW=0, TENMS=1699999
+        # (10ms at 170MHz HCLK)
     )
 
     def cpuid(self):

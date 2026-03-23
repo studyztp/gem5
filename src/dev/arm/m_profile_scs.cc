@@ -29,6 +29,7 @@
 #include "dev/arm/m_profile_scs.hh"
 
 #include "cpu/base.hh"
+#include "mem/packet_access.hh"
 
 namespace gem5
 {
@@ -774,6 +775,10 @@ MProfileSCS::clearInt(uint32_t irq)
 bool
 MProfileSCS::hasDeliverableIRQ()
 {
+    // updatePending() returns true only if it promoted a NEW pending
+    // exception to active — meaning the CPU should take it now.
+    // It does NOT return true just because active exceptions exist
+    // (that would cause re-entry into the current handler).
     return updatePending();
 }
 
@@ -916,7 +921,10 @@ MProfileSCS::updatePending()
         break;
     }
 
-    return !activeInterrupts.empty();
+    // No new exception was promoted.  Return false — the CPU
+    // should NOT take an interrupt.  Active exceptions are already
+    // being handled; returning true here would cause re-entry.
+    return false;
 }
 
 // -- SysTick timer --
@@ -1007,19 +1015,25 @@ MProfileSCS::serialize(CheckpointOut &cp) const
     }
 
     // -- Mask state --
-    SERIALIZE_SCALAR(primask);
-    SERIALIZE_SCALAR(faultmask);
-    SERIALIZE_SCALAR(basepri);
-    SERIALIZE_SCALAR(activePriorityCeiling);
+    {
+        ScopedCheckpointSection sec(cp, "maskState");
+        SERIALIZE_SCALAR(primask);
+        SERIALIZE_SCALAR(faultmask);
+        SERIALIZE_SCALAR(basepri);
+        SERIALIZE_SCALAR(activePriorityCeiling);
+    }
 
     // -- SCB registers stored locally --
     // VTOR, AIRCR, SCR, CCR are in MISA misc regs — serialized
     // by MISA.  Only SCS-local registers saved here.
-    SERIALIZE_SCALAR(cfsr);
-    SERIALIZE_SCALAR(hfsr);
-    SERIALIZE_SCALAR(dfsr);
-    SERIALIZE_SCALAR(mmfar);
-    SERIALIZE_SCALAR(bfar);
+    {
+        ScopedCheckpointSection sec(cp, "scbRegs");
+        SERIALIZE_SCALAR(cfsr);
+        SERIALIZE_SCALAR(hfsr);
+        SERIALIZE_SCALAR(dfsr);
+        SERIALIZE_SCALAR(mmfar);
+        SERIALIZE_SCALAR(bfar);
+    }
 
     // -- SysTick state --
     for (uint8_t i = 0; i < sysTicks.size(); ++i) {
@@ -1059,17 +1073,23 @@ MProfileSCS::unserialize(CheckpointIn &cp)
     }
 
     // -- Mask state --
-    UNSERIALIZE_SCALAR(primask);
-    UNSERIALIZE_SCALAR(faultmask);
-    UNSERIALIZE_SCALAR(basepri);
-    UNSERIALIZE_SCALAR(activePriorityCeiling);
+    {
+        ScopedCheckpointSection sec(cp, "maskState");
+        UNSERIALIZE_SCALAR(primask);
+        UNSERIALIZE_SCALAR(faultmask);
+        UNSERIALIZE_SCALAR(basepri);
+        UNSERIALIZE_SCALAR(activePriorityCeiling);
+    }
 
     // -- SCB registers stored locally --
-    UNSERIALIZE_SCALAR(cfsr);
-    UNSERIALIZE_SCALAR(hfsr);
-    UNSERIALIZE_SCALAR(dfsr);
-    UNSERIALIZE_SCALAR(mmfar);
-    UNSERIALIZE_SCALAR(bfar);
+    {
+        ScopedCheckpointSection sec(cp, "scbRegs");
+        UNSERIALIZE_SCALAR(cfsr);
+        UNSERIALIZE_SCALAR(hfsr);
+        UNSERIALIZE_SCALAR(dfsr);
+        UNSERIALIZE_SCALAR(mmfar);
+        UNSERIALIZE_SCALAR(bfar);
+    }
 
     // -- SysTick state --
     for (uint8_t i = 0; i < sysTicks.size(); ++i) {

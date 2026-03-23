@@ -27,7 +27,9 @@
 from m5.objects.BaseMMU import BaseMMU
 from m5.objects.BaseTLB import BaseTLB
 from m5.objects.ClockedObject import ClockedObject
+from m5.objects.System import System
 from m5.params import *
+from m5.proxy import *
 
 
 class ArmMTLB(BaseTLB):
@@ -102,6 +104,7 @@ class ArmMMMU(BaseMMU):
 
     itb = ArmMTLB()
     dtb = ArmMTLB()
+    sys = Param.System(Parent.any, "System for requestor ID registration")
     stacking_barrier = Param.StackingBarrier(
         StackingBarrier(), "Stacking barrier between CPU icache and memory"
     )

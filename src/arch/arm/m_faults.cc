@@ -283,21 +283,36 @@ ArmMFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
     assert(scs && "MProfileSCS not registered with ArmMSystem");
 
     if (!scs->activateIRQ(_excNumber)) {
-        // Exception couldn't be activated (blocked by priority/masks).
-        // For synchronous exceptions, escalate to HardFault by
-        // creating and invoking a new HardFault.
-        // DDI0403E B1.5.4: "If the priority of the exception is the
-        // same as or lower than the execution priority, the processor
-        // escalates the exception to a HardFault."
-        if (_excNumber != MPEXC_HARDFAULT) {
-            auto hardFault = std::make_shared<ArmMFault>(MPEXC_HARDFAULT);
-            hardFault->invoke(tc, inst);
-            return;  // HardFault's invoke handles everything
-        } else {
-            // HardFault itself couldn't activate — lockup.
-            fatal("M-profile lockup: HardFault blocked. "
-                  "DDI0403E B1.5.15.");
+        // activateIRQ returned false.  Two cases:
+        //
+        // 1. Async exceptions (IRQs, PendSV, SysTick) arriving via
+        //    getInterrupt() → invoke(): already activated by
+        //    updatePending().  activateIRQ returns false because
+        //    the exception is already in the active queue.  This is
+        //    normal — just proceed with exception entry.
+        //
+        // 2. Synchronous exceptions (SVCall, UsageFault, etc.)
+        //    created directly by instructions: not yet activated.
+        //    If activateIRQ fails, the exception can't preempt
+        //    the current execution — escalate to HardFault.
+        //    DDI0403E B1.5.4.
+        bool isAsync = (_excNumber >= MPEXC_EXTERNAL_BASE ||
+                        _excNumber == MPEXC_PENDSV ||
+                        _excNumber == MPEXC_SYSTICK);
+
+        if (!isAsync) {
+            // Synchronous exception blocked — escalate to HardFault.
+            if (_excNumber != MPEXC_HARDFAULT) {
+                auto hardFault =
+                    std::make_shared<ArmMFault>(MPEXC_HARDFAULT);
+                hardFault->invoke(tc, inst);
+                return;
+            } else {
+                fatal("M-profile lockup: HardFault blocked. "
+                      "DDI0403E B1.5.15.");
+            }
         }
+        // Async: already activated by updatePending(), proceed.
     }
 
     // ---- 1. Determine pre-exception state ----

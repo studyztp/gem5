@@ -161,13 +161,10 @@ MProfileInterrupts::getInterrupt()
 void
 MProfileInterrupts::updateIntrInfo()
 {
-    // Tell the SCS to transition the interrupt from pending to active.
-    // This clears the pending bit and sets the active bit, which
-    // affects priority resolution for nested interrupts.
-    if (scs && lastAckedExcNum >= 0) {
-        scs->activateIRQ(lastAckedExcNum);
-        lastAckedExcNum = -1;
-    }
+    // Activation is now handled by ArmMFault::invoke() via
+    // scs->activateIRQ().  Nothing to do here — just clear
+    // the acked exception number.
+    lastAckedExcNum = -1;
 }
 
 // =========================================================================

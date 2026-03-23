@@ -197,7 +197,8 @@ MMMU::StackingPort::recvTimingResp(PacketPtr pkt)
 MMMU::MMMU(const Params &p)
     : BaseMMU(p),
       stackingPort(p.name + ".stacking_port", *this),
-      barrier(p.stacking_barrier)
+      barrier(p.stacking_barrier),
+      stackingRequestorId(p.sys->getRequestorId(this, "stacking"))
 {
 }
 
@@ -220,38 +221,39 @@ void
 MMMU::storeToStack(Addr frameptr, const std::vector<uint32_t> &values,
                    ThreadContext *tc)
 {
-    // Activate the stacking barrier so icache responses are held
-    // while the stacking writes proceed on the separate stackbus.
-    if (barrier)
-        barrier->startHolding();
+    RequestorID rid = stackingRequestorId;
+    bool isTimingMode = tc->getSystemPtr()->isTimingMode();
 
-    pendingResponses = values.size();
-
-    // Get clock period from the CPU for 1-cycle spacing, and
-    // requestor ID for proper memory system identification.
-    Tick cpuClkPeriod = tc->getCpuPtr()->clockPeriod();
-    RequestorID rid = tc->getSystemPtr()->getRequestorId(this, "stacking");
-
-    // Schedule one write per cycle, modeling the AHB pipelining of
-    // the Cortex-M stacking sequencer (one 32-bit word per bus cycle).
     for (uint32_t i = 0; i < values.size(); ++i) {
         Addr addr = frameptr + i * 4;
 
-        // Create a write request and packet with proper requestor ID.
         auto req = std::make_shared<Request>(addr, 4,
             Request::UNCACHEABLE, rid);
         auto pkt = new Packet(req, MemCmd::WriteReq);
         pkt->allocate();
-
-        // Copy the word into the packet data.
         pkt->setLE<uint32_t>(values[i]);
 
-        // Schedule the write 'i' cycles from now.
-        // The QueuedRequestPort's ReqPacketQueue handles queuing,
-        // backpressure, and retry automatically.
-        Tick sendTick = curTick() + i * cpuClkPeriod;
-        stackingPort.schedTimingReq(pkt, sendTick);
+        if (isTimingMode) {
+            // Timing mode: schedule writes with 1-cycle spacing,
+            // modeling AHB pipelining of the stacking sequencer.
+            // The stacking barrier holds icache responses until
+            // all writes complete.
+            if (i == 0 && barrier)
+                barrier->startHolding();
+            Tick cpuClkPeriod = tc->getCpuPtr()->clockPeriod();
+            Tick sendTick = curTick() + i * cpuClkPeriod;
+            stackingPort.schedTimingReq(pkt, sendTick);
+        } else {
+            // Atomic mode: send immediately, get latency back.
+            // No barrier needed — AtomicSimpleCPU doesn't use
+            // timing responses for stall.
+            stackingPort.sendAtomic(pkt);
+            delete pkt;
+        }
     }
+
+    if (isTimingMode)
+        pendingResponses = values.size();
 }
 
 // -- readFromStack --
@@ -280,30 +282,31 @@ MMMU::readFromStack(Addr frameptr, uint32_t numWords, ThreadContext *tc)
         delete pkt;
     }
 
-    // Phase 2: Timing reads for realistic latency.
+    // Phase 2: Timing reads for realistic latency (timing mode only).
     // The actual data is already captured above.  These timing
     // requests model the bus cycles the unstacking would take on
     // real hardware.  The barrier holds the CPU until all timing
-    // responses arrive.
-    if (barrier)
-        barrier->startHolding();
+    // responses arrive.  Skipped in atomic mode — no timing protocol.
+    if (tc->getSystemPtr()->isTimingMode()) {
+        if (barrier)
+            barrier->startHolding();
 
-    pendingResponses = numWords;
+        pendingResponses = numWords;
 
-    // Get clock period from CPU and requestor ID from system.
-    Tick cpuClkPeriod = tc->getCpuPtr()->clockPeriod();
-    RequestorID rid = tc->getSystemPtr()->getRequestorId(this, "stacking");
+        Tick cpuClkPeriod = tc->getCpuPtr()->clockPeriod();
+        RequestorID rid = stackingRequestorId;
 
-    for (uint32_t i = 0; i < numWords; ++i) {
-        Addr addr = frameptr + i * 4;
+        for (uint32_t i = 0; i < numWords; ++i) {
+            Addr addr = frameptr + i * 4;
 
-        auto req = std::make_shared<Request>(addr, 4,
-            Request::UNCACHEABLE, rid);
-        auto pkt = new Packet(req, MemCmd::ReadReq);
-        pkt->allocate();
+            auto req = std::make_shared<Request>(addr, 4,
+                Request::UNCACHEABLE, rid);
+            auto pkt = new Packet(req, MemCmd::ReadReq);
+            pkt->allocate();
 
-        Tick sendTick = curTick() + i * cpuClkPeriod;
-        stackingPort.schedTimingReq(pkt, sendTick);
+            Tick sendTick = curTick() + i * cpuClkPeriod;
+            stackingPort.schedTimingReq(pkt, sendTick);
+        }
     }
 
     return result;
