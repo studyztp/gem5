@@ -156,8 +156,8 @@ MISA::clear()
     // not hardcoded.  This allows different core variants (M0/M3/M4/M7)
     // to report the correct CPUID to firmware via SCB->CPUID (0xE000ED00).
     miscRegs[MISCREG_M_CPUID] = mSystem->getCPUID();
-    // ICSR: no pending exceptions at reset
-    miscRegs[MISCREG_M_ICSR] = 0;
+    // ICSR is not modeled as a misc reg — computed on-the-fly by
+    // MProfileSCS from xPSR.IPSR, internal SCS state, and SHCSR.
     // VTOR: 0 at reset (vector table at address 0)
     miscRegs[MISCREG_M_VTOR] = 0;
     // AIRCR: VECTKEYSTAT=0xFA05 in readback, PRIGROUP=0
@@ -464,7 +464,8 @@ MISA::copyRegsFrom(ThreadContext *src)
     static const RegIndex mRegs[] = {
         MISCREG_M_XPSR, MISCREG_M_MSP, MISCREG_M_PSP,
         MISCREG_M_CONTROL, MISCREG_M_PRIMASK, MISCREG_M_BASEPRI,
-        MISCREG_M_FAULTMASK, MISCREG_M_CPUID, MISCREG_M_ICSR,
+        MISCREG_M_FAULTMASK, MISCREG_M_CPUID,
+        // ICSR omitted — not a misc reg, computed by MProfileSCS
         MISCREG_M_VTOR, MISCREG_M_AIRCR, MISCREG_M_SCR,
         MISCREG_M_CCR, MISCREG_M_SHPR1, MISCREG_M_SHPR2,
         MISCREG_M_SHPR3, MISCREG_M_SHCSR, MISCREG_M_CFSR,

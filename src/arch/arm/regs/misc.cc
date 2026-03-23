@@ -7887,9 +7887,8 @@ ISA::initializeMiscRegMetadata()
         .reset(0x410FC241)
         .allPrivileges()
         .writes(0); // RO
-    InitReg(MISCREG_M_ICSR)
-        .reset(0)
-        .allPrivileges();
+    // ICSR is not modeled as a misc reg — computed on-the-fly by
+    // MProfileSCS from xPSR.IPSR, internal SCS state, and SHCSR.
     InitReg(MISCREG_M_VTOR)
         .reset(0)
         .raz(0x7F)

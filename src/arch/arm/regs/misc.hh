@@ -1215,7 +1215,10 @@ namespace ArmISA
 
         // M-profile System Control Block (SCB) registers
         MISCREG_M_CPUID,
-        MISCREG_M_ICSR,
+        // ICSR is not modeled as a misc reg — it is a view register
+        // whose fields are computed on-the-fly by MProfileSCS from
+        // xPSR.IPSR, SCS internal pending/active state, and SHCSR.
+        // See MProfileSCS::read() for ICSR read handling.
         MISCREG_M_VTOR,
         MISCREG_M_AIRCR,
         MISCREG_M_SCR,
@@ -2515,7 +2518,7 @@ namespace ArmISA
 
         // M-profile SCB registers
         "m_cpuid",
-        "m_icsr",
+        // ICSR removed — computed on-the-fly by MProfileSCS
         "m_vtor",
         "m_aircr",
         "m_scr",

@@ -84,26 +84,6 @@ enum MProfileExcNum : int
 };
 
 /**
- * Map M-profile exception number to its SHCSR active bit position.
- * Returns -1 if the exception has no SHCSR active bit (HardFault, NMI,
- * Reset, or external IRQs — external IRQs use nvicActive[] instead).
- * DDI0403E B3.2.10: SHCSR active bit positions.
- */
-inline int mProfileShcsrActiveBit(int exc_num)
-{
-    switch (exc_num) {
-        case MPEXC_MEMMANAGE:  return 0;   // MEMFAULTACT
-        case MPEXC_BUSFAULT:   return 1;   // BUSFAULTACT
-        case MPEXC_USAGEFAULT: return 3;   // USGFAULTACT
-        case MPEXC_SVCALL:     return 7;   // SVCALLACT
-        case MPEXC_DEBUGMON:   return 8;   // MONITORACT
-        case MPEXC_PENDSV:     return 10;  // PENDSVACT
-        case MPEXC_SYSTICK:    return 11;  // SYSTICKACT
-        default:               return -1;  // no SHCSR active bit
-    }
-}
-
-/**
  * Base class for all M-profile exceptions.
  *
  * A single ArmMFault instance can represent any non-Reset exception;

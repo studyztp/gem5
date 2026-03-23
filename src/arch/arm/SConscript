@@ -180,7 +180,7 @@ SimObject(
 )
 SimObject(
     'ArmMMMU.py',
-    sim_objects=['ArmMMMU', 'ArmMTLB'],
+    sim_objects=['ArmMMMU', 'ArmMTLB', 'StackingBarrier'],
     tags='arm isa',
 )
 SimObject(

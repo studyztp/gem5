@@ -259,43 +259,69 @@ class ArmMBoard(ArmMSystem):
         # (See src/cpu/CpuCluster.py:74)
         self.cpu.createInterruptController()
 
-        # ---- Memory bus ----
-        # A single SystemXBar connects all memories, devices, and
-        # the CPU.  M-profile SoCs have a bus matrix (AHB); one
-        # SystemXBar is an appropriate model.
+        # ---- Bus topology ----
+        # Three-level bus hierarchy modeling the Cortex-M bus matrix:
         #
-        # BadAddr responder catches accesses to unmapped addresses
-        # (e.g., reads to a non-existent peripheral) and returns a
-        # bus error instead of hanging the simulation.
+        #   cpubus ───→ membus → Flash, SRAM, SCS, peripherals
+        #   stackbus ──→ membus ↗
+        #
+        #   cpubus — carries CPU instruction fetches and data
+        #            accesses (load/store from instructions).
+        #            Future peripherals/DMA masters also connect
+        #            here, creating realistic bus contention.
+        #
+        #   stackbus — carries exception frame stacking writes
+        #              and unstacking reads from the MMMU stacking
+        #              sequencer.  Separate from cpubus so stacking
+        #              and instruction fetch can proceed in parallel,
+        #              matching the Cortex-M Harvard architecture
+        #              (separate ICode and DCode/System buses).
+        #
+        #   membus — shared downstream crossbar connecting to the
+        #            actual memories and devices.  Both cpubus and
+        #            stackbus arbitrate here when they target the
+        #            same physical memory, modeling real SRAM
+        #            controller arbitration in the bus matrix.
+        #
+        # BadAddr responder catches accesses to unmapped addresses.
+        self.cpubus = SystemXBar()
+        self.cpubus.badaddr_responder = BadAddr()
+        self.cpubus.default = self.cpubus.badaddr_responder.pio
+
+        self.stackbus = SystemXBar()
+        self.stackbus.badaddr_responder = BadAddr()
+        self.stackbus.default = self.stackbus.badaddr_responder.pio
+
         self.membus = SystemXBar()
         self.membus.badaddr_responder = BadAddr()
         self.membus.default = self.membus.badaddr_responder.pio
+
+        # Connect cpubus and stackbus downstream to the shared membus.
+        # Both buses can issue requests in parallel; membus arbitrates
+        # access to the shared memories.
+        self.cpubus.mem_side_ports = self.membus.cpu_side_ports
+        self.stackbus.mem_side_ports = self.membus.cpu_side_ports
 
         # ---- System port ----
         # Required by gem5: used for functional accesses such as
         # ELF loading by the workload and debugger memory reads.
         self.system_port = self.membus.cpu_side_ports
 
-        # ---- Attach user-provided memories to the bus ----
+        # ---- Attach user-provided memories to the shared membus ----
         # Each memory covers a specific address range (flash bank,
-        # SRAM block, CCM, etc.).  The user controls the memory type
-        # and latency — the board just wires them.
+        # SRAM block, CCM, etc.).  Both cpubus and stackbus reach
+        # these memories through the shared membus.
         self.mem_ranges = []
         for i, mem in enumerate(memories):
-            # Attach as named children so they show in config output
-            # (e.g., "mem_0", "mem_1", ...).
             setattr(self, f"mem_{i}", mem)
             mem.port = self.membus.mem_side_ports
             self.mem_ranges.append(mem.range)
 
-        # ---- Wire the SCS device to the bus ----
+        # ---- Wire the SCS device to the shared membus ----
         # The SCS (NVIC + SysTick + SCB) is a BasicPioDevice at the
         # architecturally fixed address 0xE000E000.  Firmware
-        # accesses it via normal load/store instructions.
-        # The SCS is a child of the platform (not the board) to
-        # avoid a cycle in the SimObject hierarchy.
-        # MProfileSCS::init() registers itself with ArmMSystem via
-        # setSCS() — no need to set self.scs here.
+        # accesses it via normal load/store instructions through
+        # cpubus → membus.
         self.platform.scs.pio = self.membus.mem_side_ports
 
         # ---- Wire CPU to bus (through optional cache hierarchy) ----
@@ -303,27 +329,52 @@ class ArmMBoard(ArmMSystem):
 
     def _connect_cpu(self):
         """
-        Wire the CPU's memory ports to the bus.
+        Wire the CPU's memory ports and MMMU stacking port to buses.
 
-        Two modes:
-          1. No cache: CPU ports connect directly to the membus.
-             This is the common case for Cortex-M0/M4.
+        Port topology:
+          CPU icache_port → stacking_barrier → [cache] → cpubus
+          CPU dcache_port → [cache] → cpubus
+          MMMU stacking_port → stackbus
 
+        The stacking barrier sits between the CPU icache port and
+        the cache/cpubus.  During exception entry, it lets fetch
+        requests through (icache can fill from Flash in parallel
+        with stacking writes) but holds responses until stacking
+        completes.
+
+        The MMMU stacking port connects to a separate stackbus so
+        stacking writes and CPU fetches can proceed in parallel on
+        different buses, matching the Cortex-M Harvard architecture
+        (separate ICode and DCode/System buses).
+
+        Two modes for CPU ports:
+          1. No cache: CPU ports connect directly to cpubus.
+             Common for Cortex-M0/M4.
           2. With cache: CPU ports connect to the cache hierarchy,
-             which connects to the membus.  The cache hierarchy must
-             expose cpu_side_ports (for CPU) and mem_side_ports (for
-             bus), following the standard gem5 cache interface.
+             which connects to cpubus.
         """
+        # ---- Stacking port → stackbus (always, no cache) ----
+        # Exception frame push/pop goes directly to SRAM.
+        # On real M3/M4 hardware, stacking writes bypass the store
+        # buffer and are non-bufferable (Cortex-M3 TRM Section 1.6).
+        self.cpu.mmu.stacking_port = self.stackbus.cpu_side_ports
+
         if self._cache_hierarchy is not None:
-            # CPU --> cache hierarchy --> membus
+            # CPU → stacking barrier → cache hierarchy → cpubus
             self.cache_hierarchy = self._cache_hierarchy
-            self.cpu.icache_port = self.cache_hierarchy.cpu_side_ports
+            self.cpu.icache_port = self.cpu.mmu.stacking_barrier.cpu_side_port
+            self.cpu.mmu.stacking_barrier.mem_side_port = (
+                self.cache_hierarchy.cpu_side_ports
+            )
             self.cpu.dcache_port = self.cache_hierarchy.cpu_side_ports
-            self.cache_hierarchy.mem_side_ports = self.membus.cpu_side_ports
+            self.cache_hierarchy.mem_side_ports = self.cpubus.cpu_side_ports
         else:
-            # CPU --> membus directly (no caching)
-            self.cpu.icache_port = self.membus.cpu_side_ports
-            self.cpu.dcache_port = self.membus.cpu_side_ports
+            # CPU → stacking barrier → cpubus (no caching)
+            self.cpu.icache_port = self.cpu.mmu.stacking_barrier.cpu_side_port
+            self.cpu.mmu.stacking_barrier.mem_side_port = (
+                self.cpubus.cpu_side_ports
+            )
+            self.cpu.dcache_port = self.cpubus.cpu_side_ports
 
     def set_workload(self, firmware_path):
         """

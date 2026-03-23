@@ -34,7 +34,9 @@
 #include "arch/arm/pcstate.hh"
 #include "cpu/base.hh"
 #include "cpu/thread_context.hh"
+#include "mem/packet_access.hh"
 #include "sim/faults.hh"
+#include "sim/system.hh"
 
 namespace gem5
 {
@@ -155,8 +157,166 @@ MTLB::finalizePhysical(const RequestPtr &req, ThreadContext *tc,
 }
 
 // ---------------------------------------------------------------------------
-// MMMU — pass-through MMU
+// MMMU — pass-through MMU + stacking engine
 // ---------------------------------------------------------------------------
+
+// -- StackingPort --
+//
+// QueuedRequestPort with automatic request queuing and retry via
+// ReqPacketQueue.  Requests are scheduled with 1-cycle spacing
+// to model the AHB pipelining of the Cortex-M stacking sequencer.
+// Only recvTimingResp() is needed — retry is handled by the queue.
+
+MMMU::StackingPort::StackingPort(const std::string &name, MMMU &mmu)
+    : QueuedRequestPort(name, reqPktQueue, snoopRespQueue),
+      mmu(mmu),
+      reqPktQueue(mmu, *this),
+      snoopRespQueue(mmu, *this)
+{
+}
+
+bool
+MMMU::StackingPort::recvTimingResp(PacketPtr pkt)
+{
+    // Each response corresponds to one stacking write or unstacking
+    // read completing in the memory system.  Decrement the counter
+    // and release the barrier when all responses have arrived.
+    assert(mmu.pendingResponses > 0);
+    --mmu.pendingResponses;
+
+    delete pkt;
+
+    if (mmu.pendingResponses == 0)
+        mmu.stackingComplete();
+
+    return true;
+}
+
+// -- MMMU constructor --
+
+MMMU::MMMU(const Params &p)
+    : BaseMMU(p),
+      stackingPort(p.name + ".stacking_port", *this),
+      barrier(p.stacking_barrier)
+{
+}
+
+// -- Stacking completion --
+
+void
+MMMU::stackingComplete()
+{
+    // All stacking writes or unstacking reads have completed in
+    // the memory system.  Release the barrier so held icache
+    // responses are forwarded to the CPU, allowing it to proceed
+    // with executing the exception handler (or returning from one).
+    if (barrier)
+        barrier->releaseAll();
+}
+
+// -- storeToStack --
+
+void
+MMMU::storeToStack(Addr frameptr, const std::vector<uint32_t> &values,
+                   ThreadContext *tc)
+{
+    // Activate the stacking barrier so icache responses are held
+    // while the stacking writes proceed on the separate stackbus.
+    if (barrier)
+        barrier->startHolding();
+
+    pendingResponses = values.size();
+
+    // Get clock period from the CPU for 1-cycle spacing, and
+    // requestor ID for proper memory system identification.
+    Tick cpuClkPeriod = tc->getCpuPtr()->clockPeriod();
+    RequestorID rid = tc->getSystemPtr()->getRequestorId(this, "stacking");
+
+    // Schedule one write per cycle, modeling the AHB pipelining of
+    // the Cortex-M stacking sequencer (one 32-bit word per bus cycle).
+    for (uint32_t i = 0; i < values.size(); ++i) {
+        Addr addr = frameptr + i * 4;
+
+        // Create a write request and packet with proper requestor ID.
+        auto req = std::make_shared<Request>(addr, 4,
+            Request::UNCACHEABLE, rid);
+        auto pkt = new Packet(req, MemCmd::WriteReq);
+        pkt->allocate();
+
+        // Copy the word into the packet data.
+        pkt->setLE<uint32_t>(values[i]);
+
+        // Schedule the write 'i' cycles from now.
+        // The QueuedRequestPort's ReqPacketQueue handles queuing,
+        // backpressure, and retry automatically.
+        Tick sendTick = curTick() + i * cpuClkPeriod;
+        stackingPort.schedTimingReq(pkt, sendTick);
+    }
+}
+
+// -- readFromStack --
+
+std::vector<uint32_t>
+MMMU::readFromStack(Addr frameptr, uint32_t numWords, ThreadContext *tc)
+{
+    std::vector<uint32_t> result(numWords);
+
+    // Phase 1: Functional reads for immediate data.
+    // The caller (mProfileExcReturnUnstack) needs the register
+    // values immediately to restore CPU state.  sendFunctional()
+    // reads directly from the backing store without going through
+    // the timing/atomic protocol — valid in any memory mode.
+    for (uint32_t i = 0; i < numWords; ++i) {
+        Addr addr = frameptr + i * 4;
+
+        auto req = std::make_shared<Request>(addr, 4,
+            Request::UNCACHEABLE, Request::funcRequestorId);
+        auto pkt = new Packet(req, MemCmd::ReadReq);
+        pkt->allocate();
+
+        stackingPort.sendFunctional(pkt);
+        result[i] = pkt->getLE<uint32_t>();
+
+        delete pkt;
+    }
+
+    // Phase 2: Timing reads for realistic latency.
+    // The actual data is already captured above.  These timing
+    // requests model the bus cycles the unstacking would take on
+    // real hardware.  The barrier holds the CPU until all timing
+    // responses arrive.
+    if (barrier)
+        barrier->startHolding();
+
+    pendingResponses = numWords;
+
+    // Get clock period from CPU and requestor ID from system.
+    Tick cpuClkPeriod = tc->getCpuPtr()->clockPeriod();
+    RequestorID rid = tc->getSystemPtr()->getRequestorId(this, "stacking");
+
+    for (uint32_t i = 0; i < numWords; ++i) {
+        Addr addr = frameptr + i * 4;
+
+        auto req = std::make_shared<Request>(addr, 4,
+            Request::UNCACHEABLE, rid);
+        auto pkt = new Packet(req, MemCmd::ReadReq);
+        pkt->allocate();
+
+        Tick sendTick = curTick() + i * cpuClkPeriod;
+        stackingPort.schedTimingReq(pkt, sendTick);
+    }
+
+    return result;
+}
+
+Port &
+MMMU::getPort(const std::string &if_name, PortID idx)
+{
+    if (if_name == "stacking_port")
+        return stackingPort;
+    else
+        return BaseMMU::getPort(if_name, idx);
+}
 
 TranslationGenPtr
 MMMU::translateFunctional(Addr start, Addr size, ThreadContext *tc,
@@ -167,6 +327,184 @@ MMMU::translateFunctional(Addr start, Addr size, ThreadContext *tc,
     // identity-mapped ranges.
     return TranslationGenPtr(new MMUTranslationGen(
             PageBytes, start, size, tc, this, mode, flags));
+}
+
+// ---------------------------------------------------------------------------
+// StackingBarrier — holds icache responses during exception frame stacking
+// ---------------------------------------------------------------------------
+//
+// On real Cortex-M hardware, exception entry stacking (8-word push to
+// SRAM) is performed by a dedicated hardware sequencer on the data bus.
+// The instruction bus independently fetches the exception handler
+// vector in parallel.  The CPU pipeline does not execute until both
+// the stacking and the vector fetch complete.
+//
+// This barrier models that stall: it sits between the CPU icache port
+// and the cache/memory bus.  When stacking starts (startHolding()),
+// it lets fetch requests through (so the icache can fill) but queues
+// responses.  When stacking finishes (releaseAll()), it forwards the
+// queued responses to the CPU, which then proceeds to execute.
+//
+// Without this, physProxy-based stacking completes in 0 ticks,
+// providing no realistic exception entry latency.
+
+// -- Port constructors --
+
+StackingBarrier::CpuSidePort::CpuSidePort(
+    const std::string &name, StackingBarrier &barrier)
+    : ResponsePort(name), barrier(barrier)
+{
+}
+
+StackingBarrier::MemSidePort::MemSidePort(
+    const std::string &name, StackingBarrier &barrier)
+    : RequestPort(name), barrier(barrier)
+{
+}
+
+// -- StackingBarrier constructor --
+
+StackingBarrier::StackingBarrier(const Params &p)
+    : ClockedObject(p),
+      cpuSidePort(p.name + ".cpu_side_port", *this),
+      memSidePort(p.name + ".mem_side_port", *this)
+{
+}
+
+Port &
+StackingBarrier::getPort(const std::string &if_name, PortID idx)
+{
+    if (if_name == "cpu_side_port")
+        return cpuSidePort;
+    else if (if_name == "mem_side_port")
+        return memSidePort;
+    else
+        return ClockedObject::getPort(if_name, idx);
+}
+
+// -- CpuSidePort: receives requests from CPU, forwards to memory --
+
+bool
+StackingBarrier::CpuSidePort::recvTimingReq(PacketPtr pkt)
+{
+    // Always forward fetch requests to memory/cache.
+    // During stacking, this lets the icache fill in parallel
+    // with the stack frame writes on the data bus.
+    if (!barrier.memSidePort.sendTimingReq(pkt)) {
+        // Memory side is busy — need to retry later.
+        barrier.retryReq = true;
+        return false;
+    }
+    return true;
+}
+
+void
+StackingBarrier::CpuSidePort::recvRespRetry()
+{
+    // CPU is ready to accept a response it previously rejected.
+    // Try to send the held or pending responses again.
+    barrier.retryResp = false;
+
+    // If holding, nothing to do — responses will be sent on release.
+    if (barrier.holdResponses)
+        return;
+
+    // Not holding but we may have a response that failed to send.
+    // releaseAll() handles this case.
+}
+
+Tick
+StackingBarrier::CpuSidePort::recvAtomic(PacketPtr pkt)
+{
+    // AtomicSimpleCPU path: pass through directly.
+    // No holding in atomic mode — stacking barrier only affects
+    // timing mode.  Atomic stacking still uses physProxy (0 latency).
+    return barrier.memSidePort.sendAtomic(pkt);
+}
+
+void
+StackingBarrier::CpuSidePort::recvFunctional(PacketPtr pkt)
+{
+    // Functional path: pass through directly.
+    barrier.memSidePort.sendFunctional(pkt);
+}
+
+AddrRangeList
+StackingBarrier::CpuSidePort::getAddrRanges() const
+{
+    // Transparent to address routing — forward ranges from
+    // whatever is connected on the memory side.
+    return barrier.memSidePort.getAddrRanges();
+}
+
+// -- MemSidePort: receives responses from cache/memory --
+
+bool
+StackingBarrier::MemSidePort::recvTimingResp(PacketPtr pkt)
+{
+    // This is the key interception point.
+    // If stacking is in progress, queue the response instead of
+    // forwarding it to the CPU.  The CPU stalls naturally because
+    // it is waiting for the icache response.
+    if (barrier.holdResponses) {
+        barrier.heldResponses.push_back(pkt);
+        return true;
+    }
+
+    // Normal operation: forward response to CPU immediately.
+    if (!barrier.cpuSidePort.sendTimingResp(pkt)) {
+        // CPU side is busy — remember to retry.
+        barrier.retryResp = true;
+        return false;
+    }
+    return true;
+}
+
+void
+StackingBarrier::MemSidePort::recvReqRetry()
+{
+    // Memory side is ready to accept a request that previously
+    // failed.  Tell the CPU side to retry.
+    barrier.retryReq = false;
+    barrier.cpuSidePort.sendRetryReq();
+}
+
+void
+StackingBarrier::MemSidePort::recvRangeChange()
+{
+    // Forward address range changes to the CPU side so the
+    // crossbar can update its routing tables.
+    barrier.cpuSidePort.sendRangeChange();
+}
+
+// -- Stacking control --
+
+void
+StackingBarrier::startHolding()
+{
+    holdResponses = true;
+}
+
+void
+StackingBarrier::releaseAll()
+{
+    holdResponses = false;
+
+    // Forward all held responses to the CPU in FIFO order.
+    // On real hardware, stacking completes and the instruction
+    // fetch response (which arrived during stacking) is delivered
+    // to the pipeline.
+    while (!heldResponses.empty()) {
+        PacketPtr pkt = heldResponses.front();
+        heldResponses.pop_front();
+
+        if (!cpuSidePort.sendTimingResp(pkt)) {
+            // CPU side rejected — put it back and wait for retry.
+            heldResponses.push_front(pkt);
+            retryResp = true;
+            break;
+        }
+    }
 }
 
 } // namespace ArmISA

@@ -28,6 +28,8 @@
 
 #include "arch/arm/m_faults.hh"
 
+#include "arch/arm/m_mmu.hh"
+#include "arch/arm/m_system.hh"
 #include "arch/arm/pcstate.hh"
 #include "arch/arm/regs/cc.hh"
 #include "arch/arm/regs/int.hh"
@@ -39,6 +41,7 @@
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Faults.hh"
+#include "dev/arm/m_profile_scs.hh"
 #include "mem/port_proxy.hh"
 #include "sim/full_system.hh"
 
@@ -230,36 +233,28 @@ ArmMFault::pushExceptionFrame(ThreadContext *tc,
     // Decrement SP by 32 bytes (8 words) for the exception frame.
     uint32_t frameptr = sp - 0x20;
 
-    // Write the frame to physical memory.
-    // TODO: M-profile exception stacking goes through the MPU on real
-    // hardware (a MemManage fault can occur during stacking).  We
-    // bypass the MPU here because it is not yet modelled.  Revisit
-    // when the MPU is implemented.
-    PortProxy &phys = tc->getSystemPtr()->physProxy;
-    phys.write<uint32_t>(frameptr + 0x00,
-                         (uint32_t)tc->getReg(int_reg::R0),
-                         ByteOrder::little);
-    phys.write<uint32_t>(frameptr + 0x04,
-                         (uint32_t)tc->getReg(int_reg::R1),
-                         ByteOrder::little);
-    phys.write<uint32_t>(frameptr + 0x08,
-                         (uint32_t)tc->getReg(int_reg::R2),
-                         ByteOrder::little);
-    phys.write<uint32_t>(frameptr + 0x0C,
-                         (uint32_t)tc->getReg(int_reg::R3),
-                         ByteOrder::little);
-    phys.write<uint32_t>(frameptr + 0x10,
-                         (uint32_t)tc->getReg(int_reg::R12),
-                         ByteOrder::little);
-    phys.write<uint32_t>(frameptr + 0x14,
-                         (uint32_t)tc->getReg(int_reg::Lr),
-                         ByteOrder::little);
-    phys.write<uint32_t>(frameptr + 0x18,
-                         (uint32_t)returnAddr,
-                         ByteOrder::little);
-    phys.write<uint32_t>(frameptr + 0x1C,
-                         (uint32_t)xpsr,
-                         ByteOrder::little);
+    // Build the 8-word frame as a vector for MMMU::storeToStack().
+    // Order matches the hardware frame layout (DDI0403E B1.5.6):
+    //   frameptr+0x00: R0, +0x04: R1, +0x08: R2, +0x0C: R3,
+    //   +0x10: R12, +0x14: LR, +0x18: ReturnAddr, +0x1C: xPSR
+    std::vector<uint32_t> frame = {
+        (uint32_t)tc->getReg(int_reg::R0),
+        (uint32_t)tc->getReg(int_reg::R1),
+        (uint32_t)tc->getReg(int_reg::R2),
+        (uint32_t)tc->getReg(int_reg::R3),
+        (uint32_t)tc->getReg(int_reg::R12),
+        (uint32_t)tc->getReg(int_reg::Lr),
+        (uint32_t)returnAddr,
+        (uint32_t)xpsr,
+    };
+
+    // Push the frame through the timed memory system via MMMU.
+    // This models the Cortex-M stacking sequencer: writes go through
+    // the stackbus with 1-cycle-per-word AHB pipelining, and the
+    // stacking barrier holds icache responses until all writes complete.
+    auto *mmu = dynamic_cast<MMMU *>(tc->getMMUPtr());
+    assert(mmu && "M-profile CPU must use MMMU");
+    mmu->storeToStack(frameptr, frame, tc);
 
     return frameptr;
 }
@@ -274,23 +269,49 @@ ArmMFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
     if (!FullSystem)
         return;
 
+    // ---- 0. Try to activate this exception via SCS ----
+    //
+    // SCS checks: enabled, masks (FAULTMASK/PRIMASK/BASEPRI),
+    // and active exception priority.  If the exception can't be
+    // taken, it is pended.  For synchronous exceptions that can't
+    // preempt (e.g., SVCall from a handler with equal/higher
+    // priority), escalate to HardFault.
+
+    auto *msys = dynamic_cast<ArmMSystem *>(tc->getSystemPtr());
+    assert(msys && "M-profile fault on non-M-profile system");
+    MProfileSCS *scs = msys->getSCS();
+    assert(scs && "MProfileSCS not registered with ArmMSystem");
+
+    if (!scs->activateIRQ(_excNumber)) {
+        // Exception couldn't be activated (blocked by priority/masks).
+        // For synchronous exceptions, escalate to HardFault by
+        // creating and invoking a new HardFault.
+        // DDI0403E B1.5.4: "If the priority of the exception is the
+        // same as or lower than the execution priority, the processor
+        // escalates the exception to a HardFault."
+        if (_excNumber != MPEXC_HARDFAULT) {
+            auto hardFault = std::make_shared<ArmMFault>(MPEXC_HARDFAULT);
+            hardFault->invoke(tc, inst);
+            return;  // HardFault's invoke handles everything
+        } else {
+            // HardFault itself couldn't activate — lockup.
+            fatal("M-profile lockup: HardFault blocked. "
+                  "DDI0403E B1.5.15.");
+        }
+    }
+
     // ---- 1. Determine pre-exception state ----
 
     XPSR xpsr = tc->readMiscRegNoEffect(MISCREG_M_XPSR);
     bool inHandler = (xpsr.exception != 0);
 
-    // Handler mode always uses MSP.
-    // Thread mode uses MSP (CONTROL.SPSEL=0) or PSP (CONTROL.SPSEL=1).
     CONTROL_M ctrl = tc->readMiscRegNoEffect(MISCREG_M_CONTROL);
     bool usePSP = !inHandler && ctrl.spsel;
 
-    // R13 is the authoritative SP.  Read from R13, not from misc regs.
-    // On real Cortex-M, R13 IS MSP/PSP.  In gem5 they're separate storage
-    // kept in sync via MRS/MSR handlers (m_insts.cc).
     MiscRegIndex spReg = usePSP ? MISCREG_M_PSP : MISCREG_M_MSP;
     uint32_t sp = (uint32_t)tc->getReg(int_reg::Sp);
 
-    // ---- 2. Push exception frame ----
+    // ---- 2. Push exception frame via MMMU ----
 
     CCR_t ccr = tc->readMiscRegNoEffect(MISCREG_M_CCR);
     uint32_t newSP = pushExceptionFrame(tc, inst, sp, ccr.stkalign);
@@ -298,9 +319,8 @@ ArmMFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
     // Update active-stack misc reg with post-push value.
     tc->setMiscRegNoEffect(spReg, newSP);
 
-    // Bug 1 fix: when entering from Thread/PSP, R13 must switch to MSP.
-    // Handler mode always uses MSP; PSP was only used for frame storage.
-    // DDI0403E B1.5.6: on exception entry SP_main becomes the active SP.
+    // Handler mode always uses MSP.  When entering from Thread/PSP,
+    // R13 must switch to MSP (DDI0403E B1.5.6).
     if (usePSP) {
         uint32_t msp = (uint32_t)tc->readMiscRegNoEffect(MISCREG_M_MSP);
         tc->setReg(int_reg::Sp, (RegVal)msp);
@@ -308,8 +328,7 @@ ArmMFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         tc->setReg(int_reg::Sp, (RegVal)newSP);
     }
 
-    // Bug 2 fix: clear CONTROL.SPSEL to 0 — handler always uses MSP.
-    // DDI0403E B1.4.4: CONTROL.SPSEL is 0 in Handler mode.
+    // Clear CONTROL.SPSEL — handler always uses MSP (DDI0403E B1.4.4).
     ctrl.spsel = 0;
     tc->setMiscRegNoEffect(MISCREG_M_CONTROL, ctrl);
 
@@ -324,51 +343,21 @@ ArmMFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
 
     // ---- 5. Enter Handler mode ----
 
-    // BUG-5 fix: re-read xPSR from the register after pushExceptionFrame()
-    // because pushExceptionFrame() called syncCCRegsToXpsr(tc) which
-    // updated MISCREG_M_XPSR with live NZCV/GE from CC flat regs.
-    // The local 'xpsr' from line 279 has stale NZCV.  On real hardware
-    // the handler inherits the interrupted code's flags; re-reading
-    // ensures the handler's xPSR has the same correct NZCV.
+    // Re-read xPSR after pushExceptionFrame (which synced CC→xPSR).
     xpsr = tc->readMiscRegNoEffect(MISCREG_M_XPSR);
 
-    // Set xPSR.IPSR = exception number (non-zero → Handler mode).
+    // Set xPSR.IPSR = exception number (→ Handler mode).
     // Clear ICI/IT state (DDI0403E B1.5.6).
     xpsr.exception = _excNumber;
     xpsr.iciIt1 = 0;
     xpsr.iciIt2 = 0;
     tc->setMiscRegNoEffect(MISCREG_M_XPSR, xpsr);
 
-    // ---- 5b. Set SHCSR active bit for synchronous exceptions ----
-    //
-    // Async exceptions (SysTick, PendSV, external IRQs) have their
-    // active bits set by activateIRQ() in MProfileSCS, which is called
-    // from MProfileInterrupts::updateIntrInfo() after the CPU enters
-    // the handler.  Synchronous exceptions (SVCall, UsageFault, etc.)
-    // bypass that path — they enter directly via ArmMFault::invoke().
-    // We must set the SHCSR active bit here so that executionPriority()
-    // can see this exception as active for preemption decisions.
-    // DDI0403E B3.2.10: SHCSR active bit positions.
-    {
-        int shcsrBit = mProfileShcsrActiveBit(_excNumber);
-        if (shcsrBit >= 0) {
-            RegVal shcsr = tc->readMiscRegNoEffect(MISCREG_M_SHCSR);
-            shcsr |= (1u << shcsrBit);
-            tc->setMiscRegNoEffect(MISCREG_M_SHCSR, shcsr);
-        }
-    }
+    // Active bit is already set by scs->activateIRQ() above.
+    // No need to write SHCSR — SCS owns all active state.
 
     // ---- 6. Branch to handler ----
 
-    // Bit[0] of the vector table entry indicates Thumb state (must be
-    // 1 for M-profile).  The actual branch target has bit[0] cleared.
-    // TODO: The Thumb state assumption (pc.thumb(true)) depends on
-    // the gem5 Thumb/Thumb-2 decoder being complete enough for
-    // M-profile instructions.  An audit of thumb.isa coverage
-    // (especially 32-bit Thumb-2 entries and their interaction with
-    // arm.isa implementations) is required in Step 8.  If gaps are
-    // found, either the Thumb decoder must be extended or an
-    // alternative decoding strategy is needed.
     PCState pc(handlerAddr & ~0x1);
     pc.thumb(true);
     pc.nextThumb(true);
@@ -532,34 +521,27 @@ mProfileExcReturnUnstack(ThreadContext *tc, uint32_t exc_return)
         frameptr = (uint32_t)tc->getReg(int_reg::Sp);
     }
 
-    // Read the exception frame from physical memory.
-    // TODO: Unstacking goes through the MPU on real hardware.
-    // Bypassed here because the MPU is not yet modelled.
-    PortProxy &phys = tc->getSystemPtr()->physProxy;
-    uint32_t r0      = phys.read<uint32_t>(frameptr + 0x00,
-                                           ByteOrder::little);
-    uint32_t r1      = phys.read<uint32_t>(frameptr + 0x04,
-                                           ByteOrder::little);
-    uint32_t r2      = phys.read<uint32_t>(frameptr + 0x08,
-                                           ByteOrder::little);
-    uint32_t r3      = phys.read<uint32_t>(frameptr + 0x0C,
-                                           ByteOrder::little);
-    uint32_t r12     = phys.read<uint32_t>(frameptr + 0x10,
-                                           ByteOrder::little);
-    uint32_t lr      = phys.read<uint32_t>(frameptr + 0x14,
-                                           ByteOrder::little);
-    uint32_t retAddr = phys.read<uint32_t>(frameptr + 0x18,
-                                           ByteOrder::little);
-    XPSR xpsr        = phys.read<uint32_t>(frameptr + 0x1C,
-                                           ByteOrder::little);
+    // Read the exception frame via MMMU::readFromStack().
+    // Phase 1 (inside readFromStack): sendFunctional() for immediate
+    // data.  Phase 2: timing reads for realistic latency with the
+    // stacking barrier holding icache responses until done.
+    auto *mmu = dynamic_cast<MMMU *>(tc->getMMUPtr());
+    assert(mmu && "M-profile CPU must use MMMU");
+    std::vector<uint32_t> frame = mmu->readFromStack(frameptr, 8, tc);
+
+    // Frame layout (DDI0403E B1.5.6):
+    //   [0]=R0, [1]=R1, [2]=R2, [3]=R3,
+    //   [4]=R12, [5]=LR, [6]=ReturnAddr, [7]=xPSR
+    uint32_t retAddr = frame[6];
+    XPSR xpsr = frame[7];
 
     // Restore general-purpose registers.
-    tc->setReg(int_reg::R0,  (RegVal)r0);
-    tc->setReg(int_reg::R1,  (RegVal)r1);
-    tc->setReg(int_reg::R2,  (RegVal)r2);
-    tc->setReg(int_reg::R3,  (RegVal)r3);
-    tc->setReg(int_reg::R12, (RegVal)r12);
-    tc->setReg(int_reg::Lr,  (RegVal)lr);
+    tc->setReg(int_reg::R0,  (RegVal)frame[0]);
+    tc->setReg(int_reg::R1,  (RegVal)frame[1]);
+    tc->setReg(int_reg::R2,  (RegVal)frame[2]);
+    tc->setReg(int_reg::R3,  (RegVal)frame[3]);
+    tc->setReg(int_reg::R12, (RegVal)frame[4]);
+    tc->setReg(int_reg::Lr,  (RegVal)frame[5]);
 
     // Restore SP — undo alignment padding if frameptralign was set.
     // Write both R13 (authoritative) and misc reg copy.

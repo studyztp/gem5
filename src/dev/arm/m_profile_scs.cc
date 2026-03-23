@@ -26,171 +26,156 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/**
- * @file
- * M-profile System Control Space (SCS) implementation.
- *
- * == Interrupt delivery data flow ==
- *
- * The SCS is the central hub for M-profile interrupt handling.  The
- * complete flow from peripheral assertion to CPU handler entry is:
- *
- *   1. Peripheral calls sendInt(irq)
- *        -> sets nvicPending[irq] bit
- *        -> calls updatePending()
- *
- *   2. updatePending() scans all interrupt sources:
- *        a. External IRQs: enabled AND pending AND NOT active
- *        b. System exceptions: SysTick (ICSR.PENDSTSET),
- *           PendSV (ICSR.PENDSVSET)
- *        -> finds the one with lowest priority number (= highest priority)
- *        -> compares against executionPriority() (current masking/ceiling)
- *        -> if deliverable: postToInterruptController() signals the CPU
- *        -> if not: clearFromInterruptController()
- *
- *   3. CPU (at instruction boundary) calls
- *      MProfileInterrupts::checkInterrupts()
- *        -> queries scs->hasDeliverableIRQ()
- *        -> returns true/false
- *
- *   4. CPU calls MProfileInterrupts::getInterrupt()
- *        -> calls scs->acknowledgeIRQ() to get the exception number
- *        -> returns ArmMFault(exc_num)
- *
- *   5. CPU invokes ArmMFault::invoke() (from m_faults.cc)
- *        -> pushes hardware exception frame to stack
- *        -> sets LR = EXC_RETURN
- *        -> reads handler address from VTOR + 4*exc_num
- *        -> branches to handler
- *
- *   6. CPU calls MProfileInterrupts::updateIntrInfo()
- *        -> calls scs->activateIRQ(exc_num)
- *        -> transitions interrupt from pending to active
- *        -> calls updatePending() again for next interrupt
- *
- * == SysTick flow ==
- *
- *   1. Firmware writes SysTick CSR with ENABLE=1
- *        -> sysTickSchedule() creates a gem5 event at curTick() + load*period
- *
- *   2. Event fires -> sysTickExpire()
- *        -> sets COUNTFLAG in CSR
- *        -> if TICKINT: sets ICSR.PENDSTSET -> updatePending()
- *        -> if still ENABLE: reloads and reschedules
- *
- *   3. Firmware reads CSR -> COUNTFLAG auto-clears (per spec)
- *
- * == Address map within 4KB SCS (offsets from 0xE000E000) ==
- *
- *   0x010-0x01F  SysTick: CSR(0x10), RVR(0x14), CVR(0x18), CALIB(0x1C)
- *   0x100-0x11F  NVIC ISER[0..7]   (set-enable)
- *   0x180-0x19F  NVIC ICER[0..7]   (clear-enable)
- *   0x200-0x21F  NVIC ISPR[0..7]   (set-pending)
- *   0x280-0x29F  NVIC ICPR[0..7]   (clear-pending)
- *   0x300-0x31F  NVIC IABR[0..7]   (active, read-only)
- *   0x400-0x4EF  NVIC IPR[0..59]   (priority, byte-accessible)
- *   0xD00-0xD3F  SCB registers     (bridged to ISA misc regs)
- *   0xF00        NVIC STIR          (software trigger)
- */
-
 #include "dev/arm/m_profile_scs.hh"
 
-#include <algorithm>
-#include <cassert>
-#include <cstring>
-
-#include "arch/arm/m_faults.hh"
-#include "arch/arm/m_system.hh"
-#include "arch/arm/regs/misc.hh"
-#include "base/trace.hh"
 #include "cpu/base.hh"
-#include "cpu/thread_context.hh"
-#include "debug/MProfileSCS.hh"
-#include "mem/packet.hh"
-#include "mem/packet_access.hh"
-#include "sim/serialize.hh"
 
 namespace gem5
 {
 
-// =========================================================================
-// SCB register bridge
-// =========================================================================
-//
-// Maps SCB register offsets (relative to 0xD00 within SCS) to ISA
-// misc reg indices.  readSCB/writeSCB use this to forward MMIO
-// accesses to tc->readMiscReg()/setMiscReg(), which routes through
-// MISA and automatically applies all M-profile special handling:
-//   - VTOR alignment mask (per vtor_align_bits)
-//   - AIRCR VECTKEY check (reject writes with wrong key)
-//   - W1C semantics for CFSR, HFSR, DFSR
-//   - CPUID read-only enforcement
-//   - xPSR T-bit sync from PCState
+using namespace ArmISA;
+using namespace ArmMISA;
 
-static const std::map<Addr, ArmISA::MiscRegIndex> scbRegMap = {
-    {0x00, ArmISA::MISCREG_M_CPUID},   // CPUID (read-only)
-    {0x04, ArmISA::MISCREG_M_ICSR},    // Interrupt Control and State
-    {0x08, ArmISA::MISCREG_M_VTOR},    // Vector Table Offset
-    {0x0C, ArmISA::MISCREG_M_AIRCR},   // Application Interrupt and Reset Ctrl
-    {0x10, ArmISA::MISCREG_M_SCR},     // System Control
-    {0x14, ArmISA::MISCREG_M_CCR},     // Configuration and Control
-    {0x18, ArmISA::MISCREG_M_SHPR1},   // System Handler Priority 1
-    {0x1C, ArmISA::MISCREG_M_SHPR2},   // System Handler Priority 2
-    {0x20, ArmISA::MISCREG_M_SHPR3},   // System Handler Priority 3
-    {0x24, ArmISA::MISCREG_M_SHCSR},   // System Handler Control and State
-    {0x28, ArmISA::MISCREG_M_CFSR},    // Configurable Fault Status
-    {0x2C, ArmISA::MISCREG_M_HFSR},    // HardFault Status
-    {0x30, ArmISA::MISCREG_M_DFSR},    // Debug Fault Status
-    {0x34, ArmISA::MISCREG_M_MMFAR},   // MemManage Fault Address
-    {0x38, ArmISA::MISCREG_M_BFAR},    // BusFault Address
-    {0x3C, ArmISA::MISCREG_M_AFSR},    // Auxiliary Fault Status
-};
+// -- Constructor --
 
-// =========================================================================
-// SysTick helper struct constructor
-// =========================================================================
-
-MProfileSCS::SysTick::SysTick(MProfileSCS &parent)
+MProfileSCS::SysTick::SysTick(MProfileSCS &parent, uint8_t index)
     : ctrl(0), load(0), calib(0), startTick(0),
-      expireEvent([&parent]{ parent.sysTickExpire(); },
-                  "MProfileSCS::sysTickExpire")
+        expireEvent([&parent, index]{ parent.sysTickExpire(index); },
+            "MProfileSCS::sysTickExpire" + std::to_string(index))
 {}
 
-// =========================================================================
-// Constructor
-// =========================================================================
+void
+MProfileSCS::initSysInterrupts()
+{
+    // Set system exception entries (interrupts[0..15]) to their
+    // architectural reset state.  All entries must already exist
+    // in the vector (created with defaults by the constructor).
+    //
+    // Reusable for: constructor setup, reset, checkpoint restore.
+
+    // Exc 0: Reserved.
+    interrupts[0] = {false, false, false, 0, 0, false, false};
+
+    //                    active enabled pending pri  excNum inPQ  inAQ
+    // Exc 1: Reset — fixed priority -3, always enabled.
+    interrupts[1]  = {false, true,  false, -3, 1,  false, false};
+
+    // Exc 2: NMI — fixed priority -2, always enabled.
+    interrupts[2]  = {false, true,  false, -2, 2,  false, false};
+
+    // Exc 3: HardFault — fixed priority -1, always enabled.
+    interrupts[3]  = {false, true,  false, -1, 3,  false, false};
+
+    // Exc 4: MemManage — configurable, disabled by default (SHCSR).
+    interrupts[4]  = {false, false, false, 0,  4,  false, false};
+
+    // Exc 5: BusFault — configurable, disabled by default (SHCSR).
+    interrupts[5]  = {false, false, false, 0,  5,  false, false};
+
+    // Exc 6: UsageFault — configurable, disabled by default (SHCSR).
+    interrupts[6]  = {false, false, false, 0,  6,  false, false};
+
+    // Exc 7-10: Reserved.
+    interrupts[7]  = {false, false, false, 0,  7,  false, false};
+    interrupts[8]  = {false, false, false, 0,  8,  false, false};
+    interrupts[9]  = {false, false, false, 0,  9,  false, false};
+    interrupts[10] = {false, false, false, 0,  10, false, false};
+
+    // Exc 11: SVCall — configurable priority, always enabled.
+    interrupts[11] = {false, true,  false, 0,  11, false, false};
+
+    // Exc 12: DebugMonitor — configurable priority, always enabled.
+    interrupts[12] = {false, true,  false, 0,  12, false, false};
+
+    // Exc 13: Reserved.
+    interrupts[13] = {false, false, false, 0,  13, false, false};
+
+    // Exc 14: PendSV — configurable priority, always enabled.
+    interrupts[14] = {false, true,  false, 0,  14, false, false};
+
+    // Exc 15: SysTick — configurable priority, always enabled.
+    interrupts[15] = {false, true,  false, 0,  15, false, false};
+}
+
+void
+MProfileSCS::resetAllInterrupts()
+{
+    // Reset system exceptions (exc 0-15) to architectural reset state.
+    initSysInterrupts();
+
+    // Reset all external IRQs (exc 16+) to disabled, inactive,
+    // not pending, priority 0.  Per DDI0403E Table B3-8, all NVIC
+    // registers (ISER, ISPR, IABR, IPR) reset to 0x00000000.
+    for (uint32_t i = 16; i < interrupts.size(); ++i) {
+        interrupts[i] = {false, false, false, 0, i, false, false};
+    }
+
+    // Drain the priority queues — no exceptions pending or active
+    // after reset.
+    pendingInterrupts = {};
+    activeInterrupts = {};
+
+    // Reset mask and priority ceiling state.
+    primask = false;
+    faultmask = false;
+    basepri = 0;
+    activePriorityCeiling = 256;
+
+    // Reset SCB registers to architectural reset values.
+    // DDI0403E Table B3-4.
+    // Note: cpuid is not reset here — it's a fixed platform value
+    // set in startup().
+    // VTOR is in MISA misc reg — reset via tc->clearArchRegs() or
+    // MProfileReset::invoke(), not here.
+    // AIRCR, SCR, CCR are in MISA misc regs — reset via
+    // clearArchRegs().  Not reset here.
+    // CCR is in MISA misc reg — reset via clearArchRegs().
+    // Not reset here.
+    cfsr = 0;
+    hfsr = 0;
+    dfsr = 0;
+    mmfar = 0;
+    bfar = 0;
+
+    // Reset SysTick state.
+    for (uint8_t i = 0; i < sysTicks.size(); ++i) {
+        sysTicks[i].ctrl = 0;
+        sysTicks[i].load = 0;
+        sysTicks[i].startTick = 0;
+        if (sysTicks[i].expireEvent.scheduled())
+            deschedule(sysTicks[i].expireEvent);
+    }
+}
 
 MProfileSCS::MProfileSCS(const Params &p)
     : BasicPioDevice(p, 0x1000),  // 4KB SCS region
-      highestPendingExc(-1),
-      highestPendingPri(256),
-      sysTick(*this),
-      numIRQs(std::min(p.num_irqs, (uint32_t)MAX_IRQS)),
-      priorityBits(p.priority_bits),
-      priorityMask(0),
-      hasSysTick(p.has_systick),
-      hasBasepri(p.has_basepri)
+    numIrqs(std::min(p.num_irqs, MAX_NUM_IRQS)),
+    priorityBits(std::min(p.priority_bits, MAX_PRIR_BITS)),
+    irqpriorityMask(0),
+    numSysticks(std::min(p.num_systick, MAX_NUM_SYSTICKS)),
+    hasBasePri(p.has_basepri)
 {
-    fatal_if(p.priority_bits < 2 || p.priority_bits > 8,
-             "MProfileSCS: priority_bits=%u out of range [2,8].",
-             (unsigned)p.priority_bits);
-    fatal_if(p.num_irqs > MAX_IRQS,
-             "MProfileSCS: num_irqs=%u exceeds maximum %d.",
-             p.num_irqs, MAX_IRQS);
-
     // Priority mask: only the top N bits of the 8-bit priority field
     // are implemented.  Unimplemented low bits are always zero on
     // reads and ignored on writes.
     // Example: 4 bits -> shift (8-4)=4 -> mask 0xF0 (bits[7:4])
-    priorityMask = (uint8_t)(~((1u << (8 - priorityBits)) - 1u));
+    irqpriorityMask = (uint8_t)(~((1u << (8 - priorityBits)) - 1u));
 
-    sysTick.calib = p.systick_calib;
+    // Create all exception entries: system (0-15) + external IRQs (16+).
+    // All start with default state (inactive, disabled, not pending,
+    // priority 0).  initSysInterrupts() then sets the correct state
+    // for the system exceptions.
+    interrupts.resize(16 + numIrqs,
+                      {false, false, false, 0, 0, false, false});
 
-    // Zero-init all NVIC state arrays
-    std::memset(nvicEnabled,  0, sizeof(nvicEnabled));
-    std::memset(nvicPending,  0, sizeof(nvicPending));
-    std::memset(nvicActive,   0, sizeof(nvicActive));
-    std::memset(nvicPriority, 0, sizeof(nvicPriority));
+    resetAllInterrupts();
+
+    // Setup systicks
+    sysTicks.reserve(numSysticks);
+    for (uint8_t i = 0; i < numSysticks; ++i) {
+        sysTicks.emplace_back(*this, i);
+        sysTicks[i].calib = p.systick_calib;
+    }
 
     // Register with ArmMSystem so MProfileInterrupts can discover us
     // via mSystem->getSCS() during BaseCPU::init().
@@ -204,19 +189,62 @@ MProfileSCS::MProfileSCS(const Params &p)
     mSystem->setSCS(this);
 }
 
-// =========================================================================
-// init() -- called after all SimObjects are constructed
-// =========================================================================
+// -- Exception mask interface --
+
+void
+MProfileSCS::setupMask(ArmISA::MiscRegIndex reg, int16_t value)
+{
+    using namespace ArmISA;
+
+    switch (reg) {
+      case MISCREG_M_PRIMASK:
+        // PRIMASK bit[0]: 1 = raise execution priority to 0,
+        // blocking all configurable-priority exceptions.
+        primask = (value & 1);
+        break;
+
+      case MISCREG_M_FAULTMASK:
+        // FAULTMASK bit[0]: 1 = raise execution priority to -1,
+        // blocking everything except NMI.
+        // Only available on ARMv7-M+ (hasBasePri).
+        if (hasBasePri)
+            faultmask = (value & 1);
+        break;
+
+      case MISCREG_M_BASEPRI:
+        // BASEPRI[7:0]: when non-zero, blocks exceptions with
+        // priority >= this value.  Only the implemented high bits
+        // matter.  0 = no masking.
+        // Only available on ARMv7-M+ (hasBasePri).
+        if (hasBasePri)
+            basepri = (int16_t)(value & irqpriorityMask);
+        break;
+
+      case MISCREG_M_BASEPRI_MAX:
+        // BASEPRI_MAX: conditional write — only updates BASEPRI
+        // if the new value is non-zero AND has a lower priority
+        // number (higher priority) than the current BASEPRI.
+        // DDI0403E B5.2.3.
+        if (hasBasePri) {
+            int16_t masked = (int16_t)(value & irqpriorityMask);
+            if (masked != 0 && (basepri == 0 || masked < basepri))
+                basepri = masked;
+        }
+        break;
+
+      default:
+        break;
+    }
+}
+
+// -- gem5 lifecycle --
 
 void
 MProfileSCS::init()
 {
     BasicPioDevice::init();
+    // TODO
 }
-
-// =========================================================================
-// startup() -- called after all SimObjects have been init()'d
-// =========================================================================
 
 void
 MProfileSCS::startup()
@@ -230,64 +258,35 @@ MProfileSCS::startup()
     // Single-core MVP: always thread 0.
     tc = sys->threads[0];
 
-    // After checkpoint restore, rebuild the cached pending state and
-    // re-signal the CPU interrupt line.  This must happen here (not in
-    // unserialize()) because updatePending() reads ISA misc regs via
-    // tc, which is only available after startup() sets it above.
-    if (restoredFromCheckpoint) {
-        updatePending();
-        restoredFromCheckpoint = false;
-    }
+    // CPUID from platform — not needed until firmware reads
+    // 0xE000ED00, but safe to cache here.
+    cpuid = mSystem->getCPUID();
 }
 
-// =========================================================================
-// Top-level MMIO dispatch
-// =========================================================================
-//
-// CPU loads/stores to the SCS region arrive here.  We decode the
-// offset within the 4KB region and route to the appropriate handler.
-//
-// The address ranges are non-contiguous (per ARMv7-M architecture):
-//   SysTick: 0x010-0x01F (4 registers, 16 bytes)
-//   NVIC:    0x100-0x4EF (multiple register banks) + 0xF00 (STIR)
-//   SCB:     0xD00-0xD3F (16 registers, 64 bytes)
-//
-// Gaps between ranges are reserved; reads return 0, writes ignored.
+// -- MMIO interface --
 
 Tick
 MProfileSCS::read(PacketPtr pkt)
 {
     Addr daddr = pkt->getAddr() - pioAddr;
     unsigned size = pkt->getSize();
-
-    // BUG-7 fix: generic sub-word read support for ALL SCS registers.
-    // LDRB/LDRH packets have 1/2-byte buffers.  We always read the
-    // full aligned 32-bit word via the register handler, then extract
-    // the requested byte(s) based on the byte offset within the word.
-    // This handles IPR byte reads, SHPR byte reads, and any other
-    // sub-word access uniformly.
-    //
-    // For 32-bit reads (the common case), this adds no overhead —
-    // the switch falls through to the default case.
-
-    // Align to 32-bit word boundary for the handler dispatch
     Addr alignedAddr = daddr & ~0x3;
 
-    // Read the full 32-bit register value at the aligned address
-    uint32_t data = 0;
+    // Read the full 32-bit register value at the aligned address.
+    uint32_t data = readRegByAddr(alignedAddr);
 
+    // SysTick CSR special case: COUNTFLAG (bit 16) auto-clears on
+    // read (DDI0403E B3.3.1).  This is how firmware polls for timer
+    // expiry without using interrupts.
     if (alignedAddr >= 0x010 && alignedAddr <= 0x01F) {
-        if (hasSysTick)
-            readSysTick(alignedAddr - 0x010, data);
-    } else if (alignedAddr >= 0x100 && alignedAddr <= 0x4EF) {
-        readNVIC(alignedAddr, data);
-    } else if (alignedAddr >= 0xD00 && alignedAddr <= 0xD3F) {
-        readSCB(alignedAddr - 0xD00, data);
-    } else {
-        warn("MProfileSCS: read from unimplemented offset %#x", daddr);
+        Addr stOff = alignedAddr - 0x010;
+        if (stOff == 0x00) {
+            uint8_t stIndex = 0;
+            sysTicks[stIndex].ctrl &= ~(1u << 16);
+        }
     }
 
-    // Extract the requested byte(s) and write to the packet
+    // Extract the requested byte(s) from the 32-bit value.
     switch (size) {
       case 1: {
         int byteOffset = daddr & 0x3;
@@ -303,8 +302,205 @@ MProfileSCS::read(PacketPtr pkt)
         pkt->setLE<uint32_t>(data);
         break;
     }
+
     pkt->makeAtomicResponse();
     return pioDelay;
+}
+
+// Helper: read a 32-bit register value by aligned SCS offset.
+// Used for sub-word read-modify-write on non-W1C registers.
+uint32_t
+MProfileSCS::readRegByAddr(Addr alignedAddr)
+{
+    if (alignedAddr >= 0x010 && alignedAddr <= 0x01F) {
+        uint8_t stIndex = 0;
+        Addr stOff = alignedAddr - 0x010;
+        switch (stOff) {
+          case 0x00: return sysTicks[stIndex].ctrl;
+          case 0x04: return sysTicks[stIndex].load;
+          case 0x08: return sysTickCurrentValue(stIndex);
+          case 0x0C: return sysTicks[stIndex].calib;
+          default:   return 0;
+        }
+    } else if (alignedAddr >= 0x100 && alignedAddr <= 0x11F) {
+        // ISER: read returns enabled bitmap
+        return readNvicBits(alignedAddr, 0x100, /*field=*/'e');
+    } else if (alignedAddr >= 0x180 && alignedAddr <= 0x19F) {
+        // ICER: read returns same enabled bitmap as ISER (DDI0403E B3.4.5)
+        return readNvicBits(alignedAddr, 0x180, /*field=*/'e');
+    } else if (alignedAddr >= 0x200 && alignedAddr <= 0x21F) {
+        // ISPR: read returns pending bitmap
+        return readNvicBits(alignedAddr, 0x200, /*field=*/'p');
+    } else if (alignedAddr >= 0x280 && alignedAddr <= 0x29F) {
+        // ICPR: read returns same pending bitmap as ISPR (DDI0403E B3.4.7)
+        return readNvicBits(alignedAddr, 0x280, /*field=*/'p');
+    } else if (alignedAddr >= 0x300 && alignedAddr <= 0x31F) {
+        // IABR: read returns active bitmap (read-only)
+        return readNvicBits(alignedAddr, 0x300, /*field=*/'a');
+    } else if (alignedAddr >= 0x400 && alignedAddr <= 0x4EF) {
+        return readIpr(alignedAddr);
+    } else if (alignedAddr >= 0xD00 && alignedAddr <= 0xD3F) {
+        return readScb(alignedAddr - 0xD00);
+    }
+    return 0;
+}
+
+// Helper: reconstruct a 32-bit NVIC bitmap word from interrupts[].
+// field: 'e'=enabled, 'p'=pending, 'a'=active
+uint32_t
+MProfileSCS::readNvicBits(Addr addr, Addr base, char field)
+{
+    int word = (addr - base) / 4;
+    uint32_t val = 0;
+    for (int bit = 0; bit < 32; ++bit) {
+        uint32_t excNum = word * 32 + bit + 16;
+        if (excNum >= interrupts.size()) break;
+        bool flag = false;
+        switch (field) {
+          case 'e': flag = interrupts[excNum].enabled; break;
+          case 'p': flag = interrupts[excNum].pending; break;
+          case 'a': flag = interrupts[excNum].active;  break;
+        }
+        if (flag) val |= (1u << bit);
+    }
+    return val;
+}
+
+// Helper: read IPR (4 packed priority bytes).
+uint32_t
+MProfileSCS::readIpr(Addr addr)
+{
+    uint32_t baseIrq = ((addr - 0x400) / 4) * 4;
+    uint32_t val = 0;
+    for (int i = 0; i < 4; ++i) {
+        uint32_t excNum = baseIrq + i + 16;
+        if (excNum < interrupts.size())
+            val |= ((uint32_t)(interrupts[excNum].priority & 0xFF)
+                    << (i * 8));
+    }
+    return val;
+}
+
+// Helper: read an SCB register by offset from 0xD00.
+uint32_t
+MProfileSCS::readScb(Addr offset)
+{
+    switch (offset) {
+      case 0x00: return cpuid;
+      case 0x04: return computeICSR();
+      case 0x08: return tc->readMiscRegNoEffect(ArmISA::MISCREG_M_VTOR);
+      case 0x0C: return tc->readMiscRegNoEffect(ArmISA::MISCREG_M_AIRCR);
+      case 0x10:
+        warn_once("MProfileSCS: SCR read — sleep behavior not modeled");
+        return tc->readMiscRegNoEffect(ArmISA::MISCREG_M_SCR);
+      case 0x14: return tc->readMiscRegNoEffect(ArmISA::MISCREG_M_CCR);
+      case 0x18: return readShpr(4);   // SHPR1: exc 4-7
+      case 0x1C: return readShpr(8);   // SHPR2: exc 8-11
+      case 0x20: return readShpr(12);  // SHPR3: exc 12-15
+      case 0x24: return computeSHCSR();
+      case 0x28: return cfsr;
+      case 0x2C: return hfsr;
+      case 0x30: return dfsr;
+      case 0x34: return mmfar;
+      case 0x38: return bfar;
+      default:
+        warn("MProfileSCS: SCB read at unknown offset %#x", offset);
+        return 0;
+    }
+}
+
+// Helper: pack 4 exception priorities into a SHPR word.
+uint32_t
+MProfileSCS::readShpr(uint32_t baseExc)
+{
+    uint32_t val = 0;
+    for (int i = 0; i < 4; ++i) {
+        uint32_t excNum = baseExc + i;
+        if (excNum < interrupts.size())
+            val |= ((uint32_t)(interrupts[excNum].priority
+                    & irqpriorityMask) << (i * 8));
+    }
+    return val;
+}
+
+// Helper: compute ICSR value on-the-fly from SCS state.
+uint32_t
+MProfileSCS::computeICSR()
+{
+    uint32_t icsr = 0;
+
+    // VECTACTIVE [8:0]: current exception number from xPSR.IPSR.
+    ArmMISA::XPSR xpsr = tc->readMiscRegNoEffect(
+        ArmISA::MISCREG_M_XPSR);
+    icsr |= ((uint32_t)xpsr.exception & 0x1FF);
+
+    // VECTPENDING [20:12]: highest-priority pending exception.
+    if (!pendingInterrupts.empty())
+        icsr |= ((pendingInterrupts.top()->interruptNum & 0x1FF) << 12);
+
+    // ISRPENDING [22]: 1 if any external IRQ is pending.
+    for (uint32_t i = 16; i < interrupts.size(); ++i) {
+        if (interrupts[i].pending && interrupts[i].enabled) {
+            icsr |= (1u << 22);
+            break;
+        }
+    }
+
+    // RETTOBASE [11]: 1 if only one or zero exceptions active.
+    int activeCount = 0;
+    for (uint32_t i = 0; i < interrupts.size() && activeCount < 2; ++i) {
+        if (interrupts[i].active) ++activeCount;
+    }
+    if (activeCount <= 1)
+        icsr |= (1u << 11);
+
+    // PENDSVSET [28] / PENDSTSET [26]
+    if (interrupts[14].pending) icsr |= (1u << 28);
+    if (interrupts[15].pending) icsr |= (1u << 26);
+
+    return icsr;
+}
+
+// Helper: compute SHCSR value on-the-fly from interrupts[].
+uint32_t
+MProfileSCS::computeSHCSR()
+{
+    uint32_t val = 0;
+    // Active bits
+    if (interrupts[4].active)   val |= (1u << 0);   // MEMFAULTACT
+    if (interrupts[5].active)   val |= (1u << 1);   // BUSFAULTACT
+    if (interrupts[6].active)   val |= (1u << 3);   // USGFAULTACT
+    if (interrupts[11].active)  val |= (1u << 7);   // SVCALLACT
+    if (interrupts[12].active)  val |= (1u << 8);   // MONITORACT
+    if (interrupts[14].active)  val |= (1u << 10);  // PENDSVACT
+    if (interrupts[15].active)  val |= (1u << 11);  // SYSTICKACT
+    // Pending bits
+    if (interrupts[6].pending)  val |= (1u << 12);  // USGFAULTPENDED
+    if (interrupts[4].pending)  val |= (1u << 13);  // MEMFAULTPENDED
+    if (interrupts[5].pending)  val |= (1u << 14);  // BUSFAULTPENDED
+    if (interrupts[11].pending) val |= (1u << 15);  // SVCALLPENDED
+    // Enable bits
+    if (interrupts[4].enabled)  val |= (1u << 16);  // MEMFAULTENA
+    if (interrupts[5].enabled)  val |= (1u << 17);  // BUSFAULTENA
+    if (interrupts[6].enabled)  val |= (1u << 18);  // USGFAULTENA
+    return val;
+}
+
+// Helper: merge sub-word write data into existing register value.
+uint32_t
+MProfileSCS::mergeSubWord(uint32_t existing, PacketPtr pkt,
+                          unsigned size, int byteOffset)
+{
+    if (size == 1) {
+        uint8_t byte = pkt->getLE<uint8_t>();
+        existing &= ~(0xFFu << (byteOffset * 8));
+        existing |= ((uint32_t)byte << (byteOffset * 8));
+    } else {
+        uint16_t hw = pkt->getLE<uint16_t>();
+        existing &= ~(0xFFFFu << (byteOffset * 8));
+        existing |= ((uint32_t)hw << (byteOffset * 8));
+    }
+    return existing;
 }
 
 Tick
@@ -312,55 +508,110 @@ MProfileSCS::write(PacketPtr pkt)
 {
     Addr daddr = pkt->getAddr() - pioAddr;
     unsigned size = pkt->getSize();
-
-    // BUG-7 fix: generic sub-word write support for ALL SCS registers.
-    // STRB/STRH packets have 1/2-byte buffers.  For sub-word writes,
-    // we do read-modify-write: read the existing 32-bit word at the
-    // aligned address, merge the written byte(s), then pass the full
-    // 32-bit value to the handler.  This replaces the old IPR-only
-    // sub-word special case with a uniform approach for all registers.
-
-    // Build the 32-bit data value to pass to handlers
+    Addr alignedAddr = daddr & ~0x3;
     uint32_t data;
-    if (size < 4) {
-        // Sub-word write: read existing value at aligned address
-        Addr alignedAddr = daddr & ~0x3;
-        uint32_t existing = 0;
-        if (alignedAddr >= 0x010 && alignedAddr <= 0x01F) {
-            if (hasSysTick)
-                readSysTick(alignedAddr - 0x010, existing);
-        } else if (alignedAddr >= 0x100 && alignedAddr <= 0x4EF) {
-            readNVIC(alignedAddr, existing);
-        } else if (alignedAddr >= 0xD00 && alignedAddr <= 0xD3F) {
-            readSCB(alignedAddr - 0xD00, existing);
-        }
 
-        // Merge the sub-word write data into the existing value
+    // Sub-word write handling.
+    if (size < 4) {
         int byteOffset = daddr & 0x3;
-        if (size == 1) {
-            uint8_t byte = pkt->getLE<uint8_t>();
-            existing &= ~(0xFFu << (byteOffset * 8));
-            existing |= ((uint32_t)byte << (byteOffset * 8));
-        } else {  // size == 2
-            uint16_t hw = pkt->getLE<uint16_t>();
-            existing &= ~(0xFFFFu << (byteOffset * 8));
-            existing |= ((uint32_t)hw << (byteOffset * 8));
+
+        // W1C registers: zero-extend sub-word data so that only
+        // the written byte(s) clear bits (DDI0403E B3.2.15).
+        bool isW1C = (alignedAddr == 0xD28 || alignedAddr == 0xD2C ||
+                      alignedAddr == 0xD30);
+        if (isW1C) {
+            data = 0;
+            if (size == 1)
+                data = (uint32_t)pkt->getLE<uint8_t>() << (byteOffset * 8);
+            else
+                data = (uint32_t)pkt->getLE<uint16_t>() << (byteOffset * 8);
+        } else {
+            uint32_t existing = readRegByAddr(alignedAddr);
+            data = mergeSubWord(existing, pkt, size, byteOffset);
         }
-        data = existing;
-        // Use aligned address for handler dispatch
         daddr = alignedAddr;
     } else {
         data = pkt->getLE<uint32_t>();
     }
 
+    // ---- Address dispatch ----
+
     if (daddr >= 0x010 && daddr <= 0x01F) {
-        if (hasSysTick)
-            writeSysTick(daddr - 0x010, data);
-    } else if ((daddr >= 0x100 && daddr <= 0x4EF) ||
-               (daddr == 0xF00)) {
-        writeNVIC(daddr, data);
+        // -- SysTick (offset 0x10-0x1F) --
+        uint8_t stIndex = 0;
+        SysTick &st = sysTicks[stIndex];
+        Addr stOff = daddr - 0x010;
+
+        switch (stOff) {
+          case 0x00: {  // CSR
+            bool wasEnabled = st.ctrl & 1;
+            st.ctrl = (st.ctrl & (1u << 16)) | (data & 0x7);
+            bool nowEnabled = st.ctrl & 1;
+            if (nowEnabled && !wasEnabled)
+                sysTickSchedule(stIndex);
+            else if (!nowEnabled && wasEnabled && st.expireEvent.scheduled())
+                deschedule(st.expireEvent);
+            break;
+          }
+          case 0x04:  // RVR
+            st.load = data & 0x00FFFFFF;
+            break;
+          case 0x08:  // CVR: write clears counter + COUNTFLAG
+            st.ctrl &= ~(1u << 16);
+            if (st.expireEvent.scheduled())
+                deschedule(st.expireEvent);
+            if (st.ctrl & 1)
+                sysTickSchedule(stIndex);
+            break;
+          case 0x0C:  // CALIB: read-only
+            break;
+          default:
+            warn("MProfileSCS: SysTick write at unknown offset %#x", daddr);
+        }
+
+    } else if (daddr >= 0x100 && daddr <= 0x11F) {
+        // -- ISER: write-1-to-set enable --
+        writeNvicW1S(daddr, 0x100, data,
+            [](Interrupt &i) { i.enabled = true; });
+
+    } else if (daddr >= 0x180 && daddr <= 0x19F) {
+        // -- ICER: write-1-to-clear enable --
+        writeNvicW1C(daddr, 0x180, data,
+            [](Interrupt &i) { i.enabled = false; });
+
+    } else if (daddr >= 0x200 && daddr <= 0x21F) {
+        // -- ISPR: write-1-to-set pending --
+        writeNvicW1S(daddr, 0x200, data,
+            [this](Interrupt &i) { pendInterrupt(i); });
+
+    } else if (daddr >= 0x280 && daddr <= 0x29F) {
+        // -- ICPR: write-1-to-clear pending --
+        writeNvicW1C(daddr, 0x280, data,
+            [](Interrupt &i) { i.pending = false; });
+
+    } else if (daddr >= 0x300 && daddr <= 0x31F) {
+        // -- IABR: read-only --
+
+    } else if (daddr >= 0x400 && daddr <= 0x4EF) {
+        // -- IPR: 4 packed priority bytes per word --
+        uint32_t baseIrq = ((daddr - 0x400) / 4) * 4;
+        for (int i = 0; i < 4; ++i) {
+            uint32_t excNum = baseIrq + i + 16;
+            if (excNum < interrupts.size())
+                interrupts[excNum].priority =
+                    (int16_t)((data >> (i * 8)) & irqpriorityMask);
+        }
+
     } else if (daddr >= 0xD00 && daddr <= 0xD3F) {
-        writeSCB(daddr - 0xD00, data);
+        // -- SCB registers --
+        writeScb(daddr - 0xD00, data);
+
+    } else if (daddr == 0xF00) {
+        // -- STIR: software trigger --
+        uint32_t excNum = (data & 0x1FF) + 16;
+        if (excNum < interrupts.size())
+            pendInterrupt(interrupts[excNum]);
+
     } else {
         warn("MProfileSCS: write to unimplemented offset %#x", daddr);
     }
@@ -369,945 +620,491 @@ MProfileSCS::write(PacketPtr pkt)
     return pioDelay;
 }
 
-// =========================================================================
-// SCB bridge -- read/write forwarded to ISA misc regs
-// =========================================================================
-//
-// The SCB contains configuration registers that firmware accesses via
-// MMIO loads/stores (NOT via MRS/MSR -- those only access core special
-// registers like MSP, PSP, CONTROL, PRIMASK, BASEPRI, FAULTMASK).
-//
-// We store SCB register values in ISA misc regs (MISCREG_M_*) and
-// bridge MMIO accesses to tc->readMiscReg()/setMiscReg().  This
-// reuses ALL the special handling already implemented in MISA:
-//   - VTOR: alignment mask applied on write
-//   - AIRCR: VECTKEY check on write (rejects wrong key)
-//   - CFSR/HFSR/DFSR: W1C (write-1-to-clear) semantics
-//   - CPUID: read-only (writes silently dropped)
-//   - xPSR: T-bit synced from PCState on read
-
-Tick
-MProfileSCS::readSCB(Addr offset, uint32_t &data)
+// Helper: apply a W1S (write-1-to-set) action to NVIC bitmap bits.
+void
+MProfileSCS::writeNvicW1S(Addr addr, Addr base, uint32_t data,
+                           std::function<void(Interrupt&)> action)
 {
-    using namespace ArmISA;
-
-    // BUG-2 fix: ICSR (offset 0x04) has dynamic read-only fields that
-    // must be computed on-the-fly from live state (DDI0403E B3.2.4).
-    // The stored MISCREG_M_ICSR only tracks PENDSVSET/PENDSTSET bits
-    // managed by writeSCB().  Without this, VECTACTIVE, RETTOBASE,
-    // VECTPENDING, and ISRPENDING always read as 0, breaking CMSIS
-    // __get_IPSR() and FreeRTOS xPortIsInsideInterrupt().
-    if (offset == 0x04) {
-        // Start with stored value (has PENDSVSET bit 28, PENDSTSET bit 26)
-        uint32_t icsr = (uint32_t)tc->readMiscRegNoEffect(MISCREG_M_ICSR);
-
-        // VECTACTIVE [8:0] — current exception number from xPSR.IPSR.
-        // 0 = Thread mode, 11 = SVCall, 14 = PendSV, 15 = SysTick,
-        // 16+ = external IRQ (IRQ N = exception N+16).
-        ArmMISA::XPSR xpsr = tc->readMiscRegNoEffect(MISCREG_M_XPSR);
-        icsr = insertBits(icsr, 8, 0, (uint32_t)xpsr.exception);
-
-        // VECTPENDING [20:12] — highest-priority pending exception number.
-        // Maintained by updatePending() in highestPendingExc (-1 = none).
-        if (highestPendingExc >= 0) {
-            icsr = insertBits(icsr, 20, 12, (uint32_t)highestPendingExc);
-        } else {
-            icsr = insertBits(icsr, 20, 12, 0);
-        }
-
-        // ISRPENDING [22] — 1 if any external IRQ is pending.
-        // Scan nvicPending & nvicEnabled for any set bit.
-        bool anyExtPending = false;
-        for (int w = 0; w < NVIC_WORDS; ++w) {
-            if (nvicPending[w] & nvicEnabled[w]) {
-                anyExtPending = true;
-                break;
-            }
-        }
-        icsr = insertBits(icsr, 22, 22, anyExtPending ? 1 : 0);
-
-        // RETTOBASE [11] — 1 if the current exception is the only one
-        // active, or 0 if there are nested active exceptions.
-        // Count active exceptions from SHCSR active bits and nvicActive[].
-        // We only need to know if count > 1, so stop early once we hit 2.
-        int activeCount = 0;
-        uint32_t shcsr = tc->readMiscRegNoEffect(MISCREG_M_SHCSR);
-        // SHCSR active bit positions (DDI0403E B3.2.10):
-        //   bit 0:  MEMFAULTACT   (exc 4)
-        //   bit 1:  BUSFAULTACT   (exc 5)
-        //   bit 3:  USGFAULTACT   (exc 6)
-        //   bit 7:  SVCALLACT     (exc 11)
-        //   bit 8:  MONITORACT    (exc 12)
-        //   bit 10: PENDSVACT     (exc 14)
-        //   bit 11: SYSTICKACT    (exc 15)
-        constexpr uint32_t shcsrActiveMask = (1u << 0) | (1u << 1) |
-            (1u << 3) | (1u << 7) | (1u << 8) | (1u << 10) | (1u << 11);
-        activeCount += __builtin_popcount(shcsr & shcsrActiveMask);
-        // Count external IRQ active bits — stop early if already > 1
-        for (int w = 0; w < NVIC_WORDS && activeCount < 2; ++w)
-            activeCount += __builtin_popcount(nvicActive[w]);
-        icsr = insertBits(icsr, 11, 11, (activeCount <= 1) ? 1 : 0);
-
-        data = icsr;
-        return pioDelay;
+    int word = (addr - base) / 4;
+    uint32_t bits = data;
+    while (bits) {
+        int bit = __builtin_ctz(bits);  // find lowest set bit
+        uint32_t excNum = word * 32 + bit + 16;
+        if (excNum < interrupts.size())
+            action(interrupts[excNum]);
+        bits &= bits - 1;  // clear lowest set bit
     }
-
-    auto it = scbRegMap.find(offset);
-    if (it != scbRegMap.end()) {
-        data = tc->readMiscReg(it->second);
-    } else {
-        warn("MProfileSCS: SCB read at unknown offset %#x", offset);
-    }
-    return pioDelay;
 }
 
-Tick
-MProfileSCS::writeSCB(Addr offset, uint32_t data)
+// Helper: apply a W1C (write-1-to-clear) action to NVIC bitmap bits.
+void
+MProfileSCS::writeNvicW1C(Addr addr, Addr base, uint32_t data,
+                           std::function<void(Interrupt&)> action)
 {
-    using namespace ArmISA;
-
-    // ICSR (offset 0x04) has special write semantics (DDI0403E B3.2.4):
-    //   bit 28: PENDSVSET  — write 1 to pend PendSV
-    //   bit 27: PENDSVCLR  — write 1 to clear PendSV pending
-    //   bit 26: PENDSTSET  — write 1 to pend SysTick
-    //   bit 25: PENDSTCLR  — write 1 to clear SysTick pending
-    // These are NOT a normal read-modify-write register.  SET and CLR
-    // are separate actions applied to the current ICSR value.
-    //
-    // After modifying pending bits, call updatePending() so the NVIC
-    // re-evaluates whether an exception should be delivered to the CPU.
-    // Without this, FreeRTOS context switches (PendSV) never fire.
-    if (offset == 0x04) {
-        RegVal icsr = tc->readMiscRegNoEffect(MISCREG_M_ICSR);
-
-        // PENDSVSET / PENDSVCLR
-        if (data & (1u << 28))
-            icsr |= (1u << 28);    // pend PendSV
-        if (data & (1u << 27))
-            icsr &= ~(1u << 28);   // clear PendSV pending
-
-        // PENDSTSET / PENDSTCLR
-        if (data & (1u << 26))
-            icsr |= (1u << 26);    // pend SysTick
-        if (data & (1u << 25))
-            icsr &= ~(1u << 26);   // clear SysTick pending
-
-        tc->setMiscRegNoEffect(MISCREG_M_ICSR, icsr);
-        updatePending();
-        return pioDelay;
+    int word = (addr - base) / 4;
+    uint32_t bits = data;
+    while (bits) {
+        int bit = __builtin_ctz(bits);
+        uint32_t excNum = word * 32 + bit + 16;
+        if (excNum < interrupts.size())
+            action(interrupts[excNum]);
+        bits &= bits - 1;
     }
+}
 
-    auto it = scbRegMap.find(offset);
-    if (it != scbRegMap.end()) {
-        tc->setMiscReg(it->second, data);
-    } else {
+// SCB write dispatch.
+void
+MProfileSCS::writeScb(Addr offset, uint32_t data)
+{
+    switch (offset) {
+      case 0x00:  // CPUID: read-only
+        break;
+
+      case 0x04:  // ICSR
+        if (data & (1u << 28))  pendInterrupt(interrupts[14]);  // PENDSVSET
+        if (data & (1u << 27))  interrupts[14].pending = false; // PENDSVCLR
+        if (data & (1u << 26))  pendInterrupt(interrupts[15]);  // PENDSTSET
+        if (data & (1u << 25))  interrupts[15].pending = false; // PENDSTCLR
+        // TODO: bit 31 NMIPENDSET
+        break;
+
+      case 0x08:  // VTOR
+        // VTOR write goes through MISA which applies the alignment
+        // mask (vtor_align_bits).  Use setMiscReg (not NoEffect) so
+        // the mask is applied.
+        tc->setMiscReg(ArmISA::MISCREG_M_VTOR, data);
+        break;
+
+      case 0x0C:  // AIRCR
+        // MISA handles VECTKEY check and VECTKEYSTAT readback via
+        // setMiscReg().  Pass through — MISA rejects wrong key.
+        tc->setMiscReg(ArmISA::MISCREG_M_AIRCR, data);
+        // TODO: SYSRESETREQ (bit 2)
+        break;
+
+      case 0x10:  // SCR
+        warn_once("MProfileSCS: SCR write — sleep behavior not modeled");
+        tc->setMiscRegNoEffect(ArmISA::MISCREG_M_SCR, data);
+        break;
+      case 0x14:  // CCR
+        tc->setMiscRegNoEffect(ArmISA::MISCREG_M_CCR, data);
+        break;
+
+      case 0x18:  // SHPR1: exc 4-7
+      case 0x1C:  // SHPR2: exc 8-11
+      case 0x20:  // SHPR3: exc 12-15
+      {
+        uint32_t baseExc = 4 + ((offset - 0x18) / 4) * 4;
+        for (int i = 0; i < 4; ++i) {
+            uint32_t excNum = baseExc + i;
+            if (excNum < 16)
+                interrupts[excNum].priority =
+                    (int16_t)((data >> (i * 8)) & irqpriorityMask);
+        }
+        break;
+      }
+
+      case 0x24: {  // SHCSR
+        // Enable bits
+        interrupts[4].enabled  = (data >> 16) & 1;  // MEMFAULTENA
+        interrupts[5].enabled  = (data >> 17) & 1;  // BUSFAULTENA
+        interrupts[6].enabled  = (data >> 18) & 1;  // USGFAULTENA
+        // Pending bits
+        if ((data >> 12) & 1) pendInterrupt(interrupts[6]);   // USGFAULTPENDED
+        else interrupts[6].pending = false;
+        if ((data >> 13) & 1) pendInterrupt(interrupts[4]);   // MEMFAULTPENDED
+        else interrupts[4].pending = false;
+        if ((data >> 14) & 1) pendInterrupt(interrupts[5]);   // BUSFAULTPENDED
+        else interrupts[5].pending = false;
+        if ((data >> 15) & 1) pendInterrupt(interrupts[11]);  // SVCALLPENDED
+        else interrupts[11].pending = false;
+        // Active bits (dangerous — for context switch save/restore).
+        // These don't cause exception entry/return, just affect
+        // the priority ceiling via activePriorityCeiling.
+        interrupts[4].active   = (data >> 0) & 1;   // MEMFAULTACT
+        interrupts[5].active   = (data >> 1) & 1;   // BUSFAULTACT
+        interrupts[6].active   = (data >> 3) & 1;   // USGFAULTACT
+        interrupts[11].active  = (data >> 7) & 1;   // SVCALLACT
+        interrupts[12].active  = (data >> 8) & 1;   // MONITORACT
+        interrupts[14].active  = (data >> 10) & 1;  // PENDSVACT
+        interrupts[15].active  = (data >> 11) & 1;  // SYSTICKACT
+
+        // Recompute activePriorityCeiling from the SHCSR-managed
+        // system exceptions.  Only these exceptions can have their
+        // active state set/cleared via SHCSR writes.
+        {
+            static const int shcsrExcs[] = {4, 5, 6, 11, 12, 14, 15};
+            activePriorityCeiling = 256;
+            for (int exc : shcsrExcs) {
+                if (interrupts[exc].active &&
+                    interrupts[exc].priority < activePriorityCeiling)
+                    activePriorityCeiling = interrupts[exc].priority;
+            }
+        }
+        break;
+      }
+
+      case 0x28:  cfsr &= ~data; break;   // CFSR (W1C)
+      case 0x2C:  hfsr &= ~data; break;   // HFSR (W1C)
+      case 0x30:  dfsr &= ~data; break;   // DFSR (W1C)
+      case 0x34:  mmfar = data;  break;   // MMFAR
+      case 0x38:  bfar = data;   break;   // BFAR
+
+      default:
         warn("MProfileSCS: SCB write at unknown offset %#x", offset);
     }
-    return pioDelay;
 }
 
-// =========================================================================
-// NVIC register handlers
-// =========================================================================
-//
-// NVIC registers use special write semantics to avoid read-modify-write
-// races (important for multi-master systems, though we're single-core):
-//
-//   ISER (Set-Enable):   write 1 to a bit -> enables that IRQ
-//                         write 0 has no effect
-//                         read returns current enabled state
-//
-//   ICER (Clear-Enable): write 1 to a bit -> disables that IRQ
-//                         write 0 has no effect
-//                         read returns current enabled state (same as ISER)
-//
-//   ISPR (Set-Pending):  write 1 to a bit -> pends that IRQ
-//                         write 0 has no effect
-//                         read returns current pending state
-//
-//   ICPR (Clear-Pending): write 1 to a bit -> un-pends that IRQ
-//                          write 0 has no effect
-//                          read returns current pending state (same as ISPR)
-//
-//   IABR (Active):       read-only; returns which IRQs are being serviced
-//
-//   IPR (Priority):      per-IRQ priority (byte-accessible MMIO)
-//                         only top N bits implemented (N = priorityBits)
-//                         unimplemented low bits always read 0
-//
-//   STIR (Software Trigger): write IRQ number to pend it
-//
-// All writes that change interrupt state call updatePending() to
-// re-evaluate whether the CPU should be signalled.
-
-// BUG-4 fix: bitmask of implemented IRQs for a given 32-bit word.
-// Unimplemented IRQ bits must be RAZ/WI (DDI0403E B3.4.3).
-// Examples with numIRQs=82:
-//   word 0 (IRQs 0-31):   all implemented → 0xFFFFFFFF
-//   word 2 (IRQs 64-95):  18 implemented  → 0x0003FFFF
-//   word 3 (IRQs 96-127): none            → 0x00000000
-uint32_t
-MProfileSCS::irqMaskForWord(int word) const
-{
-    int firstIrq = word * 32;
-    if (firstIrq >= (int)numIRQs)
-        return 0;                          // entire word unimplemented
-    int bitsInWord = std::min(32, (int)numIRQs - firstIrq);
-    if (bitsInWord >= 32)
-        return 0xFFFFFFFF;                 // full word implemented
-    return (1u << bitsInWord) - 1;         // partial word
-}
-
-Tick
-MProfileSCS::readNVIC(Addr offset, uint32_t &data)
-{
-    if (offset >= 0x100 && offset <= 0x11F) {
-        // ISER[0..7]: read returns enabled state
-        // BUG-4 fix: mask unimplemented IRQ bits to RAZ
-        int word = (offset - 0x100) / 4;
-        data = nvicEnabled[word] & irqMaskForWord(word);
-
-    } else if (offset >= 0x180 && offset <= 0x19F) {
-        // ICER[0..7]: read also returns enabled state (not the clear mask)
-        int word = (offset - 0x180) / 4;
-        data = nvicEnabled[word] & irqMaskForWord(word);
-
-    } else if (offset >= 0x200 && offset <= 0x21F) {
-        // ISPR[0..7]: read returns pending state
-        int word = (offset - 0x200) / 4;
-        data = nvicPending[word] & irqMaskForWord(word);
-
-    } else if (offset >= 0x280 && offset <= 0x29F) {
-        // ICPR[0..7]: read also returns pending state
-        int word = (offset - 0x280) / 4;
-        data = nvicPending[word] & irqMaskForWord(word);
-
-    } else if (offset >= 0x300 && offset <= 0x31F) {
-        // IABR[0..7]: read-only active bits
-        int word = (offset - 0x300) / 4;
-        data = nvicActive[word] & irqMaskForWord(word);
-
-    } else if (offset >= 0x400 && offset <= 0x4EF) {
-        // IPR[0..59]: 4 priorities packed into each 32-bit MMIO word.
-        // Each priority occupies one byte.  Unimplemented IRQs read as 0.
-        uint32_t base = ((offset - 0x400) / 4) * 4;
-        uint8_t b0 = (base < numIRQs)
-            ? (uint8_t)nvicPriority[base] : 0;
-        uint8_t b1 = (base + 1 < numIRQs)
-            ? (uint8_t)nvicPriority[base + 1] : 0;
-        uint8_t b2 = (base + 2 < numIRQs)
-            ? (uint8_t)nvicPriority[base + 2] : 0;
-        uint8_t b3 = (base + 3 < numIRQs)
-            ? (uint8_t)nvicPriority[base + 3] : 0;
-        data = b0 | (b1 << 8) | (b2 << 16)
-               | (b3 << 24);
-
-    } else {
-        warn("MProfileSCS: NVIC read at unknown offset %#x", offset);
-    }
-    return pioDelay;
-}
-
-Tick
-MProfileSCS::writeNVIC(Addr offset, uint32_t data)
-{
-    if (offset >= 0x100 && offset <= 0x11F) {
-        // ISER[0..7]: write-1-to-set (set enable bits)
-        // BUG-4 fix: mask write data so unimplemented IRQ bits are WI
-        int word = (offset - 0x100) / 4;
-        nvicEnabled[word] |= (data & irqMaskForWord(word));
-        updatePending();
-
-    } else if (offset >= 0x180 && offset <= 0x19F) {
-        // ICER[0..7]: write-1-to-clear (clear enable bits)
-        // Mask not strictly needed for clear (clearing a zero bit is no-op),
-        // but apply for consistency and to prevent stale bits from persisting
-        int word = (offset - 0x180) / 4;
-        nvicEnabled[word] &= ~(data & irqMaskForWord(word));
-        updatePending();
-
-    } else if (offset >= 0x200 && offset <= 0x21F) {
-        // ISPR[0..7]: write-1-to-set (set pending bits)
-        int word = (offset - 0x200) / 4;
-        nvicPending[word] |= (data & irqMaskForWord(word));
-        updatePending();
-
-    } else if (offset >= 0x280 && offset <= 0x29F) {
-        // ICPR[0..7]: write-1-to-clear (clear pending bits)
-        int word = (offset - 0x280) / 4;
-        nvicPending[word] &= ~(data & irqMaskForWord(word));
-        updatePending();
-
-    } else if (offset >= 0x400 && offset <= 0x4EF) {
-        // IPR[0..59]: 4 priorities packed per 32-bit MMIO word.
-        // Each occupies one byte; only the top priorityBits bits are
-        // implemented.  Unimplemented low bits are ignored on write.
-        uint32_t base_irq = ((offset - 0x400) / 4) * 4;
-        // IPR word: byte 0-3 = IRQ[base] through IRQ[base+3]
-        if (base_irq < numIRQs)
-            nvicPriority[base_irq] =
-                maskedPriority(data);
-        if (base_irq + 1 < numIRQs)
-            nvicPriority[base_irq + 1] =
-                maskedPriority(data >> 8);
-        if (base_irq + 2 < numIRQs)
-            nvicPriority[base_irq + 2] =
-                maskedPriority(data >> 16);
-        if (base_irq + 3 < numIRQs)
-            nvicPriority[base_irq + 3] =
-                maskedPriority(data >> 24);
-        updatePending();
-
-    } else if (offset == 0xF00) {
-        // STIR (Software Trigger Interrupt Register):
-        // Write the IRQ number (bits[8:0]) to pend that external IRQ.
-        // This lets firmware trigger interrupts from software.
-        uint32_t irq = data & 0x1FF;
-        if (irq < numIRQs) {
-            int word = irq / 32;
-            nvicPending[word] |= (1u << (irq % 32));
-            updatePending();
-        }
-
-    } else {
-        warn("MProfileSCS: NVIC write at unknown offset %#x", offset);
-    }
-    return pioDelay;
-}
-
-// =========================================================================
-// Priority evaluation
-// =========================================================================
-//
-// executionPriority() returns the effective priority of the current
-// execution context.  A pending interrupt is only deliverable if its
-// priority is STRICTLY LESS than (= higher priority than) this value.
-//
-// The priority model (DDI0403E B1.5.4):
-//   - Fixed priorities: Reset=-3, NMI=-2, HardFault=-1
-//   - Configurable: everything else, 0..255 (only top N bits matter)
-//   - FAULTMASK=1: boosts execution priority to -1 (blocks everything
-//     except NMI).
-//   - PRIMASK=1: boosts execution priority to 0 (blocks all
-//     configurable-priority exceptions).
-//   - BASEPRI!=0: sets a priority ceiling — used as the starting
-//     point for the active-exception scan so the result is
-//     min(BASEPRI, active_priorities).
-//   - Active exceptions: the priority of the highest-priority active
-//     exception becomes the execution priority.
-//
-// Lower number = higher priority.  256 = lowest (Thread mode, no masks).
-
-MExceptionPriority
-MProfileSCS::executionPriority() const
-{
-
-    // Check with order Reset: -3, NMI: -2, HardFault: -1, FAULTMASK: -1.
-    // Then follow with SVCall, PendSV, SysTick, and all configurable IRQs.
-
-    // Check with order Reset: -3, NMI: -2, HardFault: -1
-    ArmISA::ArmMISA::XPSR xpsr = tc->readMiscRegNoEffect(
-        ArmISA::MISCREG_M_XPSR);
-    switch(xpsr.exception) {
-        case ArmISA::MPEXC_RESET:
-            // Reset handler runs in Thread mode (IPSR=0) per B1.5.5.
-            // IPSR should never contain 1 during normal execution.
-            warn("executionPriority: IPSR contains Reset exception "
-                 "number — this should not happen.");
-            return -3;
-        case ArmISA::MPEXC_NMI:
-            return -2;
-        case ArmISA::MPEXC_HARDFAULT:
-            return -1;
-        default:
-            break;
-    }
-
-    // FAULTMASK: if set, execution priority is -1 (blocks everything
-    // except NMI).
-    // Only available on M3/M4/M7 (not M0/M0+).
-    if (hasBasepri) {
-        RegVal faultmask = tc->readMiscRegNoEffect(
-            ArmISA::MISCREG_M_FAULTMASK);
-        if (faultmask & 1)
-            return -1;
-    }
-
-    // PRIMASK: if set, execution priority is 0 (blocks all
-    // configurable-priority exceptions).
-    RegVal primask = tc->readMiscRegNoEffect(ArmISA::MISCREG_M_PRIMASK);
-    if (primask & 1)
-        return 0;
-
-    // Scan active exception priorities to find the execution priority.
-    // DDI0403E B1.5.4: the execution priority is the minimum (lowest
-    // number = highest priority) among all active exceptions AND any
-    // priority ceiling from BASEPRI.
-    //
-    // BASEPRI acts as a ceiling but must NOT short-circuit the scan:
-    // an active exception may have higher priority (lower number) than
-    // BASEPRI.  E.g., BASEPRI=0x80 with active SVCall at priority 0x20
-    // → execution priority is 0x20, not 0x80.
-    //
-    // Start with BASEPRI as the ceiling (if nonzero), otherwise 256
-    // (one beyond max configurable priority = Thread mode default).
-    MExceptionPriority execPri = 256;
-    if (hasBasepri) {
-        RegVal basepri = tc->readMiscRegNoEffect(
-            ArmISA::MISCREG_M_BASEPRI);
-        MExceptionPriority bp = maskedPriority(basepri);
-        if (bp != 0)
-            execPri = bp;
-    }
-
-    // Check SHCSR active bits for system exceptions with configurable
-    // priority.  DDI0403E B3.2.10 defines the active bit positions.
-    // Group by SHPR register to minimize misc reg reads.
-    RegVal shcsr = tc->readMiscRegNoEffect(ArmISA::MISCREG_M_SHCSR);
-
-    // SHPR1 covers exceptions 4-7 (MemManage, BusFault, UsageFault)
-    //   bit 0: MEMFAULTACT  (exc 4) → SHPR1[7:0]
-    //   bit 1: BUSFAULTACT  (exc 5) → SHPR1[15:8]
-    //   bit 3: USGFAULTACT  (exc 6) → SHPR1[23:16]
-    if (shcsr & ((1u << 0) | (1u << 1) | (1u << 3))) {
-        RegVal shpr1 = tc->readMiscRegNoEffect(ArmISA::MISCREG_M_SHPR1);
-        if (shcsr & (1u << 0)) {  // MEMFAULTACT
-            MExceptionPriority pri = maskedPriority(shpr1);
-            if (pri < execPri) execPri = pri;
-        }
-        if (shcsr & (1u << 1)) {  // BUSFAULTACT
-            MExceptionPriority pri = maskedPriority(shpr1 >> 8);
-            if (pri < execPri) execPri = pri;
-        }
-        if (shcsr & (1u << 3)) {  // USGFAULTACT
-            MExceptionPriority pri = maskedPriority(shpr1 >> 16);
-            if (pri < execPri) execPri = pri;
-        }
-    }
-
-    // SHPR2 covers exceptions 8-11
-    //   bit 7: SVCALLACT (exc 11) → SHPR2[31:24]
-    if (shcsr & (1u << 7)) {
-        RegVal shpr2 = tc->readMiscRegNoEffect(ArmISA::MISCREG_M_SHPR2);
-        MExceptionPriority pri = maskedPriority(shpr2 >> 24);
-        if (pri < execPri) execPri = pri;
-    }
-
-    // SHPR3 covers exceptions 12-15
-    //   bit 8:  MONITORACT  (exc 12) → SHPR3[7:0]
-    //   bit 10: PENDSVACT   (exc 14) → SHPR3[23:16]
-    //   bit 11: SYSTICKACT  (exc 15) → SHPR3[31:24]
-    if (shcsr & ((1u << 8) | (1u << 10) | (1u << 11))) {
-        RegVal shpr3 = tc->readMiscRegNoEffect(ArmISA::MISCREG_M_SHPR3);
-        if (shcsr & (1u << 8)) {  // MONITORACT
-            MExceptionPriority pri = maskedPriority(shpr3);
-            if (pri < execPri) execPri = pri;
-        }
-        if (shcsr & (1u << 10)) {  // PENDSVACT
-            MExceptionPriority pri = maskedPriority(shpr3 >> 16);
-            if (pri < execPri) execPri = pri;
-        }
-        if (shcsr & (1u << 11)) {  // SYSTICKACT
-            MExceptionPriority pri = maskedPriority(shpr3 >> 24);
-            if (pri < execPri) execPri = pri;
-        }
-    }
-
-    // Scan NVIC active bits for external IRQs (exc >= 16).
-    // Each bit in nvicActive[] corresponds to one IRQ.
-    // BUG-1 fix: use NVIC_WORDS (ceiling division) instead of
-    // MAX_IRQS / 32 (truncated), so IRQs 224-239 in word 7 are scanned.
-    for (int w = 0; w < NVIC_WORDS; ++w) {
-        uint32_t active = nvicActive[w];
-        while (active) {
-            int bit = __builtin_ctz(active);  // lowest set bit
-            int irq = w * 32 + bit;
-            if (irq < (int)numIRQs) {
-                // nvicPriority[] is already masked on write
-                if (nvicPriority[irq] < execPri)
-                    execPri = nvicPriority[irq];
-            }
-            active &= ~(1u << bit);
-        }
-    }
-
-    return execPri;
-}
-
-// =========================================================================
-// updatePending() -- central interrupt evaluation
-// =========================================================================
-//
-// Called after any change to interrupt state (enable, pending, active,
-// priority, or mask registers).  Scans all interrupt sources to find
-// the highest-priority deliverable one, then signals or de-signals
-// the CPU accordingly.
-//
-// "Deliverable" means:
-//   1. The interrupt is enabled AND pending AND NOT already active
-//   2. Its priority is strictly less than executionPriority()
-//
-// This function maintains the cached (highestPendingExc, highestPendingPri)
-// so that hasDeliverableIRQ() and acknowledgeIRQ() are O(1).
-
-void
-MProfileSCS::updatePending()
-{
-    using namespace ArmISA;
-
-    highestPendingExc = -1;
-    // DDI0403E B1.5.4: 256 is one beyond the maximum configurable
-    // priority (0-255), serving as a "no pending interrupt" sentinel.
-    // Must be 256 (not 0xFF) so that an IRQ at priority 0xFF is
-    // correctly recorded (0xFF < 256 = true).
-    highestPendingPri = 256;
-
-    // --- Scan external IRQs ---
-    // For each 32-bit word of IRQs, compute the set that is
-    // enabled AND pending AND not already active, then find
-    // the one with lowest priority number in that set.
-    for (int word = 0; word < (int)((numIRQs + 31) / 32); ++word) {
-        uint32_t deliverable = nvicEnabled[word] & nvicPending[word]
-                               & ~nvicActive[word];
-        while (deliverable) {
-            int bit = __builtin_ctz(deliverable);
-            int irq = word * 32 + bit;
-            // nvicPriority[] is already masked on write
-            if (nvicPriority[irq] < highestPendingPri) {
-                highestPendingPri = nvicPriority[irq];
-                highestPendingExc = MPEXC_EXTERNAL_BASE + irq;
-            }
-            deliverable &= deliverable - 1;  // clear lowest set bit
-        }
-    }
-
-    // --- Check system exceptions pended via ICSR ---
-    // SysTick (exc 15) and PendSV (exc 14) are pended by setting
-    // bits in ICSR, not through the NVIC enable/pending arrays.
-    // Their priorities come from SHPR3 (System Handler Priority 3):
-    //   SHPR3[31:24] = SysTick priority
-    //   SHPR3[23:16] = PendSV priority
-    RegVal icsr = tc->readMiscRegNoEffect(MISCREG_M_ICSR);
-
-    // SysTick: ICSR bit 26 = PENDSTSET
-    if (hasSysTick && (icsr & (1u << 26))) {
-        RegVal shpr3 = tc->readMiscRegNoEffect(MISCREG_M_SHPR3);
-        MExceptionPriority pri = maskedPriority(shpr3 >> 24);
-        if (pri < highestPendingPri) {
-            highestPendingPri = pri;
-            highestPendingExc = MPEXC_SYSTICK;
-        }
-    }
-
-    // PendSV: ICSR bit 28 = PENDSVSET
-    if (icsr & (1u << 28)) {
-        RegVal shpr3 = tc->readMiscRegNoEffect(MISCREG_M_SHPR3);
-        MExceptionPriority pri = maskedPriority(shpr3 >> 16);
-        if (pri < highestPendingPri) {
-            highestPendingPri = pri;
-            highestPendingExc = MPEXC_PENDSV;
-        }
-    }
-
-    // --- Signal or de-signal the CPU ---
-    // Only post if the pending interrupt can actually preempt
-    // the current execution (priority comparison).
-    if (highestPendingExc >= 0 &&
-        highestPendingPri < executionPriority()) {
-        postToInterruptController();
-    } else {
-        clearFromInterruptController();
-    }
-}
-
-// =========================================================================
-// NVIC external interface -- called by peripheral devices
-// =========================================================================
+// -- Peripheral device interface --
 
 void
 MProfileSCS::sendInt(uint32_t irq)
 {
-    if (irq >= numIRQs) {
-        warn("MProfileSCS::sendInt: IRQ %u out of range (max %u)",
-             irq, numIRQs - 1);
-        return;
-    }
-    // Set the pending bit for this IRQ.  The IRQ must also be enabled
-    // (in ISER) for it to be considered deliverable by updatePending().
-    int word = irq / 32;
-    nvicPending[word] |= (1u << (irq % 32));
-    updatePending();
+    // TODO
 }
 
 void
 MProfileSCS::clearInt(uint32_t irq)
 {
-    if (irq >= numIRQs)
-        return;
-    // Clear the pending bit.  If the IRQ was the highest-priority
-    // pending, updatePending() will find the next one (or none).
-    int word = irq / 32;
-    nvicPending[word] &= ~(1u << (irq % 32));
-    updatePending();
+    // TODO
 }
 
-// =========================================================================
-// CPU-side interface -- called by MProfileInterrupts
-// =========================================================================
+// -- CPU-side interface --
 
 bool
-MProfileSCS::hasDeliverableIRQ() const
+MProfileSCS::hasDeliverableIRQ()
 {
-    // Quick check using cached state from updatePending().
-    if (highestPendingExc < 0)
-        return false;
-    return highestPendingPri < executionPriority();
+    return updatePending();
 }
 
 int
 MProfileSCS::acknowledgeIRQ()
 {
-    // Return the exception number that updatePending() determined.
-    // The caller (MProfileInterrupts::getInterrupt) wraps this in
-    // an ArmMFault and returns it to the CPU pipeline.
-    return highestPendingExc;
+    assert(!activeInterrupts.empty());
+    return activeInterrupts.top()->interruptNum;
+}
+
+bool
+MProfileSCS::canActivate(const Interrupt &intr) const
+{
+    // FAULTMASK: blocks everything except NMI (exc 2).
+    if (faultmask && intr.interruptNum != 2)
+        return false;
+
+    // PRIMASK: blocks all configurable-priority exceptions (pri >= 0).
+    if (primask && intr.priority >= 0)
+        return false;
+
+    // BASEPRI: blocks exceptions with priority >= basepri (when != 0).
+    if (basepri != 0 && intr.priority >= basepri)
+        return false;
+
+    // Must have strictly higher priority (lower number) than the
+    // currently active exception.  Check both the active queue
+    // (normal activations via activateIRQ) and activePriorityCeiling
+    // (set by SHCSR active bit writes for context-switch save/restore).
+    int16_t ceiling = activePriorityCeiling;
+    if (!activeInterrupts.empty()) {
+        int16_t queueTop = activeInterrupts.top()->priority;
+        if (queueTop < ceiling)
+            ceiling = queueTop;
+    }
+    if (intr.priority >= ceiling)
+        return false;
+
+    return true;
 }
 
 void
-MProfileSCS::activateIRQ(int exc_num)
+MProfileSCS::pendInterrupt(Interrupt &intr)
 {
-    using namespace ArmISA;
+    intr.pending = true;
 
-    // Transition the interrupt from pending to active.
-    // For external IRQs: clear pending bit, set active bit.
-    // For system exceptions: clear the ICSR pending bit.
-    // This is called by MProfileInterrupts::updateIntrInfo() after
-    // the CPU has entered the exception handler.
-
-    if (exc_num >= MPEXC_EXTERNAL_BASE) {
-        int irq = exc_num - MPEXC_EXTERNAL_BASE;
-        int word = irq / 32;
-        int bit = irq % 32;
-        nvicActive[word] |= (1u << bit);
-        nvicPending[word] &= ~(1u << bit);
-
-    } else if (exc_num == MPEXC_SYSTICK) {
-        // Clear ICSR.PENDSTSET (bit 26) and set SHCSR.SYSTICKACT (bit 11)
-        // to track that SysTick handler is now active.
-        RegVal icsr = tc->readMiscRegNoEffect(MISCREG_M_ICSR);
-        icsr &= ~(1u << 26);
-        tc->setMiscRegNoEffect(MISCREG_M_ICSR, icsr);
-        RegVal shcsr = tc->readMiscRegNoEffect(MISCREG_M_SHCSR);
-        shcsr |= (1u << 11);  // SYSTICKACT
-        tc->setMiscRegNoEffect(MISCREG_M_SHCSR, shcsr);
-
-    } else if (exc_num == MPEXC_PENDSV) {
-        // Clear ICSR.PENDSVSET (bit 28) and set SHCSR.PENDSVACT (bit 10)
-        // to track that PendSV handler is now active.
-        RegVal icsr = tc->readMiscRegNoEffect(MISCREG_M_ICSR);
-        icsr &= ~(1u << 28);
-        tc->setMiscRegNoEffect(MISCREG_M_ICSR, icsr);
-        RegVal shcsr = tc->readMiscRegNoEffect(MISCREG_M_SHCSR);
-        shcsr |= (1u << 10);  // PENDSVACT
-        tc->setMiscRegNoEffect(MISCREG_M_SHCSR, shcsr);
+    if (!intr.inPendingQueue) {
+        pendingInterrupts.push(&intr);
+        intr.inPendingQueue = true;
     }
 
-    // Re-evaluate: there may be another pending interrupt that can
-    // preempt even the newly-active handler (nested interrupts).
-    updatePending();
+    // Signal the CPU that an interrupt may be deliverable.
+    // The CPU's checkInterrupts() will call hasDeliverableIRQ()
+    // at the next instruction boundary.
+    if (tc)
+        tc->getCpuPtr()->postInterrupt(tc->threadId(), 0, 0);
+}
+
+bool
+MProfileSCS::activateIRQ(int exc_num)
+{
+    // Validate exception number.
+    if (exc_num < 0 || (uint32_t)exc_num >= interrupts.size())
+        return false;
+
+    Interrupt &intr = interrupts[exc_num];
+
+    // Already active — nothing to do.
+    if (intr.inActiveQueue)
+        return false;
+
+    // Must be enabled.  Disabled configurable faults should be
+    // escalated to HardFault by the caller (m_faults.cc).
+    if (!intr.enabled)
+        return false;
+
+    // Check if this exception can be delivered given the current
+    // mask state and active exception priority.
+    if (canActivate(intr)) {
+        intr.active = true;
+        activeInterrupts.push(&intr);
+        intr.inActiveQueue = true;
+        return true;
+    }
+
+    // Cannot activate — pend it.
+    pendInterrupt(intr);
+    return false;
 }
 
 void
 MProfileSCS::deactivateIRQ(int exc_num)
 {
-    using namespace ArmISA;
+    assert(!activeInterrupts.empty());
+    Interrupt *top = activeInterrupts.top();
+    assert(top->interruptNum == (uint32_t)exc_num);
 
-    // Called on exception return (EXC_RETURN).  Transitions the
-    // interrupt from active to inactive, allowing it to pend again.
+    top->active = false;
+    top->inActiveQueue = false;
+    activeInterrupts.pop();
 
-    if (exc_num >= MPEXC_EXTERNAL_BASE) {
-        // External IRQ: clear nvicActive bit.
-        int irq = exc_num - MPEXC_EXTERNAL_BASE;
-        int word = irq / 32;
-        int bit = irq % 32;
-        nvicActive[word] &= ~(1u << bit);
+    // DDI0403E B1.5.8 DeActivate(): FAULTMASK is automatically
+    // cleared to 0 on exception return, except when returning
+    // from NMI (exc 2).  This ensures FAULTMASK doesn't persist
+    // beyond the handler that set it.
+    if (exc_num != 2 && hasBasePri)
+        faultmask = false;
+}
 
-    } else {
-        // System exception: clear the corresponding SHCSR active bit.
-        // Uses the shared helper from m_faults.hh which maps exception
-        // numbers to SHCSR bit positions (DDI0403E B3.2.10).
-        int shcsrBit = mProfileShcsrActiveBit(exc_num);
-        if (shcsrBit >= 0) {
-            RegVal shcsr = tc->readMiscRegNoEffect(MISCREG_M_SHCSR);
-            shcsr &= ~(1u << shcsrBit);
-            tc->setMiscRegNoEffect(MISCREG_M_SHCSR, shcsr);
+bool
+MProfileSCS::updatePending()
+{
+    // Clean stale entries from the pending queue and try to
+    // activate the highest-priority valid pending exception.
+    while (!pendingInterrupts.empty()) {
+        Interrupt *top = pendingInterrupts.top();
+
+        // Skip stale entries: disabled or no longer pending.
+        if (!top->enabled || !top->pending) {
+            top->inPendingQueue = false;
+            pendingInterrupts.pop();
+            continue;
         }
-    }
 
-    // Re-evaluate: a lower-priority interrupt that was blocked by
-    // the now-deactivated handler may become deliverable.
-    updatePending();
-}
-
-// =========================================================================
-// CPU interrupt signalling helpers
-// =========================================================================
-
-void
-MProfileSCS::postToInterruptController()
-{
-    // Signal the CPU that an interrupt is ready for delivery.
-    // The CPU's checkInterrupts() will then call back into
-    // hasDeliverableIRQ() and getInterrupt().
-    // First arg is ThreadID — must match tc, not hardcoded 0.
-    if (tc)
-        tc->getCpuPtr()->postInterrupt(tc->threadId(), 0, 0);
-}
-
-void
-MProfileSCS::clearFromInterruptController()
-{
-    // Remove the interrupt signal from the CPU.
-    // This happens when the pending interrupt is no longer deliverable
-    // (e.g., masked by PRIMASK, or cleared by firmware).
-    if (tc)
-        tc->getCpuPtr()->clearInterrupt(tc->threadId(), 0, 0);
-}
-
-// =========================================================================
-// SysTick timer
-// =========================================================================
-//
-// SysTick is a 24-bit countdown timer.  When enabled (CSR.ENABLE=1),
-// it counts down from the LOAD value at the device clock rate.
-// When it reaches 0:
-//   - COUNTFLAG (CSR bit 16) is set
-//   - If TICKINT (CSR bit 1) is set, SysTick exception (exc 15) is pended
-//   - Timer reloads from LOAD and continues counting
-//
-// Register semantics (DDI0403E B3.3):
-//   CSR (offset 0x00):
-//     [0]  ENABLE    - enable/disable the counter
-//     [1]  TICKINT   - enable interrupt on reaching 0
-//     [2]  CLKSOURCE - 1=processor clock, 0=external ref (we always use proc)
-//     [16] COUNTFLAG - set when counter reaches 0; clears on CSR read
-//     Writes: only bits[2:0] are writable; bit 16 is read-only
-//
-//   RVR (offset 0x04):
-//     [23:0] RELOAD - value loaded on timer restart; must be nonzero
-//     Writes: masked to 24 bits
-//
-//   CVR (offset 0x08):
-//     [23:0] CURRENT - current counter value
-//     Read: returns computed value from scheduled event time
-//     Write: writing ANY value clears current value, clears COUNTFLAG,
-//            and restarts the timer if ENABLE is set
-//
-//   CALIB (offset 0x0C):
-//     Read-only; returns implementation-defined calibration value
-
-Tick
-MProfileSCS::readSysTick(Addr offset, uint32_t &data)
-{
-    switch (offset) {
-      case 0x00:  // CSR
-        data = sysTick.ctrl;
-        // COUNTFLAG auto-clears on read (DDI0403E B3.3.1).
-        // This is how firmware polls for timer expiry without interrupts.
-        sysTick.ctrl &= ~(1u << 16);
-        break;
-      case 0x04:  // RVR (reload value)
-        data = sysTick.load;
-        break;
-      case 0x08:  // CVR (current value, computed from event schedule)
-        data = sysTickCurrentValue();
-        break;
-      case 0x0C:  // CALIB (read-only, from Python param)
-        data = sysTick.calib;
-        break;
-      default:
-        warn("MProfileSCS: SysTick read at unknown offset %#x", offset);
-        break;
-    }
-    return pioDelay;
-}
-
-Tick
-MProfileSCS::writeSysTick(Addr offset, uint32_t data)
-{
-    switch (offset) {
-      case 0x00: {  // CSR
-        bool was_enabled = sysTick.ctrl & 1;
-
-        // Only bits[2:0] are writable.  Preserve COUNTFLAG (bit 16).
-        sysTick.ctrl = (sysTick.ctrl & (1u << 16)) | (data & 0x7);
-
-        bool now_enabled = sysTick.ctrl & 1;
-
-        // Start or stop the countdown event as needed
-        if (now_enabled && !was_enabled) {
-            sysTickSchedule();
-        } else if (!now_enabled && was_enabled) {
-            if (sysTick.expireEvent.scheduled())
-                deschedule(sysTick.expireEvent);
+        // Found a valid pending entry — try to activate it.
+        // canActivate checks masks and active queue priority.
+        if (canActivate(*top)) {
+            top->active = true;
+            top->pending = false;
+            top->inPendingQueue = false;
+            pendingInterrupts.pop();
+            activeInterrupts.push(top);
+            top->inActiveQueue = true;
+            return true;
         }
-        break;
-      }
-      case 0x04:  // RVR: 24-bit reload value
-        sysTick.load = data & 0x00FFFFFF;
-        break;
-      case 0x08:  // CVR: writing any value clears counter + COUNTFLAG
-        sysTick.ctrl &= ~(1u << 16);
-        if (sysTick.expireEvent.scheduled())
-            deschedule(sysTick.expireEvent);
-        // Restart countdown from LOAD if timer is enabled
-        if (sysTick.ctrl & 1)
-            sysTickSchedule();
-        break;
-      case 0x0C:  // CALIB: read-only, writes ignored
-        break;
-      default:
-        warn("MProfileSCS: SysTick write at unknown offset %#x", offset);
+
+        // Top pending can't activate (blocked by mask or active
+        // priority) — nothing below it in the queue can either,
+        // since the queue is priority-ordered.
         break;
     }
-    return pioDelay;
+
+    return !activeInterrupts.empty();
 }
 
+// -- SysTick timer --
+
 void
-MProfileSCS::sysTickExpire()
+MProfileSCS::sysTickExpire(uint8_t index)
 {
-    using namespace ArmISA;
+    SysTick &st = sysTicks[index];
 
-    // Counter has reached 0.  Set COUNTFLAG so firmware can see it.
-    sysTick.ctrl |= (1u << 16);
+    // Counter reached 0.  Set COUNTFLAG so firmware can detect
+    // expiry by polling CSR (auto-clears on read per DDI0403E B3.3.1).
+    st.ctrl |= (1u << 16);
 
-    // If TICKINT is enabled, pend the SysTick exception (exc 15)
-    // by setting ICSR.PENDSTSET (bit 26).  updatePending() will
-    // then determine if it's deliverable (based on priority).
-    if (sysTick.ctrl & (1u << 1)) {
-        RegVal icsr = tc->readMiscRegNoEffect(MISCREG_M_ICSR);
-        icsr |= (1u << 26);  // PENDSTSET
-        tc->setMiscRegNoEffect(MISCREG_M_ICSR, icsr);
-        updatePending();
+    // If TICKINT (bit 1) is set, pend the SysTick exception (exc 15).
+    // The CPU will pick it up at the next instruction boundary via
+    // hasDeliverableIRQ() → updatePending().
+    if (st.ctrl & (1u << 1)) {
+        pendInterrupt(interrupts[15]);
     }
 
     // Reload and reschedule if timer is still enabled.
     // The counter wraps from 0 back to LOAD on each expiry.
-    if (sysTick.ctrl & 1)
-        sysTickSchedule();
+    if (st.ctrl & 1)
+        sysTickSchedule(index);
 }
 
 void
-MProfileSCS::sysTickSchedule()
+MProfileSCS::sysTickSchedule(uint8_t index)
 {
-    // Don't schedule if LOAD is 0 (counter would never expire)
-    if (sysTick.load == 0)
+    SysTick &st = sysTicks[index];
+
+    // Don't schedule if LOAD is 0 — counter would never expire.
+    if (st.load == 0)
         return;
 
     // Schedule expiry at curTick() + ((LOAD + 1) * clockPeriod).
-    // The counter counts from LOAD down to 0 inclusive (LOAD+1 cycles).
-    // Per DDI0403E B3.3: "the timer counts down from RELOAD to zero".
-    Tick delay = clockPeriod() * ((Tick)sysTick.load + 1);
-    sysTick.startTick = curTick();
+    // The counter counts from LOAD down to 0 inclusive, so it takes
+    // LOAD+1 cycles to expire.  Per DDI0403E B3.3.1: "the timer
+    // counts down from the value in SYST_RVR to zero".
+    Tick delay = clockPeriod() * ((Tick)st.load + 1);
+    st.startTick = curTick();
 
-    if (sysTick.expireEvent.scheduled())
-        deschedule(sysTick.expireEvent);
-    schedule(sysTick.expireEvent, curTick() + delay);
+    if (st.expireEvent.scheduled())
+        deschedule(st.expireEvent);
+    schedule(st.expireEvent, curTick() + delay);
 }
 
 uint32_t
-MProfileSCS::sysTickCurrentValue() const
+MProfileSCS::sysTickCurrentValue(uint8_t index) const
 {
+    const SysTick &st = sysTicks[index];
+
     // Current value is computed from how much time remains until
     // the scheduled expiry event.  If the timer isn't running,
-    // the current value is 0 (per spec: CVR reads 0 when disabled).
-    if (!sysTick.expireEvent.scheduled())
+    // return 0 (DDI0403E B3.3.5: CVR reads as UNKNOWN when
+    // disabled; returning 0 is safe).
+    if (!st.expireEvent.scheduled())
         return 0;
 
-    // Guard against underflow: if curTick has advanced past the
-    // event time (possible due to scheduling granularity), return 0.
-    if (curTick() >= sysTick.expireEvent.when())
+    // Guard against the case where curTick has passed the event
+    // time (possible due to scheduling granularity).
+    if (curTick() >= st.expireEvent.when())
         return 0;
 
-    Tick remaining = sysTick.expireEvent.when() - curTick();
+    Tick remaining = st.expireEvent.when() - curTick();
     return (uint32_t)(remaining / clockPeriod());
 }
 
-// =========================================================================
-// Checkpoint serialization
-//
-// Saves all NVIC and SysTick runtime state.  SCB registers (SHCSR,
-// SHPR1-3, ICSR, VTOR, etc.) live in ISA misc regs and are serialized
-// by MISA::serialize() — they are NOT duplicated here.
-//
-// Configuration params (numIRQs, priorityBits, hasSysTick, etc.) are
-// re-initialized by the constructor from Python and need not be saved.
-//
-// Pattern follows GicV2 (NVIC arrays) and Sp804::Timer (event schedule).
-// =========================================================================
+// -- Checkpoint --
 
 void
 MProfileSCS::serialize(CheckpointOut &cp) const
 {
-    // NVIC interrupt state arrays (bit-vectors and per-IRQ priorities)
-    SERIALIZE_ARRAY(nvicEnabled, NVIC_WORDS);
-    SERIALIZE_ARRAY(nvicPending, NVIC_WORDS);
-    SERIALIZE_ARRAY(nvicActive,  NVIC_WORDS);
-    SERIALIZE_ARRAY(nvicPriority, MAX_IRQS);
+    // -- Interrupt state --
+    // Save per-interrupt fields individually.  Priority queues are
+    // not saved — rebuilt from interrupt state on restore.
+    uint32_t numInterrupts = interrupts.size();
+    SERIALIZE_SCALAR(numInterrupts);
 
-    // Cached highest-pending state (rebuilt by updatePending() on
-    // unserialize, but saved for completeness / debugging)
-    SERIALIZE_SCALAR(highestPendingExc);
-    SERIALIZE_SCALAR(highestPendingPri);
+    for (uint32_t i = 0; i < numInterrupts; ++i) {
+        ScopedCheckpointSection sec(cp, csprintf("interrupt%d", i));
+        const Interrupt &intr = interrupts[i];
+        SERIALIZE_SCALAR(intr.active);
+        SERIALIZE_SCALAR(intr.enabled);
+        SERIALIZE_SCALAR(intr.pending);
+        SERIALIZE_SCALAR(intr.priority);
+        SERIALIZE_SCALAR(intr.interruptNum);
+    }
 
-    // SysTick timer state
-    SERIALIZE_SCALAR(sysTick.ctrl);
-    SERIALIZE_SCALAR(sysTick.load);
-    SERIALIZE_SCALAR(sysTick.startTick);
+    // -- Mask state --
+    SERIALIZE_SCALAR(primask);
+    SERIALIZE_SCALAR(faultmask);
+    SERIALIZE_SCALAR(basepri);
+    SERIALIZE_SCALAR(activePriorityCeiling);
 
-    // SysTick expiry event schedule (Sp804 timer pattern):
-    // Save whether the event is scheduled and, if so, at what tick.
-    bool sysTickEventScheduled = sysTick.expireEvent.scheduled();
-    SERIALIZE_SCALAR(sysTickEventScheduled);
-    if (sysTickEventScheduled) {
-        Tick sysTickEventTime = sysTick.expireEvent.when();
-        SERIALIZE_SCALAR(sysTickEventTime);
+    // -- SCB registers stored locally --
+    // VTOR, AIRCR, SCR, CCR are in MISA misc regs — serialized
+    // by MISA.  Only SCS-local registers saved here.
+    SERIALIZE_SCALAR(cfsr);
+    SERIALIZE_SCALAR(hfsr);
+    SERIALIZE_SCALAR(dfsr);
+    SERIALIZE_SCALAR(mmfar);
+    SERIALIZE_SCALAR(bfar);
+
+    // -- SysTick state --
+    for (uint8_t i = 0; i < sysTicks.size(); ++i) {
+        ScopedCheckpointSection sec(cp, csprintf("sysTick%d", i));
+        const SysTick &st = sysTicks[i];
+        SERIALIZE_SCALAR(st.ctrl);
+        SERIALIZE_SCALAR(st.load);
+        SERIALIZE_SCALAR(st.startTick);
+
+        bool eventScheduled = st.expireEvent.scheduled();
+        SERIALIZE_SCALAR(eventScheduled);
+        if (eventScheduled) {
+            Tick eventTime = st.expireEvent.when();
+            SERIALIZE_SCALAR(eventTime);
+        }
     }
 }
 
 void
 MProfileSCS::unserialize(CheckpointIn &cp)
 {
-    // NVIC interrupt state arrays
-    UNSERIALIZE_ARRAY(nvicEnabled, NVIC_WORDS);
-    UNSERIALIZE_ARRAY(nvicPending, NVIC_WORDS);
-    UNSERIALIZE_ARRAY(nvicActive,  NVIC_WORDS);
-    UNSERIALIZE_ARRAY(nvicPriority, MAX_IRQS);
+    // -- Interrupt state --
+    uint32_t numInterrupts;
+    UNSERIALIZE_SCALAR(numInterrupts);
+    assert(numInterrupts == interrupts.size());
 
-    // Cached highest-pending state
-    UNSERIALIZE_SCALAR(highestPendingExc);
-    UNSERIALIZE_SCALAR(highestPendingPri);
-
-    // SysTick timer state
-    UNSERIALIZE_SCALAR(sysTick.ctrl);
-    UNSERIALIZE_SCALAR(sysTick.load);
-    UNSERIALIZE_SCALAR(sysTick.startTick);
-
-    // Restore SysTick expiry event if it was scheduled at checkpoint time
-    bool sysTickEventScheduled;
-    UNSERIALIZE_SCALAR(sysTickEventScheduled);
-    if (sysTickEventScheduled) {
-        Tick sysTickEventTime;
-        UNSERIALIZE_SCALAR(sysTickEventTime);
-        schedule(sysTick.expireEvent, sysTickEventTime);
+    for (uint32_t i = 0; i < numInterrupts; ++i) {
+        ScopedCheckpointSection sec(cp, csprintf("interrupt%d", i));
+        Interrupt &intr = interrupts[i];
+        UNSERIALIZE_SCALAR(intr.active);
+        UNSERIALIZE_SCALAR(intr.enabled);
+        UNSERIALIZE_SCALAR(intr.pending);
+        UNSERIALIZE_SCALAR(intr.priority);
+        UNSERIALIZE_SCALAR(intr.interruptNum);
+        intr.inPendingQueue = false;
+        intr.inActiveQueue = false;
     }
 
-    // Do NOT call updatePending() here — it accesses tc (ThreadContext)
-    // which is not set until startup().  gem5 restore order is:
-    //   constructor → init() → unserialize() → startup()
-    // Instead, set a flag so startup() calls updatePending() after
-    // tc is available.
-    restoredFromCheckpoint = true;
+    // -- Mask state --
+    UNSERIALIZE_SCALAR(primask);
+    UNSERIALIZE_SCALAR(faultmask);
+    UNSERIALIZE_SCALAR(basepri);
+    UNSERIALIZE_SCALAR(activePriorityCeiling);
+
+    // -- SCB registers stored locally --
+    UNSERIALIZE_SCALAR(cfsr);
+    UNSERIALIZE_SCALAR(hfsr);
+    UNSERIALIZE_SCALAR(dfsr);
+    UNSERIALIZE_SCALAR(mmfar);
+    UNSERIALIZE_SCALAR(bfar);
+
+    // -- SysTick state --
+    for (uint8_t i = 0; i < sysTicks.size(); ++i) {
+        ScopedCheckpointSection sec(cp, csprintf("sysTick%d", i));
+        SysTick &st = sysTicks[i];
+        UNSERIALIZE_SCALAR(st.ctrl);
+        UNSERIALIZE_SCALAR(st.load);
+        UNSERIALIZE_SCALAR(st.startTick);
+
+        bool eventScheduled;
+        UNSERIALIZE_SCALAR(eventScheduled);
+        if (eventScheduled) {
+            Tick eventTime;
+            UNSERIALIZE_SCALAR(eventTime);
+            schedule(st.expireEvent, eventTime);
+        }
+    }
+
+    // Rebuild priority queues from deserialized interrupt state.
+    // Cannot call updatePending() here because tc is not set until
+    // startup().  gem5 restore order: ctor → init → unserialize →
+    // startup.
+    pendingInterrupts = {};
+    activeInterrupts = {};
+    for (uint32_t i = 0; i < interrupts.size(); ++i) {
+        Interrupt &intr = interrupts[i];
+        if (intr.pending && intr.enabled) {
+            pendingInterrupts.push(&intr);
+            intr.inPendingQueue = true;
+        }
+        if (intr.active) {
+            activeInterrupts.push(&intr);
+            intr.inActiveQueue = true;
+        }
+    }
 }
 
 } // namespace gem5

@@ -56,9 +56,12 @@ class MProfileSCS(BasicPioDevice):
     # --- Variant-configurable knobs ---
 
     # Number of external IRQ lines.  M0/M0+ supports up to 32;
-    # M3/M4/M7 supports up to 240.  The NVIC register space
+    # M3/M4/M7 supports up to 240.
+    # The Armv7-M profile supports two system-level interrupts, and up to 496
+    # external interrupts.
+    # The NVIC register space
     # (ISER/ICER/ISPR/ICPR/IABR/IPR) is sized to this value.
-    num_irqs = Param.UInt32(32, "Number of external IRQs supported (max 240)")
+    num_irqs = Param.UInt32("Number of external IRQs supported (max 496)")
 
     # Number of implemented priority bits per IRQ.
     # M0/M0+ implements 2 bits (4 levels); M3 typically 3 (8 levels);
@@ -66,25 +69,25 @@ class MProfileSCS(BasicPioDevice):
     # Unimplemented low bits read-as-zero, writes ignored.
     # This directly affects the priority mask applied to IPR writes.
     priority_bits = Param.UInt8(
-        4, "Number of implemented priority bits (2=M0, 3=M3, 4=M4, 8=max)"
+        "Number of implemented priority bits (2=M0, 3=M3, 4=M4, 8=max)"
     )
 
-    # SysTick is mandatory on M3/M4/M7 but optional on M0/M0+.
+    # SysTick is mandatory on M3/M4/M7/M33/M55/M85 but optional on M0/M0+.
     # When False, SysTick register accesses return 0 / are ignored,
     # and no SysTick exception (exc 15) will ever be pended.
-    has_systick = Param.Bool(
-        True,
-        "Whether SysTick timer is present (False for some M0/M0+ variants)",
+    # TODO: capping at 1 for now.
+    num_systick = Param.UInt8(
+        "The number of SysTick. (0=M0/M0+, 1=M3/M4/M7, 2=M33/M55/M85/max)"
     )
 
     # BASEPRI and FAULTMASK are available on M3/M4/M7 but absent on
-    # M0/M0+, which only has PRIMASK.  When False, executionPriority()
+    # M0/M0+/M23, which only has PRIMASK.  When False, executionPriority()
     # only checks PRIMASK, matching M0 hardware behavior.  When True,
     # executionPriority() also consults BASEPRI and FAULTMASK for
     # priority-based masking (needed for correct FreeRTOS critical
     # sections on M3/M4/M7).
     has_basepri = Param.Bool(
-        True, "Whether BASEPRI/FAULTMASK exist (False for M0/M0+)"
+        "Whether BASEPRI/FAULTMASK exist (False for M0/M0+/M23)"
     )
 
     # SysTick CALIB register value.  Implementation-defined; encodes
@@ -92,6 +95,7 @@ class MProfileSCS(BasicPioDevice):
     # Bit[31] (NOREF) = 1 means no external reference clock.
     # Bit[30] (SKEW) = 1 means calibration value is not exactly 10ms.
     # Bits[23:0] = TENMS reload value (0 = calibration not known).
+    # TODO: currently, I'm only allowing NOREF=1 and SKEW=0.
     systick_calib = Param.UInt32(
-        0, "SysTick CALIB register value (implementation-defined)"
+        "SysTick CALIB register value (implementation-defined)"
     )

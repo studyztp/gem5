@@ -50,6 +50,7 @@
 #include "cpu/base.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/thread_context.hh"
+#include "dev/arm/m_profile_scs.hh"
 #include "mem/request.hh"
 
 namespace gem5
@@ -249,6 +250,17 @@ MsrMProfile::execute(ExecContext *xc,
         // Routes through MISA::setMiscReg which handles BASEPRI_MAX
         // conditional-write and other special semantics.
         tc->setMiscReg(reg, val);
+
+        // Notify SCS of mask register changes so it can update its
+        // cached mask state (primask, faultmask, basepri) without
+        // needing to read misc regs on every priority check.
+        if (reg == MISCREG_M_PRIMASK || reg == MISCREG_M_BASEPRI ||
+            reg == MISCREG_M_BASEPRI_MAX || reg == MISCREG_M_FAULTMASK) {
+            auto *msys = dynamic_cast<ArmMSystem *>(
+                tc->getSystemPtr());
+            if (msys && msys->getSCS())
+                msys->getSCS()->setupMask(reg, (int16_t)val);
+        }
     }
 
     if (traceData)
@@ -277,15 +289,22 @@ CpsMProfile::execute(ExecContext *xc,
 {
     ThreadContext *tc = xc->tcBase();
 
+    auto *msys = dynamic_cast<ArmMSystem *>(tc->getSystemPtr());
+    MProfileSCS *scs = (msys) ? msys->getSCS() : nullptr;
+
     if (affectI) {
         // PRIMASK: 1 = disable all configurable-priority exceptions
-        tc->setMiscReg(MISCREG_M_PRIMASK, disable ? 1 : 0);
+        int16_t val = disable ? 1 : 0;
+        tc->setMiscReg(MISCREG_M_PRIMASK, val);
+        if (scs) scs->setupMask(MISCREG_M_PRIMASK, val);
     }
 
     if (affectF) {
         // FAULTMASK: 1 = disable all exceptions except NMI
         // Only available on ARMv7-M (M3/M4/M7), not M0.
-        tc->setMiscReg(MISCREG_M_FAULTMASK, disable ? 1 : 0);
+        int16_t val = disable ? 1 : 0;
+        tc->setMiscReg(MISCREG_M_FAULTMASK, val);
+        if (scs) scs->setupMask(MISCREG_M_FAULTMASK, val);
     }
 
     return NoFault;

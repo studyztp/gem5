@@ -29,14 +29,15 @@
 #ifndef __DEV_ARM_M_PROFILE_SCS_HH__
 #define __DEV_ARM_M_PROFILE_SCS_HH__
 
-/** @file
- * M-profile System Control Space (SCS) device model.
- *
- * Models the 4KB region at 0xE000E000 containing the SCB, NVIC, and
- * SysTick as a single BasicPioDevice with internal address dispatch.
- * SCB registers are bridged to ISA misc regs via ThreadContext.
- */
+#include <functional>
+#include <queue>
+#include <vector>
 
+#include "arch/arm/m_faults.hh"
+#include "arch/arm/m_system.hh"
+#include "arch/arm/regs/misc.hh"
+#include "arch/arm/regs/misc_types.hh"
+#include "cpu/thread_context.hh"
 #include "dev/io_device.hh"
 #include "params/MProfileSCS.hh"
 #include "sim/eventq.hh"
@@ -47,203 +48,305 @@ namespace gem5
 class ArmMSystem;
 class ThreadContext;
 
-/**
- * M-profile exception priority type.
- *
- * Must be signed and wider than 8 bits to represent the full range:
- *   -3  Reset (fixed)
- *   -2  NMI (fixed)
- *   -1  HardFault (fixed) / FAULTMASK execution priority
- *    0  PRIMASK execution priority / highest configurable
- *  1-255  Configurable exception priorities
- *  256  Thread mode default (no masks, no active exceptions)
- *
- * DDI0403E B1.5.4.
- */
-using MExceptionPriority = int16_t;
-
 class MProfileSCS : public BasicPioDevice
 {
   public:
-    PARAMS(MProfileSCS);
-    MProfileSCS(const Params &p);
-
-    /** Handle MMIO read from CPU. */
-    Tick read(PacketPtr pkt) override;
-
-    /** Handle MMIO write from CPU. */
-    Tick write(PacketPtr pkt) override;
-
-    // -- NVIC external interface (called by peripheral devices) --
-
-    /** Assert an external IRQ line (0-based, 0..numIRQs-1). */
-    void sendInt(uint32_t irq);
-
-    /** De-assert an external IRQ line. */
-    void clearInt(uint32_t irq);
-
-    // -- CPU-side interface (called by MProfileInterrupts) --
-
-    /** True if a pending interrupt can preempt current execution. */
-    bool hasDeliverableIRQ() const;
-
-    /** Return exception number of highest-priority pending IRQ. */
-    int acknowledgeIRQ();
-
-    /** Transition interrupt from pending to active after entry. */
-    void activateIRQ(int exc_num);
-
-    /** Transition interrupt from active to inactive on return. */
-    void deactivateIRQ(int exc_num);
-
-    /** Re-scan all sources and update the CPU interrupt signal. */
-    void updatePending();
-
-    /** Register with ArmMSystem; acquire ThreadContext. */
-    void init() override;
-
-    /** Acquire ThreadContext after all init() completes. */
-    void startup() override;
-
-    /**
-     * Serialize NVIC and SysTick state for checkpoint.
-     *
-     * Saves all runtime state that is not reconstructable from Python
-     * params: NVIC enabled/pending/active/priority arrays, cached
-     * priority state, SysTick control/load/startTick, and the
-     * SysTick expiry event schedule.  SCB registers (SHCSR, SHPR1-3,
-     * ICSR, VTOR, etc.) are stored in ISA misc regs and serialized
-     * by MISA — they do not need to be saved here.
-     */
-    void serialize(CheckpointOut &cp) const override;
-
-    /**
-     * Restore NVIC and SysTick state from checkpoint.
-     *
-     * Sets restoredFromCheckpoint flag so that startup() calls
-     * updatePending() after tc is available.  updatePending() cannot
-     * be called here because tc is not set until startup() — gem5
-     * restore order is: unserialize() → startup().
-     */
-    void unserialize(CheckpointIn &cp) override;
-
-  protected:
-    // -- Address dispatch handlers --
-    // Offset is relative to the sub-module's register block.
-
-    Tick readSysTick(Addr offset, uint32_t &data);
-    Tick writeSysTick(Addr offset, uint32_t data);
-    Tick readNVIC(Addr offset, uint32_t &data);
-    Tick writeNVIC(Addr offset, uint32_t data);
-    Tick readSCB(Addr offset, uint32_t &data);
-    Tick writeSCB(Addr offset, uint32_t data);
-
-    // BUG-4 fix: Returns a bitmask of implemented IRQs for a given
-    // 32-bit word.  Unimplemented IRQ bits must be RAZ/WI per
-    // DDI0403E B3.4.3.  Example: numIRQs=82, word 2 → 0x0003FFFF
-    // (18 implemented bits), word 3 → 0x00000000 (all unimplemented).
-    uint32_t irqMaskForWord(int word) const;
-
-    // -- NVIC state (external IRQs 0..numIRQs-1) --
-    // Bit-vector arrays following the GicV2 pattern.  Sized for the
-    // architectural maximum; only words covering 0..numIRQs-1 matter.
-
-    static constexpr int MAX_IRQS = 240;
-    // BUG-1 fix: use ceiling division for bit-vector word count.
-    // MAX_IRQS / 32 = 7 (truncated), which only covers IRQs 0-223.
-    // IRQs 224-239 need word index 7, so we need 8 words.
-    static constexpr int NVIC_WORDS = (MAX_IRQS + 31) / 32;  // = 8
-    static_assert(NVIC_WORDS * 32 >= MAX_IRQS,
-                  "NVIC_WORDS must cover all MAX_IRQS");
-    uint32_t nvicEnabled[NVIC_WORDS];   // ISER/ICER
-    uint32_t nvicPending[NVIC_WORDS];   // ISPR/ICPR
-    uint32_t nvicActive[NVIC_WORDS];    // IABR (read-only)
-    MExceptionPriority nvicPriority[MAX_IRQS]; // IPR (per-IRQ priority)
-
-    /** Cached highest-priority pending exception (-1 = none). */
-    int highestPendingExc;
-
-    /** Priority of highestPendingExc (256 = none pending). */
-    MExceptionPriority highestPendingPri;
-
-    // -- SysTick state --
-    // 24-bit countdown timer.  When enabled, a gem5 event fires
-    // after (load * clockPeriod) ticks; on expiry COUNTFLAG is set
-    // and (if TICKINT) exception 15 is pended.
+    static constexpr uint32_t MAX_NUM_IRQS = 496;
+    static constexpr uint8_t MAX_PRIR_BITS = 8;
+    // TODO: capping at 1 for now.
+    static constexpr uint8_t MAX_NUM_SYSTICKS = 1;
 
     struct SysTick
     {
-        uint32_t ctrl;   // CSR: ENABLE[0], TICKINT[1], CLKSOURCE[2],
-                         //      COUNTFLAG[16]
-        uint32_t load;   // RVR: 24-bit reload value
-        uint32_t calib;  // CALIB: read-only calibration
-        Tick startTick;  // curTick() when last (re)started
+      uint32_t ctrl;   // CSR: ENABLE[0], TICKINT[1], CLKSOURCE[2],
+                       //      COUNTFLAG[16]
+      uint32_t load;   // RVR: 24-bit reload value
+      uint32_t calib;  // CALIB: read-only calibration
+      Tick startTick;  // curTick() when last (re)started
+      EventFunctionWrapper expireEvent;
 
-        EventFunctionWrapper expireEvent;
+      SysTick(MProfileSCS &parent, uint8_t index);
+    };
 
-        SysTick(MProfileSCS &parent);
-    } sysTick;
+    /**
+     * Represents any M-profile exception with configurable priority.
+     *
+     * Used for both external IRQs (exc 16+) and system exceptions
+     * (exc 4-15: MemManage, BusFault, UsageFault, SVCall, DebugMonitor,
+     * PendSV, SysTick).  External IRQs additionally use the 'enabled'
+     * field; system exceptions manage enable state via SHCSR bits.
+     *
+     * interruptNum is the exception number (not 0-based IRQ number):
+     *   - System exceptions: 4-15
+     *   - External IRQs: 16+
+     */
+    struct Interrupt
+    {
+      bool active;
+      bool enabled;
+      bool pending;
+      int16_t priority;
+      uint32_t interruptNum;
 
-    // -- Configuration (from Python params) --
-    // See MProfileSCS.py for per-knob rationale.
+      // Track whether this interrupt is currently in the pending
+      // or active priority queues, to avoid duplicate insertions.
+      bool inPendingQueue;
+      bool inActiveQueue;
 
-    uint32_t numIRQs;      // External IRQ count (max 240)
-    uint8_t priorityBits;   // Implemented priority bits (2-8)
-    uint8_t priorityMask;  // Bitmask of implemented high bits
-                           // e.g. 4 bits -> 0xF0
-    bool hasSysTick;       // SysTick present? (some M0: no)
-    bool hasBasepri;       // BASEPRI/FAULTMASK? (M0: no)
+      Interrupt(bool active, bool enabled, bool pending, int16_t priority,
+                uint32_t interruptNum, bool inPendingQueue, bool inActiveQueue)
+          : active(active), enabled(enabled), pending(pending),
+            priority(priority), interruptNum(interruptNum),
+            inPendingQueue(inPendingQueue), inActiveQueue(inActiveQueue)
+      {}
 
-    // -- System references (mSystem set in ctor, tc set in startup()) --
+      bool operator<(const Interrupt& other) const {
+          return priority < other.priority;
+      }
+    };
+
+    struct InterruptPtrCompare
+    {
+      // min-heap: lowest priority number = highest priority = top.
+      // Tie-break by exception number: lower exception number wins
+      // (DDI0403E B1.5.4).
+      bool operator()(const Interrupt* a, const Interrupt* b) const {
+        if (a->priority == b->priority) {
+          return a->interruptNum > b->interruptNum;
+        }
+        return a->priority > b->priority;
+      }
+    };
+
+  private:
+    uint32_t numIrqs;
+    uint8_t priorityBits;
+    uint8_t irqpriorityMask;
+    uint8_t numSysticks;
+    bool hasBasePri;
+
+    // -- Exception masking state --
+    // Cached from MSR writes to mask registers.  Updated by
+    // setupMask() which is called from m_insts.cc whenever
+    // firmware writes PRIMASK, BASEPRI, BASEPRI_MAX, or FAULTMASK.
+    // This avoids reading misc regs on every priority check.
+
+    /** PRIMASK: when true, raises execution priority to 0,
+     *  blocking all configurable-priority exceptions.
+     *  Only NMI and HardFault can fire. */
+    bool primask = false;
+
+    /** FAULTMASK: when true, raises execution priority to -1,
+     *  blocking everything except NMI.  Auto-cleared on
+     *  exception return (except from NMI). */
+    bool faultmask = false;
+
+    /** BASEPRI threshold: exceptions with priority >= this value
+     *  are blocked.  0 means no masking (disabled). */
+    int16_t basepri = 0;
+
+    /** Lowest priority number among all active exceptions.
+     *  An exception can only preempt if its priority is strictly
+     *  less than this value.  256 = no active exceptions.
+     *  Updated by activateIRQ(), deactivateIRQ(), and SHCSR writes. */
+    int16_t activePriorityCeiling = 256;
+
+    std::vector<SysTick> sysTicks;
+
+    // All configurable-priority exceptions: system exceptions (exc 4-15)
+    // and external IRQs (exc 16+).  Indexed by exception number.
+    std::vector<Interrupt> interrupts;
+
+    std::priority_queue<Interrupt*, std::vector<Interrupt*>,
+                        InterruptPtrCompare> pendingInterrupts;
+    std::priority_queue<Interrupt*, std::vector<Interrupt*>,
+                        InterruptPtrCompare> activeInterrupts;
+
+    // -- SCB register storage --
+    // Stored directly in SCS instead of misc regs.  Firmware
+    // accesses these via MMIO loads/stores to 0xE000ED00-0xE000ED3F.
+
+    uint32_t cpuid;          // 0xD00: read-only, from platform
+    // VTOR (0xD08) is stored in MISA misc reg (MISCREG_M_VTOR),
+    // not here.  MISA owns the alignment mask (vtor_align_bits).
+    // SCS reads/writes VTOR through tc->readMiscRegNoEffect() and
+    // tc->setMiscReg() which applies the alignment mask.
+    // AIRCR (0xD0C) is stored in MISA misc reg (MISCREG_M_AIRCR).
+    // MISA handles the VECTKEY check on write.  SCS reads/writes
+    // through tc.  Contains PRIGROUP (not yet implemented) and
+    // SYSRESETREQ (not yet implemented).
+    //
+    // SCR (0xD10) is stored in MISA misc reg (MISCREG_M_SCR).
+    // Controls low-power behavior (DDI0403E B3.2.7):
+    //   bit[1] SLEEPONEXIT — enter sleep on return from last ISR
+    //   bit[2] SLEEPDEEP   — WFI/WFE uses deep sleep
+    //   bit[4] SEVONPEND   — pending interrupt wakes from sleep
+    // TODO: Not modeled.  Firmware can read/write SCR but the bits
+    // have no effect.  Modeling requires a CPU sleep/suspend model.
+    //
+    // CCR (0xD14) is stored in MISA misc reg (MISCREG_M_CCR).
+    // m_faults.cc reads CCR.STKALIGN from the misc reg during
+    // exception entry.  SCS reads/writes through tc.
+    uint32_t cfsr = 0;       // 0xD28: configurable fault status (W1C)
+    uint32_t hfsr = 0;       // 0xD2C: hardfault status (W1C)
+    uint32_t dfsr = 0;       // 0xD30: debug fault status (W1C)
+    uint32_t mmfar = 0;      // 0xD34: memmanage fault address
+    uint32_t bfar = 0;       // 0xD38: busfault address
 
     ThreadContext *tc = nullptr;
     ArmMSystem *mSystem = nullptr;
 
-    /** Set by unserialize() so startup() knows to call updatePending()
-     *  after tc is available.  updatePending() needs tc to read ICSR
-     *  and compute executionPriority(), but tc is not set until
-     *  startup() — which runs after unserialize() in the restore path. */
-    bool restoredFromCheckpoint = false;
+  public:
+    PARAMS(MProfileSCS);
+    MProfileSCS(const Params &p);
 
-    // -- Internal helpers --
-
-    /** Signal CPU that a deliverable interrupt exists. */
-    void postToInterruptController();
-
-    /** Clear the CPU interrupt signal. */
-    void clearFromInterruptController();
-
-    /** SysTick expired: set COUNTFLAG, optionally pend exc 15. */
-    void sysTickExpire();
-
-    /** Schedule SysTick expiry based on current load value. */
-    void sysTickSchedule();
-
-    /** Compute current SysTick counter from scheduled event time. */
-    uint32_t sysTickCurrentValue() const;
+    // -- Exception mask interface (called by m_insts.cc on MSR) --
 
     /**
-     * Extract the implemented priority bits from a raw 8-bit value.
+     * Update cached exception mask state.
      *
-     * Masks with priorityMask (e.g. 0xF0 for 4-bit priority) and
-     * returns the result as MExceptionPriority.  Centralizes all
-     * bitwise masking so callers don't need raw & operations or casts.
+     * Called by MsrMProfile::execute() when firmware writes to
+     * PRIMASK, BASEPRI, BASEPRI_MAX, or FAULTMASK via MSR.
+     * Caches the mask values so SCS doesn't need to read misc
+     * regs on every priority check.
+     *
+     * @param reg   The misc register being written (e.g.,
+     *              MISCREG_M_PRIMASK, MISCREG_M_BASEPRI, etc.).
+     * @param value The value being written to the register.
      */
-    MExceptionPriority maskedPriority(uint32_t raw) const
-    {
-        return static_cast<MExceptionPriority>(raw & priorityMask);
-    }
+    void setupMask(ArmISA::MiscRegIndex reg, int16_t value);
+
+    // -- Exception Checking
+    bool updatePending();
+
+    // -- MMIO interface (called by CPU memory system) --
+
+    Tick read(PacketPtr pkt) override;
+    Tick write(PacketPtr pkt) override;
+
+    // -- Peripheral device interface (called by hardware models) --
+
+    void sendInt(uint32_t irq);
+    void clearInt(uint32_t irq);
+
+    // -- CPU-side interface (called by MProfileInterrupts) --
+
+    bool hasDeliverableIRQ();
+    int acknowledgeIRQ();
+    bool activateIRQ(int exc_num);
+    void deactivateIRQ(int exc_num);
+
+    // -- gem5 lifecycle --
+
+    void init() override;
+    void startup() override;
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
+
+    // -- SysTick timer --
+
+    /** SysTick expired: set COUNTFLAG, pend exc 15 if TICKINT,
+     *  reload and reschedule if still enabled. */
+    void sysTickExpire(uint8_t index);
+
+    /** Schedule the SysTick expiry event based on LOAD value.
+     *  Fires after (LOAD+1) clock cycles. */
+    void sysTickSchedule(uint8_t index);
+
+    /** Compute current SysTick counter value from scheduled event. */
+    uint32_t sysTickCurrentValue(uint8_t index) const;
+
+  protected:
+    /**
+     * Initialize system exception entries (interrupts[0..15]).
+     *
+     * Sets up the first 16 entries in the interrupts vector:
+     *   0     Reserved
+     *   1     Reset       — fixed priority -3
+     *   2     NMI         — fixed priority -2
+     *   3     HardFault   — fixed priority -1
+     *   4     MemManage   — enabled via SHCSR.MEMFAULTENA
+     *   5     BusFault    — enabled via SHCSR.BUSFAULTENA
+     *   6     UsageFault  — enabled via SHCSR.USGFAULTENA
+     *   7-10  Reserved
+     *   11    SVCall      — always enabled
+     *   12    DebugMonitor — always enabled
+     *   13    Reserved
+     *   14    PendSV      — always enabled
+     *   15    SysTick     — always enabled
+     *
+     * All start with active=false, pending=false.
+     */
+    void initSysInterrupts();
 
     /**
-     * Compute current execution priority (lower = higher priority).
+     * Reset all interrupt state to architectural reset values.
      *
-     * Checks FAULTMASK (if hasBasepri), PRIMASK, BASEPRI (if
-     * hasBasepri), and active exception priorities.  Thread mode
-     * with no masks returns 256 (lowest priority, one beyond max
-     * configurable 255).  Returns MExceptionPriority to represent
-     * -1 (FAULTMASK) through 256 (Thread mode default).
+     * Resets system exceptions (0-15) via initSysInterrupts(),
+     * clears all external IRQ entries (16+) to disabled/inactive/
+     * not-pending/priority-0, and drains the pending and active
+     * priority queues.
+     *
+     * Called from: constructor, MProfileReset::invoke(), and
+     * checkpoint restore.
      */
-     MExceptionPriority executionPriority() const;
+    void resetAllInterrupts();
+
+    /**
+     * Check if an interrupt can be activated given current masks
+     * and the active exception priority.
+     *
+     * Returns true if no mask blocks it and its priority is
+     * strictly higher (lower number) than the current active
+     * exception.  Does not modify any state.
+     */
+    bool canActivate(const Interrupt &intr) const;
+
+    /**
+     * Set an interrupt to pending and add it to the pending queue
+     * if not already there.
+     */
+    void pendInterrupt(Interrupt &intr);
+
+    // -- Internal read/write helpers --
+
+    /** Read a 32-bit register value by aligned SCS offset.
+     *  Used for sub-word read-modify-write. */
+    uint32_t readRegByAddr(Addr alignedAddr);
+
+    /** Reconstruct a 32-bit NVIC bitmap word from interrupts[].
+     *  field: 'e'=enabled, 'p'=pending, 'a'=active. */
+    uint32_t readNvicBits(Addr addr, Addr base, char field);
+
+    /** Read an IPR word (4 packed priority bytes). */
+    uint32_t readIpr(Addr addr);
+
+    /** Read an SCB register by offset from 0xD00. */
+    uint32_t readScb(Addr offset);
+
+    /** Pack 4 exception priorities into a SHPR word. */
+    uint32_t readShpr(uint32_t baseExc);
+
+    /** Compute ICSR value on-the-fly from SCS state. */
+    uint32_t computeICSR();
+
+    /** Compute SHCSR value on-the-fly from interrupts[]. */
+    uint32_t computeSHCSR();
+
+    /** Merge sub-word write data into an existing 32-bit value. */
+    uint32_t mergeSubWord(uint32_t existing, PacketPtr pkt,
+                          unsigned size, int byteOffset);
+
+    /** Apply W1S action to NVIC bitmap bits. */
+    void writeNvicW1S(Addr addr, Addr base, uint32_t data,
+                      std::function<void(Interrupt&)> action);
+
+    /** Apply W1C action to NVIC bitmap bits. */
+    void writeNvicW1C(Addr addr, Addr base, uint32_t data,
+                      std::function<void(Interrupt&)> action);
+
+    /** Write an SCB register by offset from 0xD00. */
+    void writeScb(Addr offset, uint32_t data);
 };
 
 } // namespace gem5
