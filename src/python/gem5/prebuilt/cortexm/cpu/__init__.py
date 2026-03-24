@@ -24,19 +24,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""
-Pre-built Cortex-M platform configurations, CPUs, and boards.
+from gem5.prebuilt.cortexm.cpu.cortex_m4 import CortexM4CPU
 
-Usage:
-    from gem5.prebuilt.cortexm.platforms import (
-        STM32F405Platform,
-        STM32G474REPlatform,
-    )
-    from gem5.prebuilt.cortexm.cpu import CortexM4CPU
-    from gem5.prebuilt.cortexm.boards import STM32G474RETimingBoard
-"""
-
-from gem5.prebuilt.cortexm.boards import STM32G474RETimingBoard
-from gem5.prebuilt.cortexm.cpu import CortexM4CPU
-
-__all__ = ["CortexM4CPU", "STM32G474RETimingBoard"]
+__all__ = ["CortexM4CPU"]

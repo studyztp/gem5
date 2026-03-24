@@ -280,19 +280,19 @@ class STM32G474REPlatform(ArmMPlatform):
                 range=AddrRange(0x08040000, size="256KiB"),
                 latency="30ns",
             ),
-            # SRAM1: zero wait state.
+            # SRAM1: zero wait state.  1 cy @ 170MHz = 5.88ns ≈ 6ns.
             SimpleMemory(
                 range=AddrRange(0x20000000, size="80KiB"),
-                latency="5ns",
+                latency="6ns",
             ),
             # SRAM2: zero wait state, hardware parity check.
             SimpleMemory(
                 range=AddrRange(0x20014000, size="16KiB"),
-                latency="5ns",
+                latency="6ns",
             ),
             # CCM SRAM: zero wait state, hardware parity check.
             SimpleMemory(
                 range=AddrRange(0x10000000, size="32KiB"),
-                latency="5ns",
+                latency="6ns",
             ),
         ]

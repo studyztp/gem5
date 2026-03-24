@@ -507,7 +507,12 @@ ART::recvTimingResp(PacketPtr pkt)
     }
 
     DPRINTF(ARTCache,
-            "recvTimingResp: forwarding to NoncoherentCache\n");
+            "recvTimingResp: forwarding to NoncoherentCache — "
+            "pkt cmd=%s addr=%s size=%u isRead=%d isWrite=%d "
+            "isResponse=%d\n",
+            pkt->cmd.toString(), addrToString(pkt->getAddr()),
+            pkt->getSize(), pkt->isRead(), pkt->isWrite(),
+            pkt->isResponse());
     NoncoherentCache::recvTimingResp(pkt);
 }
 
