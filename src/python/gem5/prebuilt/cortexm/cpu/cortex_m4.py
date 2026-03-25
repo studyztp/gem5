@@ -186,16 +186,12 @@ class CortexM4CPU(ArmMMinorCPU):
     threadPolicy = "SingleThreaded"
 
     # -- Fetch stage (collapsed Fetch1 + Fetch2) --
-    # KNOWN ISSUE: The real M4 ICode bus is 32-bit [DDI0439D §2.2.1],
-    # so fetch width should be 4 bytes. However, setting fetch1LineWidth=4
-    # with cache_line_size=8 triggers a crash in the ART cache when the
-    # CPU request size (4B) doesn't match the cache block size (8B).
-    # Keeping fetch width=8 until the ART/SectorTags interaction is fixed.
-    # The 8-byte fetch effectively models the ART's 64-bit flash read
-    # buffering at the CPU-cache interface level.
+    # The real M4 ICode bus is 32-bit [DDI0439D §2.2.1], so fetch width
+    # is 4 bytes.  The ART cache handles the 4B→8B translation between
+    # the CPU fetch size and the 64-bit flash read width internally.
     fetch1FetchLimit = 1
-    fetch1LineSnapWidth = 8  # TODO: should be 4 per DDI0439D §2.2.1
-    fetch1LineWidth = 8  # TODO: should be 4 per DDI0439D §2.2.1
+    fetch1LineSnapWidth = 4  # 32-bit ICode bus [DDI0439D §2.2.1]
+    fetch1LineWidth = 4  # 32-bit ICode bus [DDI0439D §2.2.1]
     fetch1ToFetch2ForwardDelay = 1  # minimum (cannot be 0)
     fetch1ToFetch2BackwardDelay = 0  # same-cycle: collapses F1+F2
 

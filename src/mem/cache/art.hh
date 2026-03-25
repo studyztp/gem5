@@ -86,6 +86,10 @@ class ART : public NoncoherentCache
     Tick nextQueueReadyTime() const override;
     void recvTimingReq(PacketPtr pkt) override;
     void recvTimingResp(PacketPtr pkt) override;
+    void serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
+                            CacheBlk *blk) override;
+    void handleTimingReqHit(PacketPtr pkt, CacheBlk *blk,
+                            Tick request_time) override;
 
     /**
      * Check whether the addressed block is already present and valid
@@ -126,6 +130,12 @@ class ART : public NoncoherentCache
     bool isInFlashRange(Addr addr) const
     {
         return addr >= flashStartAddr && addr <= flashEndAddr;
+    }
+
+    const uint8_t* getSubBlockData(const PacketPtr src, const PacketPtr dest) {
+        Addr offset = dest->getAddr() - src->getAddr();
+        assert(offset + dest->getSize() <= src->getSize());
+        return src->getConstPtr<uint8_t>() + offset;
     }
 
   protected:
@@ -196,6 +206,14 @@ class ART : public NoncoherentCache
             valid = other.valid;
             data = other.data;
         }
+
+        const uint8_t* getData(Addr target_addr, unsigned target_size) {
+            Addr offset = target_addr - addr;
+            assert(offset + target_size <= blkSize);
+            uint8_t *buf_data = data.data() + offset;
+            return buf_data;
+        }
+
     };
 
     /** Holds the line being or just prefetched from memory. */
@@ -245,12 +263,14 @@ class ART : public NoncoherentCache
         bool matchBlockAddr(const Addr addr,
                             const bool is_secure) const override
         {
-            return (blkAddr == addr) && (isSecure == is_secure);
+            return ((addr & ~(Addr(blkSize) - 1)) == blkAddr) &&
+                                                    (isSecure == is_secure);
         }
 
         bool matchBlockAddr(const PacketPtr pkt) const override
         {
-            return pkt->matchBlockAddr(blkAddr, isSecure, blkSize);
+            return ((pkt->getAddr() & ~(Addr(blkSize) - 1)) == blkAddr) &&
+                                                (isSecure == pkt->isSecure());
         }
 
         bool conflictAddr(const QueueEntry *entry) const override
@@ -522,6 +542,15 @@ class ART : public NoncoherentCache
     BypassCacheEntry bypassCacheEntry;
 
     bool sendBypassPacket(BypassCacheEntry *entry);
+
+    class ARTTranslateState : public Packet::SenderState
+    {
+    public:
+        PacketPtr cpuPkt;  // the original 4-byte packet to serve later
+        ARTTranslateState(PacketPtr pkt) : cpuPkt(pkt) {}
+    };
+
+    ARTTranslateState *cachePktEntry = nullptr;
 
     // ---------------------------------------------------------------
     //  Statistics

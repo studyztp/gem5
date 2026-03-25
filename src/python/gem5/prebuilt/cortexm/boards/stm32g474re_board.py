@@ -243,13 +243,13 @@ class STM32G474RETimingBoard(ArmMSystem):
         self.system_bus = _make_system_bus()
 
         # -- Memories: split flash vs SRAM onto separate buses --
-        flash_starts = {r.start for r in platform.code_ranges}
+        flash_starts = {int(r.start) for r in platform.code_ranges}
 
         self.mem_ranges = []
         for i, mem in enumerate(memories):
             setattr(self, f"mem_{i}", mem)
             self.mem_ranges.append(mem.range)
-            if mem.range.start in flash_starts:
+            if int(mem.range.start) in flash_starts:
                 mem.port = self.flash_bus.mem_side_ports
             else:
                 mem.port = self.system_bus.mem_side_ports
