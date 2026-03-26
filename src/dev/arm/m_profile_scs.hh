@@ -236,6 +236,17 @@ class MProfileSCS : public BasicPioDevice
     bool activateIRQ(int exc_num);
     void deactivateIRQ(int exc_num);
 
+    /**
+     * Return the configured priority of an exception.
+     *
+     * Fixed priorities: Reset=-3, NMI=-2, HardFault=-1.
+     * Configurable: read from interrupts[exc_num].priority.
+     * Returns 256 if exc_num is out of range (lowest possible priority).
+     */
+    int16_t getExcPriority(int exc_num) const;
+    int16_t getCurrentExcPriority() const;
+    int getCurrentExcNum() const;
+
     // -- gem5 lifecycle --
 
     void init() override;

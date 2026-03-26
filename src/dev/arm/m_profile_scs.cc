@@ -888,6 +888,32 @@ MProfileSCS::deactivateIRQ(int exc_num)
         faultmask = false;
 }
 
+int16_t
+MProfileSCS::getExcPriority(int exc_num) const
+{
+    if (exc_num < 0 || exc_num >= (int)interrupts.size())
+        return 256;  // out of range → lowest priority
+    return interrupts[exc_num].priority;
+}
+
+int16_t
+MProfileSCS::getCurrentExcPriority() const
+{
+    if (activeInterrupts.empty())
+        return 256;
+    else
+        return activeInterrupts.top()->priority;
+}
+
+int
+MProfileSCS::getCurrentExcNum() const
+{
+    if (activeInterrupts.empty())
+        return -1;
+    else
+        return activeInterrupts.top()->interruptNum;
+}
+
 bool
 MProfileSCS::updatePending()
 {

@@ -78,6 +78,15 @@ class MProfileInterrupts : public BaseInterrupts
      */
     int lastAckedExcNum = -1;
 
+    bool stackOperating = false;
+    int16_t stackPriority = 256;
+
+    /** Exception number being returned from during unstacking.
+     *  Set by excReturn(), used by removeStackReadPending() to
+     *  deactivate the exception when the return completes.
+     *  -1 when not in an exception return sequence. */
+    int returningExcNum = -1;
+
   public:
     PARAMS(MProfileInterrupts);
     MProfileInterrupts(const Params &p);
@@ -115,6 +124,16 @@ class MProfileInterrupts : public BaseInterrupts
      */
     void updateIntrInfo() override;
 
+    bool validateExcReturn(ThreadContext *tc, uint32_t exc_return,
+      const char *&reason);
+
+    /**
+    * M-profile exception return — unstack the exception frame and
+    * restore CPU state.  Moved from free function so DPRINTF can
+    * use MProfileInterrupts::name().
+    */
+    void excReturnUnstack(ThreadContext *tc, uint32_t exc_return);
+
     /**
      * Handle M-profile exception return (EXC_RETURN).
      * Deactivates the returning exception via SCS, then calls
@@ -130,6 +149,15 @@ class MProfileInterrupts : public BaseInterrupts
      * is detected.
      */
     void excReturn(ThreadContext *tc, uint32_t exc_return);
+
+    /** Called by MMU when stacking/unstacking starts.
+     *  Sets stackOperating, stackPriority, returningExcNum. */
+    void setupStackPending();
+
+    /** Called by MMU (via callback) when stacking/unstacking completes.
+     *  Deactivates returningExcNum and clears stacking state. */
+    void removeStackReadPending();
+    void removeStackWritePending();
 
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;

@@ -232,6 +232,9 @@ DebugFlag("Arm", tags=['arm isa'])
 DebugFlag("MProfileCPSR",
     "Trace CPSR-to-xPSR alias accesses in M-profile",
     tags=['arm isa'])
+DebugFlag("MProfileStacking",
+    "Trace M-profile exception stacking/unstacking and barrier",
+    tags=['arm isa'])
 DebugFlag("ArmTme", "Transactional Memory Extension",
     tags=['arm isa'])
 DebugFlag("MPAM", "MPAM debug flag", tags=['arm isa'])

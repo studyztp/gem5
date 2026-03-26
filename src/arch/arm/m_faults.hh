@@ -159,6 +159,15 @@ class ArmMFault : public FaultBase
     Addr getHandlerAddress(ThreadContext *tc) const;
 
     /**
+     * M-profile exception return — unstack the exception frame and
+     * restore CPU state.  Moved here from free function so DPRINTF
+     * can use ArmMFault::name().
+     *
+     * @param tc         Thread context.
+     * @param exc_return The EXC_RETURN value from LR.
+     */
+
+    /**
      * Compute the EXC_RETURN magic value for LR.
      *
      * Encodes the pre-exception execution state so that exception
@@ -215,7 +224,6 @@ class MProfileReset : public ArmMFault
  * @param tc         Thread context.
  * @param exc_return The EXC_RETURN value that was loaded into PC.
  */
-void mProfileExcReturnUnstack(ThreadContext *tc, uint32_t exc_return);
 
 // =========================================================================
 // CC flat register ↔ xPSR NZCV/GE sync helpers (BUG-5)

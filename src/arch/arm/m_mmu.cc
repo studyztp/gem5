@@ -32,8 +32,10 @@
 #include "arch/arm/m_interrupts.hh"
 #include "arch/arm/page_size.hh"
 #include "arch/arm/pcstate.hh"
+#include "base/trace.hh"
 #include "cpu/base.hh"
 #include "cpu/thread_context.hh"
+#include "debug/MProfileStacking.hh"
 #include "mem/packet_access.hh"
 #include "sim/faults.hh"
 #include "sim/system.hh"
@@ -162,32 +164,94 @@ MTLB::finalizePhysical(const RequestPtr &req, ThreadContext *tc,
 
 // -- StackingPort --
 //
-// QueuedRequestPort with automatic request queuing and retry via
-// ReqPacketQueue.  Requests are scheduled with 1-cycle spacing
-// to model the AHB pipelining of the Cortex-M stacking sequencer.
-// Only recvTimingResp() is needed — retry is handled by the queue.
+// Plain RequestPort with a custom priority queue of deferred packets.
+// Packets are ordered by scheduled tick (earliest first).  The custom
+// queue allows flushStalePackets() to remove abandoned packets directly.
 
 MMMU::StackingPort::StackingPort(const std::string &name, MMMU &mmu)
-    : QueuedRequestPort(name, reqPktQueue, snoopRespQueue),
+    : RequestPort(name),
       mmu(mmu),
-      reqPktQueue(mmu, *this),
-      snoopRespQueue(mmu, *this)
+      sendEvent([this]{ processSendEvent(); }, name + ".sendEvent")
 {
+}
+
+void
+MMMU::StackingPort::schedTimingReq(PacketPtr pkt, Tick when)
+{
+    pendingQueue.push({when, pkt});
+    if (!waitingOnRetry && !sendEvent.scheduled())
+        mmu.schedule(sendEvent, std::max(when, curTick() + 1));
+}
+
+void
+MMMU::StackingPort::processSendEvent()
+{
+    assert(!pendingQueue.empty());
+    auto top = pendingQueue.top();
+
+    if (top.tick > curTick()) {
+        mmu.schedule(sendEvent, top.tick);
+        return;
+    }
+
+    pendingQueue.pop();
+    if (!sendTimingReq(top.pkt)) {
+        // Rejected — put back and wait for retry.
+        pendingQueue.push({curTick(), top.pkt});
+        waitingOnRetry = true;
+        return;
+    }
+
+    if (!pendingQueue.empty() && !sendEvent.scheduled())
+        mmu.schedule(sendEvent,
+            std::max(pendingQueue.top().tick, curTick() + 1));
+}
+
+void
+MMMU::StackingPort::recvReqRetry()
+{
+    waitingOnRetry = false;
+    if (!pendingQueue.empty() && !sendEvent.scheduled())
+        mmu.schedule(sendEvent,
+            std::max(pendingQueue.top().tick, curTick() + 1));
 }
 
 bool
 MMMU::StackingPort::recvTimingResp(PacketPtr pkt)
 {
-    // Each response corresponds to one stacking write or unstacking
-    // read completing in the memory system.  Decrement the counter
-    // and release the barrier when all responses have arrived.
-    assert(mmu.pendingResponses > 0);
-    --mmu.pendingResponses;
+    // Pop the generation tag from the response packet.
+    auto *ss = dynamic_cast<StackingSenderState *>(pkt->popSenderState());
+    panic_if(!ss, "StackingPort::recvTimingResp: missing "
+             "StackingSenderState on response addr=%#x cmd=%s",
+             pkt->getAddr(), pkt->cmdString());
+    uint32_t pktGen = ss->generation;
+    delete ss;
+
+    DPRINTF(MProfileStacking,
+            "StackingPort::recvTimingResp: addr=%#x cmd=%s "
+            "pktGen=%u currentGen=%u expected=%u\n",
+            pkt->getAddr(), pkt->cmdString(),
+            pktGen, mmu.stackingGeneration, mmu.currentGenExpected);
 
     delete pkt;
 
-    if (mmu.pendingResponses == 0)
-        mmu.stackingComplete();
+    if (pktGen == mmu.stackingGeneration) {
+        // Current generation — count toward completion.
+        assert(mmu.currentGenExpected > 0);
+        --mmu.currentGenExpected;
+        if (mmu.currentGenExpected == 0) {
+            DPRINTF(MProfileStacking,
+                    "StackingPort::recvTimingResp: gen %u complete, "
+                    "calling stackingComplete()\n", pktGen);
+            mmu.stackingComplete();
+        }
+    } else {
+        // Stale generation — silently ignore.
+        DPRINTF(MProfileStacking,
+                "StackingPort::recvTimingResp: stale gen %u "
+                "(current %u), ignoring\n",
+                pktGen, mmu.stackingGeneration);
+    }
 
     return true;
 }
@@ -207,12 +271,24 @@ MMMU::MMMU(const Params &p)
 void
 MMMU::stackingComplete()
 {
-    // All stacking writes or unstacking reads have completed in
-    // the memory system.  Release the barrier so held icache
-    // responses are forwarded to the CPU, allowing it to proceed
-    // with executing the exception handler (or returning from one).
-    if (barrier)
+    DPRINTF(MProfileStacking,
+            "stackingComplete: gen=%u\n", stackingGeneration);
+
+    // Notify interrupt controller BEFORE releasing the barrier.
+    // This ensures deactivateIRQ() runs before the CPU resumes.
+    assert(stackingCompleteCallback);
+    stackingCompleteCallback();
+    stackingCompleteCallback = nullptr;
+
+    // Release the barrier so held icache responses are forwarded
+    // to the CPU, allowing it to proceed.
+    if (barrier) {
+        DPRINTF(MProfileStacking,
+                "stackingComplete: releasing barrier "
+                "(holding=%d, heldCount=%u)\n",
+                barrier->isHolding(), barrier->numHeld());
         barrier->releaseAll();
+    }
 }
 
 // -- storeToStack --
@@ -224,6 +300,27 @@ MMMU::storeToStack(Addr frameptr, const std::vector<uint32_t> &values,
     RequestorID rid = stackingRequestorId;
     bool isTimingMode = tc->getSystemPtr()->isTimingMode();
 
+    if (isTimingMode) {
+        // New generation for this stacking operation.
+        stackingGeneration++;
+        currentGenExpected = values.size();
+
+        // Register with interrupt controller: stacking in progress.
+        auto *mintr = dynamic_cast<MProfileInterrupts *>(
+            tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        assert(mintr);
+        mintr->setupStackPending();
+        stackingCompleteCallback = [mintr]() {
+            mintr->removeStackWritePending();
+        };
+    }
+
+    DPRINTF(MProfileStacking,
+            "storeToStack: frameptr=%#x numWords=%u timing=%d "
+            "gen=%u expected=%u\n",
+            frameptr, values.size(), isTimingMode,
+            stackingGeneration, currentGenExpected);
+
     for (uint32_t i = 0; i < values.size(); ++i) {
         Addr addr = frameptr + i * 4;
 
@@ -234,26 +331,22 @@ MMMU::storeToStack(Addr frameptr, const std::vector<uint32_t> &values,
         pkt->setLE<uint32_t>(values[i]);
 
         if (isTimingMode) {
-            // Timing mode: schedule writes with 1-cycle spacing,
-            // modeling AHB pipelining of the stacking sequencer.
-            // The stacking barrier holds icache responses until
-            // all writes complete.
             if (i == 0 && barrier)
                 barrier->startHolding();
+            pkt->pushSenderState(
+                new StackingSenderState(stackingGeneration));
             Tick cpuClkPeriod = tc->getCpuPtr()->clockPeriod();
             Tick sendTick = curTick() + i * cpuClkPeriod;
+            DPRINTF(MProfileStacking,
+                    "storeToStack: scheduling write[%u] addr=%#x "
+                    "val=%#x at tick %u gen=%u\n",
+                    i, addr, values[i], sendTick, stackingGeneration);
             stackingPort.schedTimingReq(pkt, sendTick);
         } else {
-            // Atomic mode: send immediately, get latency back.
-            // No barrier needed — AtomicSimpleCPU doesn't use
-            // timing responses for stall.
             stackingPort.sendAtomic(pkt);
             delete pkt;
         }
     }
-
-    if (isTimingMode)
-        pendingResponses = values.size();
 }
 
 // -- readFromStack --
@@ -262,12 +355,30 @@ std::vector<uint32_t>
 MMMU::readFromStack(Addr frameptr, uint32_t numWords, ThreadContext *tc)
 {
     std::vector<uint32_t> result(numWords);
+    bool isTimingMode = tc->getSystemPtr()->isTimingMode();
+
+    if (isTimingMode) {
+        // New generation for this unstacking operation.
+        stackingGeneration++;
+        currentGenExpected = numWords;
+
+        // Register with interrupt controller: unstacking in progress.
+        auto *mintr = dynamic_cast<MProfileInterrupts *>(
+            tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        assert(mintr);
+        mintr->setupStackPending();
+        stackingCompleteCallback = [mintr]() {
+            mintr->removeStackReadPending();
+        };
+    }
+
+    DPRINTF(MProfileStacking,
+            "readFromStack: frameptr=%#x numWords=%u timing=%d "
+            "gen=%u expected=%u\n",
+            frameptr, numWords, isTimingMode,
+            stackingGeneration, currentGenExpected);
 
     // Phase 1: Functional reads for immediate data.
-    // The caller (mProfileExcReturnUnstack) needs the register
-    // values immediately to restore CPU state.  sendFunctional()
-    // reads directly from the backing store without going through
-    // the timing/atomic protocol — valid in any memory mode.
     for (uint32_t i = 0; i < numWords; ++i) {
         Addr addr = frameptr + i * 4;
 
@@ -278,20 +389,17 @@ MMMU::readFromStack(Addr frameptr, uint32_t numWords, ThreadContext *tc)
 
         stackingPort.sendFunctional(pkt);
         result[i] = pkt->getLE<uint32_t>();
+        DPRINTF(MProfileStacking,
+                "readFromStack: functional read[%u] addr=%#x val=%#x\n",
+                i, addr, result[i]);
 
         delete pkt;
     }
 
     // Phase 2: Timing reads for realistic latency (timing mode only).
-    // The actual data is already captured above.  These timing
-    // requests model the bus cycles the unstacking would take on
-    // real hardware.  The barrier holds the CPU until all timing
-    // responses arrive.  Skipped in atomic mode — no timing protocol.
-    if (tc->getSystemPtr()->isTimingMode()) {
+    if (isTimingMode) {
         if (barrier)
             barrier->startHolding();
-
-        pendingResponses = numWords;
 
         Tick cpuClkPeriod = tc->getCpuPtr()->clockPeriod();
         RequestorID rid = stackingRequestorId;
@@ -304,12 +412,90 @@ MMMU::readFromStack(Addr frameptr, uint32_t numWords, ThreadContext *tc)
             auto pkt = new Packet(req, MemCmd::ReadReq);
             pkt->allocate();
 
+            pkt->pushSenderState(
+                new StackingSenderState(stackingGeneration));
             Tick sendTick = curTick() + i * cpuClkPeriod;
+            DPRINTF(MProfileStacking,
+                    "readFromStack: scheduling read[%u] addr=%#x "
+                    "at tick %u gen=%u\n",
+                    i, addr, sendTick, stackingGeneration);
             stackingPort.schedTimingReq(pkt, sendTick);
         }
     }
 
     return result;
+}
+
+// -- abandonUnstacking --
+
+void
+MMMU::abandonUnstacking()
+{
+    DPRINTF(MProfileStacking,
+            "abandonUnstacking: abandoning gen=%u (expected=%u), "
+            "advancing to gen=%u\n",
+            stackingGeneration, currentGenExpected,
+            stackingGeneration + 1);
+
+    // Advance generation so stale in-flight responses are ignored.
+    stackingGeneration++;
+
+    // Flush unsent stale packets from the queue.  Returns the number
+    // of packets remaining that match the current generation — these
+    // are in-flight and their responses are still expected.
+    uint32_t remaining = stackingPort.flushStalePackets(stackingGeneration);
+    currentGenExpected = remaining;
+
+    DPRINTF(MProfileStacking,
+            "abandonUnstacking: currentGenExpected=%u "
+            "(in-flight matching packets)\n", currentGenExpected);
+
+    // Clear the callback — the abandoned operation should not
+    // trigger removeStackReadPending when stale responses drain.
+    stackingCompleteCallback = nullptr;
+}
+
+// -- flushStalePackets --
+
+uint32_t
+MMMU::StackingPort::flushStalePackets(uint32_t currentGen)
+{
+    std::vector<DeferredPacket> keep;
+    uint32_t remaining = 0;
+
+    // Pop all packets, keep only those matching currentGen.
+    while (!pendingQueue.empty()) {
+        auto dp = pendingQueue.top();
+        pendingQueue.pop();
+
+        auto *ss = dynamic_cast<StackingSenderState *>(
+            dp.pkt->popSenderState());
+        panic_if(!ss, "flushStalePackets: missing StackingSenderState "
+                 "on pkt addr=%#x", dp.pkt->getAddr());
+
+        if (ss->generation == currentGen) {
+            dp.pkt->pushSenderState(ss);
+            keep.push_back(dp);
+            remaining++;
+        } else {
+            DPRINTF(MProfileStacking,
+                    "flushStalePackets: removing pkt addr=%#x "
+                    "gen=%u (current=%u)\n",
+                    dp.pkt->getAddr(), ss->generation, currentGen);
+            delete ss;
+            delete dp.pkt;
+        }
+    }
+
+    // Re-insert current-gen packets.
+    for (auto &dp : keep)
+        pendingQueue.push(dp);
+
+    // Deschedule send event if queue is now empty.
+    if (pendingQueue.empty() && sendEvent.scheduled())
+        mmu.deschedule(sendEvent);
+
+    return remaining;
 }
 
 Port &
@@ -393,8 +579,15 @@ StackingBarrier::CpuSidePort::recvTimingReq(PacketPtr pkt)
     // Always forward fetch requests to memory/cache.
     // During stacking, this lets the icache fill in parallel
     // with the stack frame writes on the data bus.
+    DPRINTF(MProfileStacking,
+            "Barrier::CpuSidePort::recvTimingReq: addr=%#x cmd=%s "
+            "holding=%d\n",
+            pkt->getAddr(), pkt->cmdString(), barrier.holdResponses);
     if (!barrier.memSidePort.sendTimingReq(pkt)) {
         // Memory side is busy — need to retry later.
+        DPRINTF(MProfileStacking,
+                "Barrier::CpuSidePort::recvTimingReq: mem side busy, "
+                "will retry\n");
         barrier.retryReq = true;
         return false;
     }
@@ -450,13 +643,26 @@ StackingBarrier::MemSidePort::recvTimingResp(PacketPtr pkt)
     // forwarding it to the CPU.  The CPU stalls naturally because
     // it is waiting for the icache response.
     if (barrier.holdResponses) {
+        DPRINTF(MProfileStacking,
+                "Barrier::recvTimingResp: HOLDING response addr=%#x "
+                "cmd=%s (heldCount=%u)\n",
+                pkt->getAddr(), pkt->cmdString(),
+                barrier.heldResponses.size());
         barrier.heldResponses.push_back(pkt);
         return true;
     }
 
+    DPRINTF(MProfileStacking,
+            "Barrier::recvTimingResp: FORWARDING response addr=%#x "
+            "cmd=%s to CPU\n",
+            pkt->getAddr(), pkt->cmdString());
+
     // Normal operation: forward response to CPU immediately.
     if (!barrier.cpuSidePort.sendTimingResp(pkt)) {
         // CPU side is busy — remember to retry.
+        DPRINTF(MProfileStacking,
+                "Barrier::recvTimingResp: CPU rejected response, "
+                "will retry\n");
         barrier.retryResp = true;
         return false;
     }
@@ -485,24 +691,37 @@ StackingBarrier::MemSidePort::recvRangeChange()
 void
 StackingBarrier::startHolding()
 {
+    DPRINTF(MProfileStacking,
+            "Barrier::startHolding: begin holding icache responses "
+            "(was holding=%d, heldCount=%u)\n",
+            holdResponses, heldResponses.size());
     holdResponses = true;
 }
 
 void
 StackingBarrier::releaseAll()
 {
+    DPRINTF(MProfileStacking,
+            "Barrier::releaseAll: releasing %u held responses\n",
+            heldResponses.size());
     holdResponses = false;
 
     // Forward all held responses to the CPU in FIFO order.
-    // On real hardware, stacking completes and the instruction
-    // fetch response (which arrived during stacking) is delivered
-    // to the pipeline.
     while (!heldResponses.empty()) {
         PacketPtr pkt = heldResponses.front();
         heldResponses.pop_front();
 
+        DPRINTF(MProfileStacking,
+                "Barrier::releaseAll: forwarding held response "
+                "addr=%#x cmd=%s (%u remaining)\n",
+                pkt->getAddr(), pkt->cmdString(),
+                heldResponses.size());
+
         if (!cpuSidePort.sendTimingResp(pkt)) {
             // CPU side rejected — put it back and wait for retry.
+            DPRINTF(MProfileStacking,
+                    "Barrier::releaseAll: CPU rejected, "
+                    "re-queuing and waiting for retry\n");
             heldResponses.push_front(pkt);
             retryResp = true;
             break;

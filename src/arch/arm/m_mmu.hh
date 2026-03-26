@@ -42,17 +42,18 @@
  */
 
 #include <deque>
+#include <functional>
+#include <queue>
 #include <vector>
 
 #include "arch/generic/mmu.hh"
 #include "arch/generic/tlb.hh"
-#include "mem/packet_queue.hh"
 #include "mem/port.hh"
-#include "mem/qport.hh"
 #include "params/ArmMMMU.hh"
 #include "params/ArmMTLB.hh"
 #include "params/StackingBarrier.hh"
 #include "sim/clocked_object.hh"
+#include "sim/eventq.hh"
 
 namespace gem5
 {
@@ -219,6 +220,9 @@ class StackingBarrier : public ClockedObject
 
     /** True if the barrier is currently holding responses. */
     bool isHolding() const { return holdResponses; }
+
+    /** Number of responses currently held by the barrier. */
+    size_t numHeld() const { return heldResponses.size(); }
 };
 
 /**
@@ -241,33 +245,63 @@ class MMMU : public BaseMMU
     /**
      * Port for exception frame stacking writes and unstacking reads.
      *
-     * Inherits from QueuedRequestPort which provides automatic
-     * request queuing and retry handling via ReqPacketQueue.
+     * Uses a plain RequestPort with a custom deferred packet list
+     * instead of QueuedRequestPort/ReqPacketQueue, so that
+     * flushStalePackets() can access the queue directly.
+     *
      * Requests are scheduled with 1-cycle spacing via
-     * schedTimingReq() — the queue handles bus backpressure
-     * and retries automatically.
-     *
-     * A SnoopRespPacketQueue is required by QueuedRequestPort but
-     * unused (M-profile has no cache snooping).
-     *
-     * Only recvTimingResp() needs to be implemented to count
-     * responses and signal stacking completion.
+     * schedTimingReq() and the internal send event handles
+     * bus backpressure and retries.
      */
-    class StackingPort : public QueuedRequestPort
+    class StackingPort : public RequestPort
     {
       private:
         MMMU &mmu;
-        ReqPacketQueue reqPktQueue;
-        SnoopRespPacketQueue snoopRespQueue;
+
+        struct DeferredPacket
+        {
+            Tick tick;
+            PacketPtr pkt;
+            DeferredPacket(Tick t, PacketPtr p) : tick(t), pkt(p) {}
+            // Min-heap: earliest tick has highest priority.
+            bool
+            operator>(const DeferredPacket &o) const
+            {
+                return tick > o.tick;
+            }
+        };
+
+        std::priority_queue<DeferredPacket,
+                            std::vector<DeferredPacket>,
+                            std::greater<DeferredPacket>> pendingQueue;
+        EventFunctionWrapper sendEvent;
+        bool waitingOnRetry = false;
+
+        /** Try to send the front packet if its tick has arrived. */
+        void processSendEvent();
 
       public:
         StackingPort(const std::string &name, MMMU &mmu);
 
+        /** Schedule a timing request for future sending. */
+        void schedTimingReq(PacketPtr pkt, Tick when);
+
+        /**
+         * Flush unsent packets with stale generations from the
+         * queue.  Called by abandonUnstacking().
+         *
+         * Removes packets whose generation != currentGen.
+         * Returns the number of remaining (current-gen) packets.
+         */
+        uint32_t flushStalePackets(uint32_t currentGen);
+
       protected:
+        void recvReqRetry() override;
+
         /**
          * Receive response from memory for a stacking write or
-         * unstacking read.  Decrements the pending response counter
-         * and signals completion when all responses have arrived.
+         * unstacking read.  Checks generation; only responses
+         * matching the current generation count toward completion.
          */
         bool recvTimingResp(PacketPtr pkt) override;
     };
@@ -285,12 +319,36 @@ class MMMU : public BaseMMU
      *  to be registered before regStats(). */
     RequestorID stackingRequestorId = Request::invldRequestorId;
 
-    /** Number of timing responses still outstanding.
-     *  When this reaches 0, the barrier is released. */
-    uint32_t pendingResponses = 0;
+    /** Generation counter for stacking operations.
+     *  Incremented on each storeToStack/readFromStack/abandonUnstacking
+     *  call.  Each packet carries its generation via StackingSenderState.
+     *  Only responses matching the current generation are counted. */
+    uint32_t stackingGeneration = 0;
 
-    /** Called when pendingResponses reaches 0.
-     *  Releases the stacking barrier. */
+    /** Number of responses still expected for the current generation.
+     *  Decremented when a response with matching generation arrives.
+     *  When it hits 0, stackingComplete() is called.
+     *  Stale responses (generation mismatch) are silently ignored. */
+    uint32_t currentGenExpected = 0;
+
+    /** SenderState attached to each stacking/unstacking packet.
+     *  Carries the generation counter so recvTimingResp can identify
+     *  which operation the response belongs to. */
+    class StackingSenderState : public Packet::SenderState
+    {
+      public:
+        uint32_t generation;
+        StackingSenderState(uint32_t gen) : generation(gen) {}
+    };
+
+    /** Callback invoked when the current generation's responses all
+     *  arrive (stackingComplete).  Set by storeToStack/readFromStack
+     *  to MProfileInterrupts::removeStackReadPending.  Cleared by
+     *  abandonUnstacking(). */
+    std::function<void()> stackingCompleteCallback;
+
+    /** Called when currentGenExpected reaches 0.
+     *  Releases the stacking barrier and invokes the callback. */
     void stackingComplete();
 
   public:
@@ -338,6 +396,21 @@ class MMMU : public BaseMMU
      */
     std::vector<uint32_t> readFromStack(Addr frameptr, uint32_t numWords,
                                         ThreadContext *tc);
+
+    /**
+     * Abandon the current unstacking operation.
+     *
+     * Called by MProfileInterrupts when a higher-priority exception
+     * preempts the current exception return.  Increments the generation
+     * counter so stale responses are ignored, flushes unsent packets
+     * from the stacking port queue, and clears the completion callback.
+     *
+     * In-flight packets (already sent to memory) will return and be
+     * silently ignored by the generation check in recvTimingResp.
+     * This matches real HW: in-progress AHB beat completes, remaining
+     * beats are cancelled.
+     */
+    void abandonUnstacking();
 };
 
 } // namespace ArmISA

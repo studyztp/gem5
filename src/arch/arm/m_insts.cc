@@ -50,6 +50,7 @@
 #include "cpu/base.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/thread_context.hh"
+#include "debug/MProfileStacking.hh"
 #include "dev/arm/m_profile_scs.hh"
 #include "mem/request.hh"
 
@@ -338,6 +339,9 @@ BxMProfile::execute(ExecContext *xc,
     if ((target & 0xFFFFFFF0) == 0xFFFFFFF0) {
         // Exception return: deactivate via interrupt controller, then
         // unstack CPU state.  MProfileInterrupts::excReturn() handles both.
+        DPRINTF(MProfileStacking,
+                "BxMProfile: EXC_RETURN detected target=%#x, "
+                "triggering exception return\n", target);
         auto *mintr = dynamic_cast<MProfileInterrupts *>(
             tc->getCpuPtr()->getInterruptController(tc->threadId()));
         assert(mintr && "M-profile CPU must use MProfileInterrupts");
@@ -529,6 +533,9 @@ ExcReturnFromPC::execute(ExecContext *xc,
 {
     ThreadContext *tc = xc->tcBase();
     // The EXC_RETURN value was the address the CPU tried to fetch from.
+    DPRINTF(MProfileStacking,
+            "ExcReturnFromPC: excReturnVal=%#x, "
+            "triggering exception return\n", excReturnVal);
     // Exception return: deactivate via interrupt controller, then
     // unstack CPU state.  MProfileInterrupts::excReturn() handles both.
     auto *mintr = dynamic_cast<MProfileInterrupts *>(
