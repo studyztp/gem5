@@ -31,8 +31,13 @@ Pipeline and FU latencies from DDI0439D (Cortex-M4 TRM):
   - 3-stage pipeline (Fetch, Decode, Execute), single-issue, in-order
   - Single-cycle 32x32 multiplier
   - Data-dependent division (2-12 cycles)
-  - VFPv4 single-precision FPU
-  - No architectural branch prediction hardware
+  - VFPv4 single-precision FPU:
+      VADD/VSUB/VMUL/VCMP = 1 cy  [Table 7-1]
+      VMLA/VFMA = 3 cy            [Table 7-1]
+      VDIV/VSQRT = 14 cy          [Table 7-1]
+  - Limited address speculation (reduces branch P from 3 to 1)
+  - STR effective = 1 cy with write buffer [§3.3.2 p.3-11]
+  - LDR pipelining: back-to-back LDR = 1 cy each [§3.3.2 p.3-12]
 
 Follows the U74CPU pattern from prebuilt/riscvmatched/riscvmatched_core.py.
 """
@@ -85,9 +90,8 @@ class M4IntDivFU(MinorFU):
 
 
 class M4FloatFU(MinorFU):
-    """VFPv4 single-precision + DSP SIMD.  VADD/VSUB/VMUL/VCMP/VCVT = 1 cy.
-    VMLA/VFMA=3cy and VDIV/VSQRT=14cy are underestimated at opLat=1;
-    would need MinorFUTiming rules for per-instruction latency."""
+    """VFPv4 single-precision + DSP SIMD — single-cycle operations.
+    VADD/VSUB/VMUL/VCMP/VCVT = 1 cy [DDI0439D Table 7-1]."""
 
     opClasses = minorMakeOpClassSet(
         [
@@ -96,15 +100,11 @@ class M4FloatFU(MinorFU):
             "FloatCvt",
             "FloatMisc",
             "FloatMult",
-            "FloatMultAcc",
-            "FloatDiv",
-            "FloatSqrt",
             "SimdAdd",
             "SimdAlu",
             "SimdCmp",
             "SimdMisc",
             "SimdMult",
-            "SimdMultAcc",
             "SimdShift",
             "SimdShiftAcc",
         ]
@@ -112,6 +112,25 @@ class M4FloatFU(MinorFU):
     opLat = 1
     issueLat = 1
     timings = [MinorFUTiming(description="M4Float", srcRegsRelativeLats=[1])]
+
+
+class M4FloatMacFU(MinorFU):
+    """VMLA/VFMA/VFMS/VNMLA/VNMLS — 3-cycle multiply-accumulate.
+    Non-pipelined [DDI0439D Table 7-1]."""
+
+    opClasses = minorMakeOpClassSet(["FloatMultAcc", "SimdMultAcc"])
+    opLat = 3
+    issueLat = 3
+    timings = [MinorFUTiming(description="M4FMac", srcRegsRelativeLats=[2])]
+
+
+class M4FloatDivFU(MinorFU):
+    """VDIV.F32 = 14 cy, VSQRT.F32 = 14 cy — non-pipelined.
+    [DDI0439D Table 7-1, pages 7-4/7-5]."""
+
+    opClasses = minorMakeOpClassSet(["FloatDiv", "FloatSqrt"])
+    opLat = 14
+    issueLat = 14
 
 
 class M4MemFU(MinorFU):
@@ -144,20 +163,27 @@ class CortexM4FUPool(MinorFUPool):
         M4IntMulFU(),
         M4IntDivFU(),
         M4FloatFU(),
+        M4FloatMacFU(),
+        M4FloatDivFU(),
         M4MemFU(),
         M4MiscFU(),
     ]
 
 
 # ---------------------------------------------------------------------------
-# Branch Predictor — minimal, M4 has no architectural BP [DDI0439D §2.1]
+# Branch Predictor — M4 has limited speculative address resolution
+# [DDI0439D §3.3.1, P definition: "whether the processor manages to
+# speculate the address early"].  Not a full branch predictor, but the
+# TRM documents that P can be reduced from 3 to 1 via speculation.
+# We use a small LocalBP to approximate this limited speculation.
 # ---------------------------------------------------------------------------
 
 
 class CortexM4BP(BranchPredictor):
-    """Minimal predictor: M4 has no documented branch prediction hardware.
-    We use a tiny LocalBP to capture tight-loop patterns without being
-    unrealistically accurate."""
+    """Small predictor approximating the M4's limited address speculation.
+    The Cortex-M4 can 'speculate the address early' [DDI0439D p.3-4],
+    reducing P from worst-case 3 to best-case 1.  A tiny LocalBP captures
+    tight-loop patterns without being unrealistically accurate."""
 
     instShiftAmt = 1  # Thumb: 2-byte (half-word) aligned
     conditionalBranchPred = LocalBP(localPredictorSize=64, localCtrBits=2)
@@ -189,13 +215,25 @@ class CortexM4CPU(ArmMMinorCPU):
     # The real M4 ICode bus is 32-bit [DDI0439D §2.2.1], so fetch width
     # is 4 bytes.  The ART cache handles the 4B→8B translation between
     # the CPU fetch size and the 64-bit flash read width internally.
+    #
+    # fetch1FetchLimit=1: only one fetch in flight at a time.
+    # The ART cache can only handle one outstanding cache lookup
+    # (cachePktEntry is a single slot).  fetchLimit=2 would require
+    # the ART to queue or block requests, which conflicts with
+    # BaseCache's own setBlocked/clearBlocked mechanism.
+    # The 1-cycle pipeline overhead per fetch is a known gem5 limitation
+    # (real M4 achieves 0-WS fetch from ART buffers).
     fetch1FetchLimit = 1
     fetch1LineSnapWidth = 4  # 32-bit ICode bus [DDI0439D §2.2.1]
     fetch1LineWidth = 4  # 32-bit ICode bus [DDI0439D §2.2.1]
     fetch1ToFetch2ForwardDelay = 1  # minimum (cannot be 0)
     fetch1ToFetch2BackwardDelay = 0  # same-cycle: collapses F1+F2
 
-    fetch2InputBufferSize = 1
+    # fetch2InputBufferSize=2 lets Fetch2 hold 2 lines so that Fetch1
+    # can forward the next line while Fetch2 is still draining the
+    # current one.  Without this, fetchLimit=2 would stall on back-
+    # pressure from Fetch2's single-entry buffer.
+    fetch2InputBufferSize = 2
     fetch2ToDecodeForwardDelay = 1
     fetch2CycleInput = True
 
@@ -213,11 +251,24 @@ class CortexM4CPU(ArmMMinorCPU):
     executeMemoryIssueLimit = 1
     executeMemoryCommitLimit = 1
     executeInputBufferSize = 3
-    executeMaxAccessesInMemory = 1  # no memory-level parallelism
-    executeLSQMaxStoreBufferStoresPerCycle = 1
+
+    # -- Memory / LSQ parameters --
+    # The Cortex-M4 has a write buffer that decouples stores from the
+    # pipeline: "STR Rx,[Ry,#imm] is always one cycle" [DDI0439D §3.3.2
+    # p.3-11].  We model this with a 3-entry store buffer and allow
+    # 2 concurrent memory accesses so that stores can drain in the
+    # background while the next load/store issues.
+    #
+    # Also: PUSH/POP decompose into N micro-ops in gem5.  With only 1
+    # concurrent access, each micro-op is fully serialized (~6 cy each).
+    # Allowing 2 concurrent accesses lets the pipeline overlap address
+    # generation with data transfer, reducing PUSH/POP from ~5x to ~2-3x
+    # overcount.  (Full 1+N accuracy requires C++ burst-transfer support.)
+    executeMaxAccessesInMemory = 2
+    executeLSQMaxStoreBufferStoresPerCycle = 2
     executeLSQRequestsQueueSize = 1
-    executeLSQTransfersQueueSize = 1
-    executeLSQStoreBufferSize = 1  # M4 has very small store buffer
+    executeLSQTransfersQueueSize = 2
+    executeLSQStoreBufferSize = 3
     executeBranchDelay = 1
     executeMemoryWidth = 8  # max LSQ transfer width (LDRD/STRD = 8 bytes)
     executeSetTraceTimeOnCommit = True

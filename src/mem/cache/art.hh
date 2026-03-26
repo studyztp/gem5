@@ -28,6 +28,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "base/intmath.hh"
@@ -74,6 +75,9 @@ class ART : public NoncoherentCache
 
     /** Requestor ID registered for ART prefetch traffic. */
     RequestorID artRequestorId;
+
+    /** Cycles to serve a request from the ART prefetch/current buffer. */
+    const Cycles bufferHitLatency;
 
     /** Start of the flash memory region (prefetch bounds check). */
     const Addr flashStartAddr;

@@ -19,6 +19,7 @@ ART::ART(const ARTCacheParams &p)
       pfBlkSize(p.pf_blk_size),
       artPrefetchOrder(0),
       artRequestorId(p.system->getRequestorId(this)),
+      bufferHitLatency(p.buffer_hit_latency),
       flashStartAddr(p.flash_start_addr),
       flashEndAddr(p.flash_end_addr),
       prefetchBuffer(pfBlkSize),
@@ -148,7 +149,7 @@ ART::serveFromBuffer(PacketPtr pkt, ARTPrefetchBuffer &buf)
 {
     pkt->setData(buf.getData(pkt->getAddr(), pkt->getSize()));
     pkt->makeTimingResponse();
-    cpuSidePort.schedTimingResp(pkt, clockEdge(Cycles(1)));
+    cpuSidePort.schedTimingResp(pkt, clockEdge(bufferHitLatency));
 }
 
 // -------------------------------------------------------------------
@@ -373,6 +374,7 @@ ART::recvTimingReq(PacketPtr pkt)
 
     DPRINTF(ARTCache,
             "recvTimingReq: forwarding to NoncoherentCache\n");
+
     assert(cachePktEntry == nullptr);
     cachePktEntry = new ARTTranslateState(pkt);
     RequestPtr cacheReq = std::make_shared<Request>(
@@ -457,7 +459,7 @@ ART::recvTimingResp(PacketPtr pkt)
                     getSubBlockData(pkt, entry->cpuPtr));
                 entry->cpuPtr->makeTimingResponse();
                 cpuSidePort.schedTimingResp(
-                    entry->cpuPtr, clockEdge(Cycles(1)));
+                    entry->cpuPtr, clockEdge(bufferHitLatency));
                 entry->clearCPUWaiting();
             }
 
@@ -474,7 +476,9 @@ ART::recvTimingResp(PacketPtr pkt)
                 DPRINTF(ARTCache,
                     "recvTimingResp: promoted prefetch -> "
                     "current buffer\n");
-                nextPfAddr = getNextSequentialAddr(nextPfAddr);
+                if (currentBuffer.addr == nextPfAddr) {
+                    nextPfAddr = getNextSequentialAddr(nextPfAddr);
+                }
                 DPRINTF(ARTCache,
                         "recvTimingResp: advancing next prefetch "
                         "addr to %s\n", addrToString(nextPfAddr));

@@ -270,29 +270,37 @@ class STM32G474REPlatform(ArmMPlatform):
         firmware places the vector table at 0x08000000.
         """
         return [
-            # Flash Bank 1: ~30ns models wait states at 170MHz.
+            # Flash Bank 1: 4 WS at 170MHz = 5 CPU cycles [RM0440 Table 19].
+            # 5 cy × 5.882 ns = 29.41 ns.  Using 29 ns so that
+            # ceil(29000 / 5882) = ceil(4.93) = 5 cycles exactly.
+            # (The previous 30 ns rounded up to 6 cycles — 1 too many.)
             SimpleMemory(
                 range=AddrRange(0x08000000, size="256KiB"),
-                latency="30ns",
+                latency="29ns",
             ),
             # Flash Bank 2: same latency as Bank 1.
             SimpleMemory(
                 range=AddrRange(0x08040000, size="256KiB"),
-                latency="30ns",
+                latency="29ns",
             ),
-            # SRAM1: zero wait state.  1 cy @ 170MHz = 5.88ns ≈ 6ns.
+            # SRAM1: zero wait state [RM0440 §2].
+            # The system_bus adds 1 cy (frontend_latency) for the AHB
+            # address phase.  We need the total round-trip to be 2 cycles
+            # (1 cy bus + 1 cy data).  With 1 ns here:
+            #   total = 5882 (bus) + 1000 = 6882 → ceil(6882/5882) = 2 cy ✓
+            # (The previous 6 ns gave 5882 + 6000 = 11882 → 3 cy — too high.)
             SimpleMemory(
                 range=AddrRange(0x20000000, size="80KiB"),
-                latency="6ns",
+                latency="1ns",
             ),
             # SRAM2: zero wait state, hardware parity check.
             SimpleMemory(
                 range=AddrRange(0x20014000, size="16KiB"),
-                latency="6ns",
+                latency="1ns",
             ),
             # CCM SRAM: zero wait state, hardware parity check.
             SimpleMemory(
                 range=AddrRange(0x10000000, size="32KiB"),
-                latency="6ns",
+                latency="1ns",
             ),
         ]
