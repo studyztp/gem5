@@ -58,6 +58,7 @@ will create SimpleMemory objects for each range and wire them to the bus.
 
 from m5.objects.MProfilePlatform import ArmMPlatform
 from m5.objects.MProfileSCS import MProfileSCS
+from m5.objects.PipelinedSimpleMemory import PipelinedSimpleMemory
 from m5.objects.SimpleMemory import SimpleMemory
 from m5.params import AddrRange
 
@@ -270,37 +271,62 @@ class STM32G474REPlatform(ArmMPlatform):
         firmware places the vector table at 0x08000000.
         """
         return [
-            # Flash Bank 1: 4 WS at 170MHz = 5 CPU cycles [RM0440 Table 19].
-            # 5 cy × 5.882 ns = 29.41 ns.  Using 29 ns so that
-            # ceil(29000 / 5882) = ceil(4.93) = 5 cycles exactly.
-            # (The previous 30 ns rounded up to 6 cycles — 1 too many.)
-            SimpleMemory(
+            # Flash Bank 1: 4 WS at 170MHz [RM0440 Table 19].
+            # address_phase_cycles=1 models the AHB address phase (1 cy).
+            # latency models the data phase only: 4 WS = 4 cycles.
+            # 4 cy × 5882 ticks = 23528 ticks = 23.528 ns.
+            # Using "23ns" so ceil(23000/5882) = ceil(3.91) = 4 cycles.
+            # The total request-to-response is 4 cy (latency) + bus
+            # propagation, matching the real 4 WS timing.
+            # read_buffer_size=8: models the 64-bit flash read interface
+            # [RM0440 §4.2].  Consecutive 4-byte reads within the same
+            # 8-byte aligned block hit the read buffer at 1 cycle instead
+            # of the full 4-cycle flash latency.
+            PipelinedSimpleMemory(
                 range=AddrRange(0x08000000, size="256KiB"),
                 latency="29ns",
+                max_outstanding=2,
+                address_phase_cycles=1,
+                read_buffer_size=8,
+                buffer_hit_cycles=1,
             ),
-            # Flash Bank 2: same latency as Bank 1.
-            SimpleMemory(
+            # Flash Bank 2: same latency and read buffer as Bank 1.
+            PipelinedSimpleMemory(
                 range=AddrRange(0x08040000, size="256KiB"),
                 latency="29ns",
+                max_outstanding=2,
+                address_phase_cycles=1,
+                read_buffer_size=8,
+                buffer_hit_cycles=1,
             ),
             # SRAM1: zero wait state [RM0440 §2].
-            # The system_bus adds 1 cy (frontend_latency) for the AHB
-            # address phase.  We need the total round-trip to be 2 cycles
-            # (1 cy bus + 1 cy data).  With 1 ns here:
-            #   total = 5882 (bus) + 1000 = 6882 → ceil(6882/5882) = 2 cy ✓
-            # (The previous 6 ns gave 5882 + 6000 = 11882 → 3 cy — too high.)
-            SimpleMemory(
+            # With frontend_latency=0 on system_bus (address phase now
+            # modeled in PipelinedSimpleMemory), the total SRAM access is
+            # address_phase (1 cy) + latency (1 ns < 1 cy) ≈ 2 cycles.
+            PipelinedSimpleMemory(
                 range=AddrRange(0x20000000, size="80KiB"),
                 latency="1ns",
+                max_outstanding=2,
+                address_phase_cycles=1,
+                read_buffer_size=0,
+                buffer_hit_cycles=1,
             ),
             # SRAM2: zero wait state, hardware parity check.
-            SimpleMemory(
+            PipelinedSimpleMemory(
                 range=AddrRange(0x20014000, size="16KiB"),
                 latency="1ns",
+                max_outstanding=2,
+                address_phase_cycles=1,
+                read_buffer_size=0,
+                buffer_hit_cycles=1,
             ),
             # CCM SRAM: zero wait state, hardware parity check.
-            SimpleMemory(
+            PipelinedSimpleMemory(
                 range=AddrRange(0x10000000, size="32KiB"),
                 latency="1ns",
+                max_outstanding=2,
+                address_phase_cycles=1,
+                read_buffer_size=0,
+                buffer_hit_cycles=1,
             ),
         ]

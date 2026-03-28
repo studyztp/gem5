@@ -70,22 +70,6 @@ class SimpleMemory : public AbstractMemory
 
   private:
 
-    /**
-     * A deferred packet stores a packet along with its scheduled
-     * transmission time
-     */
-    class DeferredPacket
-    {
-
-      public:
-
-        const Tick tick;
-        const PacketPtr pkt;
-
-        DeferredPacket(PacketPtr _pkt, Tick _tick) : tick(_tick), pkt(_pkt)
-        { }
-    };
-
     class MemoryPort : public ResponsePort
     {
       private:
@@ -120,13 +104,6 @@ class SimpleMemory : public AbstractMemory
     const Tick latency_var;
 
     /**
-     * Internal (unbounded) storage to mimic the delay caused by the
-     * actual memory access. Note that this is where the packet spends
-     * the memory latency.
-     */
-    std::list<DeferredPacket> packetQueue;
-
-    /**
      * Bandwidth in ticks per byte. The regulation affects the
      * acceptance rate of requests and the queueing takes place after
      * the regulation.
@@ -138,6 +115,30 @@ class SimpleMemory : public AbstractMemory
      * for an enum with only two states.
      */
     bool isBusy;
+
+  protected:
+    /**
+     * A deferred packet stores a packet along with its scheduled
+     * transmission time
+     */
+    class DeferredPacket
+    {
+
+      public:
+
+        const Tick tick;
+        const PacketPtr pkt;
+
+        DeferredPacket(PacketPtr _pkt, Tick _tick) : tick(_tick), pkt(_pkt)
+        { }
+    };
+
+    /**
+     * Internal (unbounded) storage to mimic the delay caused by the
+     * actual memory access. Note that this is where the packet spends
+     * the memory latency.
+     */
+    std::list<DeferredPacket> packetQueue;
 
     /**
      * Remember if we have to retry an outstanding request that
@@ -151,6 +152,7 @@ class SimpleMemory : public AbstractMemory
      */
     bool retryResp;
 
+  private:
     mutable Random::RandomPtr rng = Random::genRandom();
 
     /**
@@ -167,6 +169,7 @@ class SimpleMemory : public AbstractMemory
      */
     void dequeue();
 
+  protected:
     EventFunctionWrapper dequeueEvent;
 
     /**
@@ -181,6 +184,9 @@ class SimpleMemory : public AbstractMemory
      * hold it for deletion until a subsequent call
      */
     std::unique_ptr<Packet> pendingDelete;
+
+    /** Send a retry to the upstream port. */
+    void sendPortRetryReq() { port.sendRetryReq(); }
 
   public:
 
@@ -198,7 +204,7 @@ class SimpleMemory : public AbstractMemory
     void recvFunctional(PacketPtr pkt);
     void recvMemBackdoorReq(const MemBackdoorReq &req,
             MemBackdoorPtr &backdoor);
-    bool recvTimingReq(PacketPtr pkt);
+    virtual bool recvTimingReq(PacketPtr pkt);
     void recvRespRetry();
 };
 

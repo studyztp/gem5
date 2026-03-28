@@ -159,16 +159,16 @@ def _make_flash_bus():
 def _make_system_bus():
     """AHB bus matrix for SRAM and peripheral access.
 
-    Models the Cortex-M4 System bus (AHB-Lite).  32-bit data path,
-    1-cycle address/arbitration phase.  The response returns without
-    additional bus overhead — the memory's own latency covers the
-    AHB data phase.
+    Models the Cortex-M4 System bus (AHB-Lite).  32-bit data path.
+    All bus latencies are 0 — the AHB address phase is now modeled
+    inside PipelinedSimpleMemory (address_phase_cycles=1) to enable
+    address/data phase overlap for pipelined transfers.
 
-    Total SRAM read:  1 cy (bus arbitration) + 1 cy (SRAM 0 WS) = 2 cy.
-    Total SRAM write: 1 cy (bus arbitration) + 1 cy (SRAM 0 WS) = 2 cy.
+    Total SRAM read:  1 cy (address phase in memory) + 1 cy (data) = 2 cy.
     """
     bus = NoncoherentXBar(
-        frontend_latency=1,
+        header_latency=0,
+        frontend_latency=0,
         forward_latency=0,
         response_latency=0,
         width=4,
@@ -185,12 +185,17 @@ def _make_addr_router():
     routed to the ART cache, everything else goes to the default port
     (system_bus) bypassing the cache.  Zero latency because the address
     decode is part of the ART, not a physical bus.
+
+    Width = 8 bytes to match cache_line_size (64-bit flash read width).
+    A narrower width would add artificial payloadDelay to 8-byte fetch
+    requests — the real bandwidth constraint is in the downstream bus
+    (flash_bus or system_bus), not this address router.
     """
     return NoncoherentXBar(
         frontend_latency=0,
         forward_latency=0,
         response_latency=0,
-        width=4,
+        width=8,
         header_latency=0,
     )
 

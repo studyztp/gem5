@@ -46,6 +46,7 @@
 #include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
+#include "cpu/minor/fetch2.hh"
 #include "cpu/minor/pipeline.hh"
 #include "debug/Drain.hh"
 #include "debug/Fetch.hh"
@@ -572,18 +573,22 @@ Fetch1::processResponse(Fetch1::FetchRequestPtr response,
     }
 }
 
+Fetch1::~Fetch1()
+{
+}
+
 void
 Fetch1::evaluate()
 {
-    const BranchData &execute_branch = *inp.outputWire;
-    const BranchData &fetch2_branch = *prediction.outputWire;
     ForwardLineData &line_out = *out.inputWire;
-
     assert(line_out.isBubble());
+    evaluateCore(*inp.outputWire, *prediction.outputWire, line_out);
+}
 
-    for (ThreadID tid = 0; tid < cpu.numThreads; tid++)
-        fetchInfo[tid].blocked = !nextStageReserve[tid].canReserve();
-
+void
+Fetch1::handleBranchRedirects(const BranchData &execute_branch,
+                              const BranchData &fetch2_branch)
+{
     /** Are both branches from later stages valid and for the same thread? */
     if (execute_branch.threadId != InvalidThreadID &&
         execute_branch.threadId == fetch2_branch.threadId) {
@@ -644,7 +649,11 @@ Fetch1::evaluate()
             }
         }
     }
+}
 
+ThreadID
+Fetch1::tryToFetch()
+{
     if (numInFlightFetches() < fetchLimit) {
         ThreadID fetch_tid = getScheduledThread();
 
@@ -653,17 +662,21 @@ Fetch1::evaluate()
 
             /* Generate fetch to selected thread */
             fetchLine(fetch_tid);
-            /* Take up a slot in the fetch queue */
-            nextStageReserve[fetch_tid].reserve();
+            return fetch_tid;
         } else {
             DPRINTF(Fetch, "No active threads available to fetch from\n");
         }
     }
 
+    return InvalidThreadID;
+}
 
-    /* Halting shouldn't prevent fetches in flight from being processed */
-    /* Step fetches through the icachePort queues and memory system */
-    stepQueues();
+void
+Fetch1::processCompletedFetch(ForwardLineData &line_out,
+                              bool &was_discarded,
+                              ThreadID &discarded_tid)
+{
+    was_discarded = false;
 
     /* As we've thrown away early lines, if there is a line, it must
      *  be from the right stream */
@@ -673,7 +686,8 @@ Fetch1::evaluate()
         Fetch1::FetchRequestPtr response = transfers.front();
 
         if (response->isDiscardable()) {
-            nextStageReserve[response->id.threadId].freeReservation();
+            was_discarded = true;
+            discarded_tid = response->id.threadId;
 
             DPRINTF(Fetch, "Discarding translated fetch as it's for"
                 " an old stream\n");
@@ -690,17 +704,15 @@ Fetch1::evaluate()
 
         popAndDiscard(transfers);
     }
+}
 
-    /* If we generated output, and mark the stage as being active
+void
+Fetch1::postEvaluate(const ForwardLineData &line_out)
+{
+    /* If we generated output, mark the stage as being active
      *  to encourage that output on to the next stage */
     if (!line_out.isBubble())
         cpu.activityRecorder->activity();
-
-    /* Fetch1 has no inputBuffer so the only activity we can have is to
-     *  generate a line output (tested just above) or to initiate a memory
-     *  fetch which will signal activity when it returns/needs stepping
-     *  between queues */
-
 
     /* This looks hackish.  And it is, but there doesn't seem to be a better
      * way to do this.  The signal from commit to suspend fetch takes 1
@@ -711,6 +723,31 @@ Fetch1::evaluate()
     for (auto& thread : fetchInfo) {
         thread.wakeupGuard = false;
     }
+}
+
+void
+Fetch1::evaluateCore(const BranchData &execute_branch,
+                     const BranchData &fetch2_branch,
+                     ForwardLineData &line_out)
+{
+    for (ThreadID tid = 0; tid < cpu.numThreads; tid++)
+        fetchInfo[tid].blocked = !nextStageReserve[tid].canReserve();
+
+    handleBranchRedirects(execute_branch, fetch2_branch);
+
+    ThreadID fetch_tid = tryToFetch();
+    if (fetch_tid != InvalidThreadID)
+        nextStageReserve[fetch_tid].reserve();
+
+    stepQueues();
+
+    bool was_discarded = false;
+    ThreadID discarded_tid = InvalidThreadID;
+    processCompletedFetch(line_out, was_discarded, discarded_tid);
+    if (was_discarded)
+        nextStageReserve[discarded_tid].freeReservation();
+
+    postEvaluate(line_out);
 }
 
 void
@@ -781,6 +818,94 @@ Fetch1::minorTrace() const
         thread.streamSeqNum, data.str());
     requests.minorTrace();
     transfers.minorTrace();
+}
+
+bool
+SingleStageFetch1::recvTimingResp(PacketPtr pkt)
+{
+    DPRINTF(Fetch, "recvTimingResp %d\n", numFetchesInMemorySystem);
+
+    FetchRequestPtr fetch_request = safe_cast<FetchRequestPtr>
+        (pkt->popSenderState());
+
+    assert(!fetch_request->packet);
+    fetch_request->packet = pkt;
+
+    numFetchesInMemorySystem--;
+    fetch_request->state = FetchRequest::Complete;
+
+    if (debug::MinorTrace)
+        minorTraceResponseLine(name(), fetch_request);
+
+    if (pkt->isError()) {
+        DPRINTF(Fetch, "Received error response packet: %s\n",
+            fetch_request->id);
+    }
+
+    /* Use immediate wakeup so the pipeline evaluates at the current
+     * clock edge instead of waiting until the next cycle. */
+    cpu.wakeupOnEventImmediate(Pipeline::Fetch1StageId);
+
+    return true;
+}
+
+SingleStageFetch1::SingleStageFetch1(const std::string &name_,
+    MinorCPU &cpu_,
+    const BaseMinorCPUParams &params,
+    Latch<BranchData>::Output inp_,
+    Latch<ForwardLineData>::Input out_,
+    Latch<BranchData>::Output prediction_,
+    std::vector<InputBuffer<ForwardLineData>> &next_stage_input_buffer,
+    SingleStageFetch2 *fetch2_) :
+    Fetch1(name_, cpu_, params, inp_, out_, prediction_,
+        next_stage_input_buffer),
+    fetch2(fetch2_)
+{
+}
+
+void
+SingleStageFetch1::evaluate()
+{
+    /* --- Fetch1 phase: I-cache management --- */
+
+    /* Check back-pressure from Decode (the real next stage) */
+    for (ThreadID tid = 0; tid < cpu.numThreads; tid++)
+        fetchInfo[tid].blocked = fetch2->isNextStageBlocked(tid);
+
+    /* Branch redirects: Execute branch from eToF1 latch,
+     * prediction from previous cycle */
+    handleBranchRedirects(*inp.outputWire, lastPrediction);
+
+    /* Step I-cache queues */
+    stepQueues();
+
+    /* Process completed I-cache response — pop from transfers queue
+     * BEFORE tryToFetch so numInFlightFetches sees the freed slot */
+    ForwardLineData line;
+    bool was_discarded = false;
+    ThreadID discarded_tid = InvalidThreadID;
+    processCompletedFetch(line, was_discarded, discarded_tid);
+
+    /* Issue new I-cache fetch (no inputBuffer reservation).
+     * Must run AFTER processCompletedFetch so the transfers queue
+     * slot is freed and fetchLimit check passes. */
+    tryToFetch();
+
+    /* --- Handoff: push line to Fetch2's inputBuffer --- */
+    if (!line.isBubble()) {
+        fetch2->inputBuffer[line.id.threadId].setTail(line);
+        fetch2->inputBuffer[line.id.threadId].pushTail();
+    }
+
+    /* --- Fetch2 phase: decode + branch prediction --- */
+    BranchData prediction;
+    fetch2->runDecodeCore(prediction);
+
+    /* Save prediction for next cycle */
+    lastPrediction = prediction;
+
+    /* --- Post-evaluate --- */
+    postEvaluate(line);
 }
 
 } // namespace minor

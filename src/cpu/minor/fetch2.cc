@@ -238,6 +238,10 @@ Fetch2::predictBranch(MinorDynInstPtr inst, BranchData &branch)
     }
 }
 
+Fetch2::~Fetch2()
+{
+}
+
 void
 Fetch2::evaluate()
 {
@@ -245,11 +249,21 @@ Fetch2::evaluate()
     if (!inp.outputWire->isBubble())
         inputBuffer[inp.outputWire->id.threadId].setTail(*inp.outputWire);
 
-    ForwardInstData &insts_out = *out.inputWire;
     BranchData prediction;
-    BranchData &branch_inp = *branchInp.outputWire;
+    evaluateCore(prediction);
 
-    assert(insts_out.isBubble());
+    /* Write prediction to f2ToF1 latch */
+    *predictionOut.inputWire = prediction;
+
+    /* Make sure the input (if any left) is pushed */
+    if (!inp.outputWire->isBubble())
+        inputBuffer[inp.outputWire->id.threadId].pushTail();
+}
+
+void
+Fetch2::reactToExecuteBranch()
+{
+    BranchData &branch_inp = *branchInp.outputWire;
 
     /* React to branches from Execute to update local branch prediction
      *  structures */
@@ -263,8 +277,11 @@ Fetch2::evaluate()
         dumpAllInput(branch_inp.threadId);
         fetchInfo[branch_inp.threadId].havePC = false;
     }
+}
 
-    assert(insts_out.isBubble());
+void
+Fetch2::discardStaleLines()
+{
     /* Even when blocked, clear out input lines with the wrong
      *  prediction sequence number */
     for (ThreadID tid = 0; tid < cpu.numThreads; tid++) {
@@ -293,6 +310,14 @@ Fetch2::evaluate()
             }
         }
     }
+}
+
+void
+Fetch2::decodeInstructions(BranchData &prediction_out)
+{
+    ForwardInstData &insts_out = *out.inputWire;
+
+    assert(insts_out.isBubble());
 
     ThreadID tid = getScheduledThread();
     DPRINTF(Fetch, "Scheduled Thread: %d\n", tid);
@@ -312,7 +337,7 @@ Fetch2::evaluate()
             (line_in->isFault() ||
                 fetch_info.inputIndex < line_in->lineWidth) && /* More input */
             output_index < outputWidth && /* More output to fill */
-            prediction.isBubble() /* No predicted branch */)
+            prediction_out.isBubble() /* No predicted branch */)
         {
             ThreadContext *thread = cpu.getContext(line_in->id.threadId);
             InstDecoder *decoder = thread->getDecoderPtr();
@@ -461,7 +486,7 @@ Fetch2::evaluate()
 
                     /* Predict any branches and issue a branch if
                      *  necessary */
-                    predictBranch(dyn_inst, prediction);
+                    predictBranch(dyn_inst, prediction_out);
                 } else {
                     DPRINTF(Fetch, "Inst not ready yet\n");
                 }
@@ -503,7 +528,7 @@ Fetch2::evaluate()
             fetch_info.lastStreamSeqNum = line_in->id.streamSeqNum;
 
             /* Asked to discard line or there was a branch or fault */
-            if (!prediction.isBubble() || /* The remains of a
+            if (!prediction_out.isBubble() || /* The remains of a
                     line with a prediction in it */
                 line_in->isFault() /* A line which is just a fault */)
             {
@@ -537,16 +562,23 @@ Fetch2::evaluate()
     if (tid == InvalidThreadID) {
         assert(insts_out.isBubble());
     }
-    /** Reserve a slot in the next stage and output data */
-    *predictionOut.inputWire = prediction;
+
+    /* Tag output with the thread that produced it */
+    if (!insts_out.isBubble())
+        insts_out.threadId = tid;
+}
+
+void
+Fetch2::postDecode(unsigned int active_stage_id)
+{
+    ForwardInstData &insts_out = *out.inputWire;
 
     /* If we generated output, reserve space for the result in the next stage
      *  and mark the stage as being active this cycle */
     if (!insts_out.isBubble()) {
         /* Note activity of following buffer */
         cpu.activityRecorder->activity();
-        insts_out.threadId = tid;
-        nextStageReserve[tid].reserve();
+        nextStageReserve[insts_out.threadId].reserve();
     }
 
     /* If we still have input to process and somewhere to put it,
@@ -554,14 +586,19 @@ Fetch2::evaluate()
     for (ThreadID i = 0; i < cpu.numThreads; i++)
     {
         if (getInput(i) && nextStageReserve[i].canReserve()) {
-            cpu.activityRecorder->activateStage(Pipeline::Fetch2StageId);
+            cpu.activityRecorder->activateStage(active_stage_id);
             break;
         }
     }
+}
 
-    /* Make sure the input (if any left) is pushed */
-    if (!inp.outputWire->isBubble())
-        inputBuffer[inp.outputWire->id.threadId].pushTail();
+void
+Fetch2::evaluateCore(BranchData &prediction_out)
+{
+    reactToExecuteBranch();
+    discardStaleLines();
+    decodeInstructions(prediction_out);
+    postDecode(Pipeline::Fetch2StageId);
 }
 
 inline ThreadID
@@ -646,6 +683,35 @@ Fetch2::minorTrace() const
         fetchInfo[0].inputIndex, fetchInfo[0].havePC,
         fetchInfo[0].predictionSeqNum, data.str());
     inputBuffer[0].minorTrace();
+}
+
+SingleStageFetch2::SingleStageFetch2(const std::string &name,
+    MinorCPU &cpu_,
+    const BaseMinorCPUParams &params,
+    Latch<ForwardLineData>::Output inp_,
+    Latch<BranchData>::Output branchInp_,
+    Latch<BranchData>::Input predictionOut_,
+    Latch<ForwardInstData>::Input out_,
+    std::vector<InputBuffer<ForwardInstData>> &next_stage_input_buffer) :
+    Fetch2(name, cpu_, params, inp_, branchInp_, predictionOut_, out_,
+        next_stage_input_buffer)
+{
+}
+
+void
+SingleStageFetch2::evaluate()
+{
+    /* No-op: all Fetch2 logic is driven by SingleStageFetch1::evaluate()
+     * via runDecodeCore(). */
+}
+
+void
+SingleStageFetch2::runDecodeCore(BranchData &prediction_out)
+{
+    reactToExecuteBranch();
+    discardStaleLines();
+    decodeInstructions(prediction_out);
+    postDecode(Pipeline::Fetch1StageId);
 }
 
 } // namespace minor

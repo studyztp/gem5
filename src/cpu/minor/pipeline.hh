@@ -83,10 +83,10 @@ class Pipeline : public Ticked
     Latch<ForwardInstData> dToE;
     Latch<BranchData> eToF1;
 
-    Execute execute;
-    Decode decode;
-    Fetch2 fetch2;
-    Fetch1 fetch1;
+    Execute *execute;
+    Decode  *decode;
+    Fetch2  *fetch2;
+    Fetch1  *fetch1;
 
     /** Activity recording for the pipeline.  This is access through the CPU
      *  by the pipeline stages but belongs to the Pipeline as it is the
@@ -109,6 +109,7 @@ class Pipeline : public Ticked
 
   public:
     Pipeline(MinorCPU &cpu_, const BaseMinorCPUParams &params);
+    ~Pipeline();
 
   public:
     /** Wake up the Fetch unit.  This is needed on thread activation esp.
@@ -139,6 +140,12 @@ class Pipeline : public Ticked
 
     /** To give the activity recorder to the CPU */
     MinorActivityRecorder *getActivityRecorder() { return &activityRecorder; }
+
+    /** Start the pipeline at the current clock edge (Cycles(0)) instead
+     *  of the next (Cycles(1)).  Used by single-stage fetch to avoid the
+     *  1-cycle wakeup penalty when an I-cache response arrives while the
+     *  pipeline is idle. */
+    void startThisCycle();
 };
 
 } // namespace minor

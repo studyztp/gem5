@@ -316,6 +316,11 @@ class BaseMinorCPU(BaseCPU):
         return True
 
     threadPolicy = Param.ThreadPolicy("RoundRobin", "Thread scheduling policy")
+    singleFetchStage = Param.Bool(
+        False,
+        "Model Fetch1+Fetch2 as a single logical fetch stage "
+        "(3-stage pipeline mode)",
+    )
     fetch1FetchLimit = Param.Unsigned(
         1, "Number of line fetches allowable in flight at once"
     )

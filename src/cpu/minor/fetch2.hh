@@ -208,9 +208,11 @@ class Fetch2 : public Named
         Latch<ForwardInstData>::Input out_,
         std::vector<InputBuffer<ForwardInstData>> &next_stage_input_buffer);
 
+    virtual ~Fetch2();
+
   public:
     /** Pass on input/buffer data to the output if you can */
-    void evaluate();
+    virtual void evaluate();
 
     void minorTrace() const;
 
@@ -219,6 +221,57 @@ class Fetch2 : public Named
      *  Execute halting Fetch1 causing Fetch2 to naturally drain.
      *  Branch predictions are ignored by Fetch1 during halt */
     bool isDrained();
+
+  protected:
+    /** Core evaluation logic, parameterized by prediction output.
+     *  Contains: execute branch reaction, decode loop, instruction
+     *  extraction, branch prediction, activity recording. */
+    void evaluateCore(BranchData &prediction_out);
+
+    /** React to Execute branch: update branch predictor, dump input if
+     *  stream change. Pure logic, no stage-ID-dependent operations. */
+    void reactToExecuteBranch();
+
+    /** Discard input lines with stale prediction sequence numbers.
+     *  Pure logic operating on inputBuffer. */
+    void discardStaleLines();
+
+    /** Main decode loop: extract instructions from inputBuffer, run
+     *  branch prediction, pack output into f2ToD latch. */
+    void decodeInstructions(BranchData &prediction_out);
+
+    /** Post-decode: activity recording and stage activation.
+     *  stageId controls which stage gets activated when there is
+     *  more input to process. */
+    void postDecode(unsigned int active_stage_id);
+};
+
+/** SingleStageFetch2 is a no-op in single-stage fetch mode. All Fetch2
+ *  logic is driven by SingleStageFetch1::evaluate() via runDecodeCore(). */
+class SingleStageFetch2 : public Fetch2
+{
+  public:
+    SingleStageFetch2(const std::string &name,
+        MinorCPU &cpu_,
+        const BaseMinorCPUParams &params,
+        Latch<ForwardLineData>::Output inp_,
+        Latch<BranchData>::Output branchInp_,
+        Latch<BranchData>::Input predictionOut_,
+        Latch<ForwardInstData>::Input out_,
+        std::vector<InputBuffer<ForwardInstData>> &next_stage_input_buffer);
+
+    ~SingleStageFetch2() override = default;
+
+    void evaluate() override;
+
+    /** Run decode core logic. Called by SingleStageFetch1 in combined
+     *  single-stage mode. Uses Fetch1StageId for activation. */
+    void runDecodeCore(BranchData &prediction_out);
+
+    /** Check if the next stage (Decode) is blocked. */
+    bool isNextStageBlocked(ThreadID tid) const {
+        return !nextStageReserve[tid].canReserve();
+    }
 };
 
 } // namespace minor

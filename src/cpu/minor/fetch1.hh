@@ -61,6 +61,8 @@ namespace gem5
 namespace minor
 {
 
+class SingleStageFetch2;
+
 /** A stage responsible for fetching "lines" from memory and passing
  *  them to Fetch2 */
 class Fetch1 : public Named
@@ -395,8 +397,10 @@ class Fetch1 : public Named
     /** Returns the IcachePort owned by this Fetch1 */
     MinorCPU::MinorCPUPort &getIcachePort() { return icachePort; }
 
+    virtual ~Fetch1();
+
     /** Pass on input/buffer data to the output if you can */
-    void evaluate();
+    virtual void evaluate();
 
     /** Initiate fetch1 fetching */
     void wakeupFetch(ThreadID tid);
@@ -406,6 +410,64 @@ class Fetch1 : public Named
     /** Is this stage drained?  For Fetch1, draining is initiated by
      *  Execute signalling a branch with the reason HaltFetch */
     bool isDrained();
+
+  protected:
+    /** Core evaluation logic, parameterized by data sources/sinks.
+     *  Contains: branch redirect handling, fetch issuing, I-cache
+     *  response processing, activity recording, wakeup guard reset. */
+    void evaluateCore(const BranchData &execute_branch,
+                      const BranchData &fetch2_branch,
+                      ForwardLineData &line_out);
+
+    /** Handle branch redirects from Execute and Fetch2 prediction.
+     *  Pure logic — no inputBuffer or reservation interaction. */
+    void handleBranchRedirects(const BranchData &execute_branch,
+                               const BranchData &fetch2_branch);
+
+    /** Try to issue a new I-cache fetch request.
+     *  Returns the ThreadID that was fetched, or InvalidThreadID.
+     *  Does NOT call nextStageReserve.reserve(). */
+    ThreadID tryToFetch();
+
+    /** Process a completed I-cache response from the transfers queue.
+     *  Writes result to line_out. Sets was_discarded and discarded_tid
+     *  if a discardable response was found (caller handles reservation). */
+    void processCompletedFetch(ForwardLineData &line_out,
+                               bool &was_discarded,
+                               ThreadID &discarded_tid);
+
+    /** Post-evaluate: activity recording + wakeup guard reset. */
+    void postEvaluate(const ForwardLineData &line_out);
+};
+
+/** SingleStageFetch1 runs both Fetch1 (I-cache) and Fetch2 (decode)
+ *  logic within a single evaluate() call, eliminating the 1-cycle
+ *  forward delay between I-cache response and instruction decode.
+ *  SingleStageFetch2::evaluate() is a no-op in this mode. */
+class SingleStageFetch1 : public Fetch1
+{
+  protected:
+    SingleStageFetch2 *fetch2;
+    BranchData lastPrediction;
+
+  public:
+    SingleStageFetch1(const std::string &name_,
+        MinorCPU &cpu_,
+        const BaseMinorCPUParams &params,
+        Latch<BranchData>::Output inp_,
+        Latch<ForwardLineData>::Input out_,
+        Latch<BranchData>::Output prediction_,
+        std::vector<InputBuffer<ForwardLineData>> &next_stage_input_buffer,
+        SingleStageFetch2 *fetch2_);
+
+    ~SingleStageFetch1() override = default;
+
+    void evaluate() override;
+
+  protected:
+    /** Override to use wakeupOnEventImmediate so the pipeline evaluates
+     *  at the same tick as the I-cache response, not 1 cycle later. */
+    bool recvTimingResp(PacketPtr pkt) override;
 };
 
 } // namespace minor

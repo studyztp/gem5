@@ -204,6 +204,11 @@ class MinorCPU : public BaseCPU
      *  already been idled.  The stage argument should be from the
      *  enumeration Pipeline::StageId */
     void wakeupOnEvent(unsigned int stage_id);
+
+    /** Like wakeupOnEvent but starts the pipeline at the current clock
+     *  edge (Cycles(0)) instead of the next.  Used by single-stage fetch
+     *  to process I-cache responses without the idle→restart delay. */
+    void wakeupOnEventImmediate(unsigned int stage_id);
     EventFunctionWrapper *fetchEventWrapper;
 };
 

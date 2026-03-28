@@ -68,15 +68,7 @@ Pipeline::Pipeline(MinorCPU &cpu_, const BaseMinorCPUParams &params) :
         params.decodeToExecuteForwardDelay),
     eToF1(cpu.name() + ".eToF1", "branch",
         params.executeBranchDelay),
-    execute(cpu.name() + ".execute", cpu, params,
-        dToE.output(), eToF1.input()),
-    decode(cpu.name() + ".decode", cpu, params,
-        f2ToD.output(), dToE.input(), execute.inputBuffer),
-    fetch2(cpu.name() + ".fetch2", cpu, params,
-        f1ToF2.output(), eToF1.output(), f2ToF1.input(), f2ToD.input(),
-        decode.inputBuffer),
-    fetch1(cpu.name() + ".fetch1", cpu, params,
-        eToF1.output(), f1ToF2.input(), f2ToF1.output(), fetch2.inputBuffer),
+    execute(nullptr), decode(nullptr), fetch2(nullptr), fetch1(nullptr),
     activityRecorder(cpu.name() + ".activity", Num_StageId,
         /* The max depth of inter-stage FIFOs */
         std::max(params.fetch1ToFetch2ForwardDelay,
@@ -85,9 +77,24 @@ Pipeline::Pipeline(MinorCPU &cpu_, const BaseMinorCPUParams &params) :
         params.executeBranchDelay)))),
     needToSignalDrained(false)
 {
-    if (params.fetch1ToFetch2ForwardDelay < 1) {
-        fatal("%s: fetch1ToFetch2ForwardDelay must be >= 1 (%d)\n",
-            cpu.name(), params.fetch1ToFetch2ForwardDelay);
+    if (params.singleFetchStage) {
+        if (params.fetch1ToFetch2ForwardDelay != 0) {
+            warn("%s: singleFetchStage is true but "
+                 "fetch1ToFetch2ForwardDelay is %d (not 0). "
+                 "This parameter has no effect in single-stage fetch mode.\n",
+                 cpu.name(), params.fetch1ToFetch2ForwardDelay);
+        }
+        if (params.fetch1ToFetch2BackwardDelay != 0) {
+            warn("%s: singleFetchStage is true. "
+                 "fetch1ToFetch2BackwardDelay (%d) has no effect -- "
+                 "branch prediction redirect bypasses the f2ToF1 latch.\n",
+                 cpu.name(), params.fetch1ToFetch2BackwardDelay);
+        }
+    } else {
+        if (params.fetch1ToFetch2ForwardDelay < 1) {
+            fatal("%s: fetch1ToFetch2ForwardDelay must be >= 1 (%d)\n",
+                cpu.name(), params.fetch1ToFetch2ForwardDelay);
+        }
     }
 
     if (params.fetch2ToDecodeForwardDelay < 1) {
@@ -104,19 +111,50 @@ Pipeline::Pipeline(MinorCPU &cpu_, const BaseMinorCPUParams &params) :
         fatal("%s: executeBranchDelay must be >= 1\n",
             cpu.name(), params.executeBranchDelay);
     }
+
+    execute = new Execute(cpu.name() + ".execute", cpu, params,
+        dToE.output(), eToF1.input());
+
+    decode = new Decode(cpu.name() + ".decode", cpu, params,
+        f2ToD.output(), dToE.input(), execute->inputBuffer);
+
+    if (params.singleFetchStage) {
+        auto *ssf2 = new SingleStageFetch2(cpu.name() + ".fetch2", cpu,
+            params, f1ToF2.output(), eToF1.output(), f2ToF1.input(),
+            f2ToD.input(), decode->inputBuffer);
+        fetch2 = ssf2;
+        fetch1 = new SingleStageFetch1(cpu.name() + ".fetch1", cpu,
+            params, eToF1.output(), f1ToF2.input(), f2ToF1.output(),
+            fetch2->inputBuffer, ssf2);
+    } else {
+        fetch2 = new Fetch2(cpu.name() + ".fetch2", cpu, params,
+            f1ToF2.output(), eToF1.output(), f2ToF1.input(), f2ToD.input(),
+            decode->inputBuffer);
+        fetch1 = new Fetch1(cpu.name() + ".fetch1", cpu, params,
+            eToF1.output(), f1ToF2.input(), f2ToF1.output(),
+            fetch2->inputBuffer);
+    }
+}
+
+Pipeline::~Pipeline()
+{
+    delete fetch1;
+    delete fetch2;
+    delete decode;
+    delete execute;
 }
 
 void
 Pipeline::minorTrace() const
 {
-    fetch1.minorTrace();
+    fetch1->minorTrace();
     f1ToF2.minorTrace();
     f2ToF1.minorTrace();
-    fetch2.minorTrace();
+    fetch2->minorTrace();
     f2ToD.minorTrace();
-    decode.minorTrace();
+    decode->minorTrace();
     dToE.minorTrace();
-    execute.minorTrace();
+    execute->minorTrace();
     eToF1.minorTrace();
     activityRecorder.minorTrace();
 }
@@ -130,10 +168,10 @@ Pipeline::evaluate()
     /* Note that it's important to evaluate the stages in order to allow
      *  'immediate', 0-time-offset TimeBuffer activity to be visible from
      *  later stages to earlier ones in the same cycle */
-    execute.evaluate();
-    decode.evaluate();
-    fetch2.evaluate();
-    fetch1.evaluate();
+    execute->evaluate();
+    decode->evaluate();
+    fetch2->evaluate();
+    fetch1->evaluate();
 
     if (debug::MinorTrace)
         minorTrace();
@@ -182,19 +220,19 @@ Pipeline::evaluate()
 MinorCPU::MinorCPUPort &
 Pipeline::getInstPort()
 {
-    return fetch1.getIcachePort();
+    return fetch1->getIcachePort();
 }
 
 MinorCPU::MinorCPUPort &
 Pipeline::getDataPort()
 {
-    return execute.getDcachePort();
+    return execute->getDcachePort();
 }
 
 void
 Pipeline::wakeupFetch(ThreadID tid)
 {
-    fetch1.wakeupFetch(tid);
+    fetch1->wakeupFetch(tid);
 }
 
 bool
@@ -203,7 +241,7 @@ Pipeline::drain()
     DPRINTF(MinorCPU, "Draining pipeline by halting inst fetches. "
         " Execution should drain naturally\n");
 
-    execute.drain();
+    execute->drain();
 
     /* Make sure that needToSignalDrained isn't accidentally set if we
      *  are 'pre-drained' */
@@ -219,19 +257,19 @@ Pipeline::drainResume()
     DPRINTF(Drain, "Drain resume\n");
 
     for (ThreadID tid = 0; tid < cpu.numThreads; tid++) {
-        fetch1.wakeupFetch(tid);
+        fetch1->wakeupFetch(tid);
     }
 
-    execute.drainResume();
+    execute->drainResume();
 }
 
 bool
 Pipeline::isDrained()
 {
-    bool fetch1_drained = fetch1.isDrained();
-    bool fetch2_drained = fetch2.isDrained();
-    bool decode_drained = decode.isDrained();
-    bool execute_drained = execute.isDrained();
+    bool fetch1_drained = fetch1->isDrained();
+    bool fetch2_drained = fetch2->isDrained();
+    bool decode_drained = decode->isDrained();
+    bool execute_drained = execute->isDrained();
 
     bool f1_to_f2_drained = f1ToF2.empty();
     bool f2_to_f1_drained = f2ToF1.empty();
@@ -255,6 +293,16 @@ Pipeline::isDrained()
         );
 
     return ret;
+}
+
+void
+Pipeline::startThisCycle()
+{
+    if (!running) {
+        if (!event.scheduled())
+            cpu.schedule(event, cpu.clockEdge(Cycles(0)));
+        running = true;
+    }
 }
 
 } // namespace minor

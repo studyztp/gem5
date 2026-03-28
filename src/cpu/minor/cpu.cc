@@ -297,6 +297,15 @@ MinorCPU::wakeupOnEvent(unsigned int stage_id)
     pipeline->start();
 }
 
+void
+MinorCPU::wakeupOnEventImmediate(unsigned int stage_id)
+{
+    DPRINTF(Quiesce, "Immediate event wakeup from stage %d\n", stage_id);
+
+    activityRecorder->activateStage(stage_id);
+    pipeline->startThisCycle();
+}
+
 Port &
 MinorCPU::getInstPort()
 {

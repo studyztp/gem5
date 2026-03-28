@@ -202,37 +202,34 @@ class CortexM4CPU(ArmMMinorCPU):
     Timing-tuned MinorCPU modelling the Cortex-M4 3-stage pipeline.
 
     The real M4 has 3 stages (Fetch, Decode, Execute) [DDI0439D §2.1].
-    MinorCPU is hardcoded at 4 stages (Fetch1, Fetch2, Decode, Execute).
-    We collapse Fetch1+Fetch2 by setting fetch1ToFetch2BackwardDelay=0
-    (same-cycle feedback), effectively making them one logical stage.
+    singleFetchStage=True collapses Fetch1+Fetch2 into one logical fetch
+    stage via SharedFetchState, giving a true 3-stage pipeline (Fetch,
+    Decode, Execute).
 
     All widths are 1 (single-issue, single-decode, single-commit).
     """
 
     threadPolicy = "SingleThreaded"
 
-    # -- Fetch stage (collapsed Fetch1 + Fetch2) --
+    # -- Fetch stage (true 3-stage: Fetch1+Fetch2 collapsed) --
+    # singleFetchStage=True uses SingleStageFetch1/SingleStageFetch2 which
+    # communicate via SharedFetchState instead of the f1ToF2/f2ToF1 latches,
+    # giving a true single-cycle fetch stage matching the real M4 pipeline.
+    #
     # The real M4 ICode bus is 32-bit [DDI0439D §2.2.1], so fetch width
     # is 4 bytes.  The ART cache handles the 4B→8B translation between
     # the CPU fetch size and the 64-bit flash read width internally.
     #
     # fetch1FetchLimit=1: only one fetch in flight at a time.
     # The ART cache can only handle one outstanding cache lookup
-    # (cachePktEntry is a single slot).  fetchLimit=2 would require
-    # the ART to queue or block requests, which conflicts with
-    # BaseCache's own setBlocked/clearBlocked mechanism.
-    # The 1-cycle pipeline overhead per fetch is a known gem5 limitation
-    # (real M4 achieves 0-WS fetch from ART buffers).
-    fetch1FetchLimit = 1
+    # (cachePktEntry is a single slot).
+    singleFetchStage = True
+    fetch1FetchLimit = 2
     fetch1LineSnapWidth = 4  # 32-bit ICode bus [DDI0439D §2.2.1]
     fetch1LineWidth = 4  # 32-bit ICode bus [DDI0439D §2.2.1]
-    fetch1ToFetch2ForwardDelay = 1  # minimum (cannot be 0)
-    fetch1ToFetch2BackwardDelay = 0  # same-cycle: collapses F1+F2
+    fetch1ToFetch2ForwardDelay = 0  # bypassed in single-stage mode
+    fetch1ToFetch2BackwardDelay = 0  # bypassed in single-stage mode
 
-    # fetch2InputBufferSize=2 lets Fetch2 hold 2 lines so that Fetch1
-    # can forward the next line while Fetch2 is still draining the
-    # current one.  Without this, fetchLimit=2 would stall on back-
-    # pressure from Fetch2's single-entry buffer.
     fetch2InputBufferSize = 2
     fetch2ToDecodeForwardDelay = 1
     fetch2CycleInput = True
