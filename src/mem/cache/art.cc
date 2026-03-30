@@ -20,7 +20,7 @@ ART::ART(const ARTCacheParams &p)
       artPrefetchOrder(0),
       artRequestorId(p.system->getRequestorId(this)),
       bufferHitLatency(p.buffer_hit_latency),
-      processQueuedReqEvent([this]{ processQueuedReq(); }, name()),
+      addrRetryEvent([this]{ processAddrRetry(); }, name()),
       flashStartAddr(p.flash_start_addr),
       flashEndAddr(p.flash_end_addr),
       prefetchBuffer(pfBlkSize),
@@ -158,20 +158,11 @@ ART::serveFromBuffer(PacketPtr pkt, ARTPrefetchBuffer &buf)
 // -------------------------------------------------------------------
 
 void
-ART::processQueuedReq()
+ART::processAddrRetry()
 {
-    panic_if(pendingReqs.empty(),
-             "processQueuedReq called with no pending requests");
-    PacketPtr pkt = pendingReqs.front();
-    pendingReqs.pop_front();
-    DPRINTF(ARTCache, "processQueuedReq: processing queued request "
-            "addr=%s (%u remaining)\n",
-            addrToString(pkt->getAddr()), pendingReqs.size());
-    recvTimingReq(pkt);
-    // If more requests queued, schedule next processing.
-    if (!pendingReqs.empty() && !processQueuedReqEvent.scheduled())
-        schedule(processQueuedReqEvent,
-                 std::max(nextAcceptTick, curTick() + 1));
+    DPRINTF(ARTCache, "processAddrRetry: sending retry to upstream\n");
+    addrPhaseBusy = false;
+    cpuSidePort.sendRetryReq();
 }
 
 void
@@ -180,14 +171,13 @@ ART::recvTimingReq(PacketPtr pkt)
     panic_if(!pkt->isRead(), "ART only supports read requests.");
 
     // AHB address phase: 1-cycle occupancy [RM0440 Figure 3].
-    // Queue if address phase is still busy from a previous request.
     if (curTick() < nextAcceptTick) {
         DPRINTF(ARTCache, "recvTimingReq: address phase busy until "
-                "tick %d (curTick=%d), queuing (%u already queued)\n",
-                nextAcceptTick, curTick(), pendingReqs.size());
-        pendingReqs.push_back(pkt);
-        if (!processQueuedReqEvent.scheduled())
-            schedule(processQueuedReqEvent, nextAcceptTick);
+                "tick %d (curTick=%d), rejecting\n",
+                nextAcceptTick, curTick());
+        addrPhaseBusy = true;
+        if (!addrRetryEvent.scheduled())
+            schedule(addrRetryEvent, nextAcceptTick);
         return;
     }
     nextAcceptTick = clockEdge(Cycles(1));
@@ -262,17 +252,6 @@ ART::recvTimingReq(PacketPtr pkt)
         // If the request missed both buffers and cache/memory is busy,
         // queue it now — before modifying prefetch state (nextPfAddr,
         // prefetch allocation).  Buffer hits already returned above.
-        if (!prefetchHit && cacheFetchOn) {
-            DPRINTF(ARTCache, "recvTimingReq: cache/memory busy, "
-                    "queuing addr=%s (%u already queued)\n",
-                    addrToString(pkt->getAddr()), pendingReqs.size());
-            pendingReqs.push_back(pkt);
-            if (!processQueuedReqEvent.scheduled())
-                schedule(processQueuedReqEvent,
-                         std::max(nextAcceptTick, curTick() + 1));
-            return;
-        }
-
         // Compute the candidate next-prefetch address.
         nextPfAddr = convertAddrToPfBlockAddr(pkt->getAddr());
         nextPfAddr = getNextSequentialAddr(nextPfAddr);
@@ -399,7 +378,6 @@ ART::recvTimingReq(PacketPtr pkt)
     }
 
     if (directMemoryMode) {
-        cacheFetchOn = true;
         DPRINTF(ARTCache,
                 "recvTimingReq: direct memory bypass for addr=%s\n",
                 addrToString(pkt->getAddr()));
@@ -422,7 +400,6 @@ ART::recvTimingReq(PacketPtr pkt)
             "recvTimingReq: forwarding to NoncoherentCache\n");
 
     assert(cachePktEntry == nullptr);
-    cacheFetchOn = true;
     cachePktEntry = new ARTTranslateState(pkt);
     RequestPtr cacheReq = std::make_shared<Request>(
         convertAddrToPfBlockAddr(pkt->getAddr()),
@@ -458,11 +435,6 @@ ART::recvTimingResp(PacketPtr pkt)
             dynamic_cast<BypassCacheEntry *>(
                 pkt->findNextSenderState<BypassCacheEntry>());
         if (entry) {
-            cacheFetchOn = false;
-            // Drain pending queue now that cache/memory is free.
-            if (!pendingReqs.empty() && !processQueuedReqEvent.scheduled())
-                schedule(processQueuedReqEvent,
-                         std::max(nextAcceptTick, curTick() + 1));
             panic_if(entry != &bypassCacheEntry,
                      "Bypass entry mismatch in recvTimingResp.");
             DPRINTF(ARTCache,
@@ -575,11 +547,6 @@ ART::recvTimingResp(PacketPtr pkt)
             pkt->cmd.toString(), addrToString(pkt->getAddr()),
             pkt->getSize(), pkt->isRead(), pkt->isWrite(),
             pkt->isResponse());
-    cacheFetchOn = false;
-    // Drain pending queue now that cache/memory is free.
-    if (!pendingReqs.empty() && !processQueuedReqEvent.scheduled())
-        schedule(processQueuedReqEvent,
-                 std::max(nextAcceptTick, curTick() + 1));
     // serviceMSHRTargets (overridden above) handles the
     // ARTTranslateState swap and CPU response.
     NoncoherentCache::recvTimingResp(pkt);
@@ -616,11 +583,6 @@ ART::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time)
     state->cpuPkt = nullptr;
     delete state;
     cachePktEntry = nullptr;
-    cacheFetchOn = false;
-    // Drain pending queue now that cache/memory is free.
-    if (!pendingReqs.empty() && !processQueuedReqEvent.scheduled())
-        schedule(processQueuedReqEvent,
-                 std::max(nextAcceptTick, curTick() + 1));
     delete pkt;
 }
 

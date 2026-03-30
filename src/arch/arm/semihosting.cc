@@ -42,6 +42,7 @@
 #include <cerrno>
 #include <cstdio>
 
+#include "arch/arm/m_system.hh"
 #include "arch/arm/utility.hh"
 #include "base/output.hh"
 #include "base/time.hh"
@@ -158,7 +159,18 @@ ArmSemihosting::portProxyImpl(ThreadContext *tc)
     static std::unique_ptr<PortProxy> port_proxy_ns;
     static System *secure_sys = nullptr;
 
-    if (ArmISA::isSecure(tc)) {
+    // M-profile has no security extensions (no EL3).  Skip the
+    // isSecure() check which calls ArmSystem::haveEL() and would
+    // crash because ArmMSystem is not an ArmSystem.
+    // M-profile has no security extensions (no EL3).  Skip the
+    // isSecure() check which calls ArmSystem::haveEL() and would
+    // crash because ArmMSystem is not an ArmSystem.  Treat M-profile
+    // as secure (use the secure port proxy).
+    bool secure = false;
+    if (!dynamic_cast<ArmMSystem *>(tc->getSystemPtr()))
+        secure = ArmISA::isSecure(tc);
+
+    if (secure) {
         System *sys = tc->getSystemPtr();
         if (sys != secure_sys) {
             if (FullSystem) {

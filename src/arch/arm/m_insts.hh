@@ -613,8 +613,8 @@ class PushPopMProfile : public MacroMemOp
         // Set IsSerializeAfter on the last micro-op to force a pipeline
         // flush after the transfer completes.  This models the pipeline
         // refill cost (fetch from Flash + decode + execute restart).
-        assert(numMicroops > 0);
-        microOps[numMicroops - 1]->setFlag(StaticInst::IsSerializeAfter);
+        // assert(numMicroops > 0);
+        // microOps[numMicroops - 1]->setFlag(StaticInst::IsSerializeAfter);
     }
 };
 

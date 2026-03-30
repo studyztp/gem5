@@ -332,10 +332,7 @@ class STM32G474REPlatform(ArmMPlatform):
                 port_priority=[0, 0],
                 port_read_buffer_size=flash_read_buf,
             ),
-            # SRAM1: zero wait state [RM0440 §2].
-            # With frontend_latency=0 on system_bus (address phase now
-            # modeled in PipelinedSimpleMemory), the total SRAM access is
-            # address_phase (1 cy) + latency (1 ns < 1 cy) ≈ 2 cycles.
+            # SRAM1: 80KB @ 0x20000000, zero wait state [RM0440 §2].
             PipelinedSimpleMemory(
                 range=AddrRange(0x20000000, size="80KiB"),
                 latency="0ns",
@@ -344,9 +341,12 @@ class STM32G474REPlatform(ArmMPlatform):
                 read_buffer_size=0,
                 buffer_hit_cycles=1,
             ),
-            # SRAM2: zero wait state, hardware parity check.
+            # SRAM2: 48KB @ 0x20014000, zero wait state.
+            # Real chip: SRAM2=16KB, but extended to 48KB so that
+            # SRAM1+SRAM2 = 128KB contiguous (0x20000000-0x2001FFFF),
+            # matching linker scripts that use LENGTH=128K.
             PipelinedSimpleMemory(
-                range=AddrRange(0x20014000, size="16KiB"),
+                range=AddrRange(0x20014000, size="48KiB"),
                 latency="0ns",
                 max_outstanding=2,
                 address_phase_cycles=1,

@@ -502,6 +502,210 @@ class MFpMsr : public MFpOp
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
+// =====================================================================
+// MFpLdrS — VLDR.32 Sd, [Rn, #imm]
+// Single-precision FP load (4 bytes).  2 cycles [DDI0439D Table 7-1].
+// =====================================================================
+
+class MFpLdrS : public MFpOp
+{
+  private:
+    RegId srcRegIdxArr[1];
+    RegId destRegIdxArr[1];
+
+  protected:
+    RegIndex sd;
+    RegIndex rn;
+    int32_t imm;
+    bool add;
+
+    // Not used — execute/initiateAcc/completeAcc override MFpOp flow.
+    Fault doFpOp(ExecContext *, trace::InstRecord *) const override
+    { return NoFault; }
+
+  public:
+    MFpLdrS(ExtMachInst mach_inst, RegIndex _sd, RegIndex _rn,
+            int32_t _imm, bool _add)
+        : MFpOp("vldr.32", mach_inst, FloatMemReadOp),
+          sd(_sd), rn(_rn), imm(_imm), add(_add)
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setSrcRegIdx(_numSrcRegs++, intRegClass[rn]);
+        setDestRegIdx(_numDestRegs++, vfpSRegId(sd));
+        _numTypedDestRegs[vecElemClass.type()]++;
+
+        flags[IsLoad] = true;
+    }
+
+    Fault execute(ExecContext *xc,
+                  trace::InstRecord *traceData) const override;
+    Fault initiateAcc(ExecContext *xc,
+                      trace::InstRecord *traceData) const override;
+    Fault completeAcc(PacketPtr pkt, ExecContext *xc,
+                      trace::InstRecord *traceData) const override;
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+// =====================================================================
+// MFpStrS — VSTR.32 Sd, [Rn, #imm]
+// Single-precision FP store (4 bytes).  2 cycles [DDI0439D Table 7-1].
+// =====================================================================
+
+class MFpStrS : public MFpOp
+{
+  private:
+    RegId srcRegIdxArr[2];
+    RegId destRegIdxArr[1];
+
+  protected:
+    RegIndex sd;
+    RegIndex rn;
+    int32_t imm;
+    bool add;
+
+    Fault doFpOp(ExecContext *, trace::InstRecord *) const override
+    { return NoFault; }
+
+  public:
+    MFpStrS(ExtMachInst mach_inst, RegIndex _sd, RegIndex _rn,
+            int32_t _imm, bool _add)
+        : MFpOp("vstr.32", mach_inst, FloatMemWriteOp),
+          sd(_sd), rn(_rn), imm(_imm), add(_add)
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setSrcRegIdx(_numSrcRegs++, intRegClass[rn]);
+        setSrcRegIdx(_numSrcRegs++, vfpSRegId(sd));
+
+        flags[IsStore] = true;
+    }
+
+    Fault execute(ExecContext *xc,
+                  trace::InstRecord *traceData) const override;
+    Fault initiateAcc(ExecContext *xc,
+                      trace::InstRecord *traceData) const override;
+    Fault completeAcc(PacketPtr pkt, ExecContext *xc,
+                      trace::InstRecord *traceData) const override;
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+// =====================================================================
+// MFpLdrD — VLDR.64 Dd, [Rn, #imm]
+// Double-word FP load (8 bytes = 2 x 4B reads).  3 cycles.
+// Valid on FPv4-SP: "supports doubleword data transfer instructions"
+// [DDI0403 A6.3].  D<n> aliases {S<2n+1>, S<2n>}.
+// =====================================================================
+
+class MFpLdrD : public MFpOp
+{
+  private:
+    RegId srcRegIdxArr[1];
+    RegId destRegIdxArr[2];
+
+  protected:
+    RegIndex dd;
+    RegIndex rn;
+    int32_t imm;
+    bool add;
+
+    Fault doFpOp(ExecContext *, trace::InstRecord *) const override
+    { return NoFault; }
+
+  public:
+    MFpLdrD(ExtMachInst mach_inst, RegIndex _dd, RegIndex _rn,
+            int32_t _imm, bool _add)
+        : MFpOp("vldr.64", mach_inst, FloatMemReadOp),
+          dd(_dd), rn(_rn), imm(_imm), add(_add)
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setSrcRegIdx(_numSrcRegs++, intRegClass[rn]);
+        setDestRegIdx(_numDestRegs++, vfpSRegId(dd * 2));
+        _numTypedDestRegs[vecElemClass.type()]++;
+        setDestRegIdx(_numDestRegs++, vfpSRegId(dd * 2 + 1));
+        _numTypedDestRegs[vecElemClass.type()]++;
+
+        flags[IsLoad] = true;
+    }
+
+    Fault execute(ExecContext *xc,
+                  trace::InstRecord *traceData) const override;
+    Fault initiateAcc(ExecContext *xc,
+                      trace::InstRecord *traceData) const override;
+    Fault completeAcc(PacketPtr pkt, ExecContext *xc,
+                      trace::InstRecord *traceData) const override;
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+// =====================================================================
+// MFpStrD — VSTR.64 Dd, [Rn, #imm]
+// Double-word FP store (8 bytes = 2 x 4B writes).  3 cycles.
+// =====================================================================
+
+class MFpStrD : public MFpOp
+{
+  private:
+    RegId srcRegIdxArr[3];
+    RegId destRegIdxArr[1];
+
+  protected:
+    RegIndex dd;
+    RegIndex rn;
+    int32_t imm;
+    bool add;
+
+    Fault doFpOp(ExecContext *, trace::InstRecord *) const override
+    { return NoFault; }
+
+  public:
+    MFpStrD(ExtMachInst mach_inst, RegIndex _dd, RegIndex _rn,
+            int32_t _imm, bool _add)
+        : MFpOp("vstr.64", mach_inst, FloatMemWriteOp),
+          dd(_dd), rn(_rn), imm(_imm), add(_add)
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setSrcRegIdx(_numSrcRegs++, intRegClass[rn]);
+        setSrcRegIdx(_numSrcRegs++, vfpSRegId(dd * 2));
+        setSrcRegIdx(_numSrcRegs++, vfpSRegId(dd * 2 + 1));
+
+        flags[IsStore] = true;
+    }
+
+    Fault execute(ExecContext *xc,
+                  trace::InstRecord *traceData) const override;
+    Fault initiateAcc(ExecContext *xc,
+                      trace::InstRecord *traceData) const override;
+    Fault completeAcc(PacketPtr pkt, ExecContext *xc,
+                      trace::InstRecord *traceData) const override;
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
 } // namespace ArmISA
 } // namespace gem5
 

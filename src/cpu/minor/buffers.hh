@@ -51,10 +51,12 @@
 
 #include "base/logging.hh"
 #include "base/named.hh"
+#include "base/trace.hh"
 #include "base/types.hh"
 #include "cpu/activity.hh"
 #include "cpu/minor/trace.hh"
 #include "cpu/timebuf.hh"
+#include "debug/Minor.hh"
 
 namespace gem5
 {
@@ -428,19 +430,23 @@ class Queue : public Named, public Reservable
     /** Push an element into the buffer if it isn't a bubble.  Bubbles are
      *  just discarded.  It is assummed that any push into a queue with
      *  reserved space intends to take that space */
-    void
+    bool
     push(ElemType &data)
     {
         if (!BubbleTraits::isBubble(data)) {
+            if (queue.size() >= capacity) {
+                DPRINTF(Minor, "%s: push rejected, queue full "
+                    "(size=%d, capacity=%d)\n",
+                    name(), queue.size(), capacity);
+                return false;
+            }
             freeReservation();
             queue.push_back(data);
-
-            if (queue.size() > capacity) {
-                warn("%s: No space to push data into queue of capacity"
-                    " %u, pushing anyway\n", name(), capacity);
-            }
-
+            DPRINTF(Minor, "%s: push accepted (size=%d/%d)\n",
+                name(), queue.size(), capacity);
+            return true;
         }
+        return true;
     }
 
     /** Clear all allocated space.  Be careful how this is used */

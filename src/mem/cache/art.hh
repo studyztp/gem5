@@ -80,20 +80,18 @@ class ART : public NoncoherentCache
     /** Cycles to serve a request from the ART prefetch/current buffer. */
     const Cycles bufferHitLatency;
 
-    /** Earliest tick at which the ART can process the next request.
+    /** Earliest tick at which the ART can accept the next request.
      *  Models the 1-cycle AHB address phase [RM0440 Figure 3]. */
     Tick nextAcceptTick = 0;
 
-    /** Queued requests waiting for address phase to free. */
-    std::deque<PacketPtr> pendingReqs;
+    /** True when upstream needs retry after address phase busy. */
+    bool addrPhaseBusy = false;
 
-    /** Event to process the next queued request. */
-    EventFunctionWrapper processQueuedReqEvent;
+    /** Event to send retry after address phase frees. */
+    EventFunctionWrapper addrRetryEvent;
 
-    /** Process the next queued request when address phase frees. */
-    void processQueuedReq();
-
-    bool cacheFetchOn = false;
+    /** Send retry to upstream when address phase becomes free. */
+    void processAddrRetry();
 
     /** Start of the flash memory region (prefetch bounds check). */
     const Addr flashStartAddr;

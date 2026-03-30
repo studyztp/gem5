@@ -48,12 +48,14 @@
 #include "arch/arm/regs/misc.hh"
 #include "arch/arm/regs/misc_types.hh"
 #include "arch/arm/regs/vec.hh"
+#include "arch/generic/memhelpers.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/thread_context.hh"
 #include "debug/MProfileFP.hh"
+#include "mem/packet_access.hh"
 
 // =====================================================================
 // Compile-time guards: verify host float is IEEE 754 single-precision.
@@ -715,6 +717,250 @@ MFpMsr::generateDisassembly(
 {
     std::ostringstream ss;
     ss << "vmsr fpscr, r" << rt;
+    return ss.str();
+}
+
+// =====================================================================
+// MFpLdrS — VLDR.32 Sd, [Rn, #imm]
+// =====================================================================
+
+Fault
+MFpLdrS::execute(ExecContext *xc, trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    Fault fault = checkMProfileFPEnabled(tc);
+    if (fault != NoFault) return fault;
+    setFPCA(tc);
+
+    Addr base = (rn == int_reg::Pc)
+        ? (tc->pcState().as<ArmISA::PCState>().instAddr() & ~0x3)
+        : tc->getReg(RegId(intRegClass, rn));
+    Addr addr = add ? (base + imm) : (base - imm);
+
+    uint32_t data = 0;
+    fault = gem5::readMemAtomicLE(xc, traceData, addr, data,
+                                  Request::Flags(0));
+    if (fault != NoFault) return fault;
+    xc->setRegOperand(this, 0, (RegVal)data);
+    return NoFault;
+}
+
+Fault
+MFpLdrS::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    Fault fault = checkMProfileFPEnabled(tc);
+    if (fault != NoFault) return fault;
+    setFPCA(tc);
+
+    Addr base = (rn == int_reg::Pc)
+        ? (tc->pcState().as<ArmISA::PCState>().instAddr() & ~0x3)
+        : tc->getReg(RegId(intRegClass, rn));
+    Addr addr = add ? (base + imm) : (base - imm);
+
+    uint32_t dummy = 0;
+    return gem5::initiateMemRead(xc, traceData, addr, dummy,
+                                 Request::Flags(0));
+}
+
+Fault
+MFpLdrS::completeAcc(PacketPtr pkt, ExecContext *xc,
+                      trace::InstRecord *traceData) const
+{
+    uint32_t data = 0;
+    gem5::getMemLE(pkt, data, traceData);
+    xc->setRegOperand(this, 0, (RegVal)data);
+    return NoFault;
+}
+
+std::string
+MFpLdrS::generateDisassembly(Addr pc,
+    const loader::SymbolTable *symtab) const
+{
+    std::ostringstream ss;
+    ss << "vldr s" << sd << ", [r" << rn
+       << ", #" << (add ? "+" : "-") << imm << "]";
+    return ss.str();
+}
+
+// =====================================================================
+// MFpStrS — VSTR.32 Sd, [Rn, #imm]
+// =====================================================================
+
+Fault
+MFpStrS::execute(ExecContext *xc, trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    Fault fault = checkMProfileFPEnabled(tc);
+    if (fault != NoFault) return fault;
+    setFPCA(tc);
+
+    Addr base = tc->getReg(RegId(intRegClass, rn));
+    Addr addr = add ? (base + imm) : (base - imm);
+
+    uint32_t data = (uint32_t)xc->getRegOperand(this, 1);
+    return gem5::writeMemAtomicLE(xc, traceData, data, addr,
+                                  Request::Flags(0), nullptr);
+}
+
+Fault
+MFpStrS::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    Fault fault = checkMProfileFPEnabled(tc);
+    if (fault != NoFault) return fault;
+    setFPCA(tc);
+
+    Addr base = tc->getReg(RegId(intRegClass, rn));
+    Addr addr = add ? (base + imm) : (base - imm);
+
+    uint32_t data = (uint32_t)xc->getRegOperand(this, 1);
+    return gem5::writeMemTimingLE(xc, traceData, data, addr,
+                                  Request::Flags(0), nullptr);
+}
+
+Fault
+MFpStrS::completeAcc(PacketPtr pkt, ExecContext *xc,
+                      trace::InstRecord *traceData) const
+{
+    return NoFault;
+}
+
+std::string
+MFpStrS::generateDisassembly(Addr pc,
+    const loader::SymbolTable *symtab) const
+{
+    std::ostringstream ss;
+    ss << "vstr s" << sd << ", [r" << rn
+       << ", #" << (add ? "+" : "-") << imm << "]";
+    return ss.str();
+}
+
+// =====================================================================
+// MFpLdrD — VLDR.64 Dd, [Rn, #imm]
+// Loads 8 bytes as a single 64-bit read.
+// D<n> aliases {S<2n+1>, S<2n>}: low word → S<2n>, high → S<2n+1>.
+// =====================================================================
+
+Fault
+MFpLdrD::execute(ExecContext *xc, trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    Fault fault = checkMProfileFPEnabled(tc);
+    if (fault != NoFault) return fault;
+    setFPCA(tc);
+
+    Addr base = (rn == int_reg::Pc)
+        ? (tc->pcState().as<ArmISA::PCState>().instAddr() & ~0x3)
+        : tc->getReg(RegId(intRegClass, rn));
+    Addr addr = add ? (base + imm) : (base - imm);
+
+    uint64_t data = 0;
+    fault = gem5::readMemAtomicLE(xc, traceData, addr, data,
+                                  Request::Flags(0));
+    if (fault != NoFault) return fault;
+
+    xc->setRegOperand(this, 0, (RegVal)(uint32_t)(data & 0xFFFFFFFF));
+    xc->setRegOperand(this, 1, (RegVal)(uint32_t)(data >> 32));
+    return NoFault;
+}
+
+Fault
+MFpLdrD::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    Fault fault = checkMProfileFPEnabled(tc);
+    if (fault != NoFault) return fault;
+    setFPCA(tc);
+
+    Addr base = (rn == int_reg::Pc)
+        ? (tc->pcState().as<ArmISA::PCState>().instAddr() & ~0x3)
+        : tc->getReg(RegId(intRegClass, rn));
+    Addr addr = add ? (base + imm) : (base - imm);
+
+    uint64_t dummy = 0;
+    return gem5::initiateMemRead(xc, traceData, addr, dummy,
+                                 Request::Flags(0));
+}
+
+Fault
+MFpLdrD::completeAcc(PacketPtr pkt, ExecContext *xc,
+                      trace::InstRecord *traceData) const
+{
+    uint64_t data = 0;
+    gem5::getMemLE(pkt, data, traceData);
+    xc->setRegOperand(this, 0, (RegVal)(uint32_t)(data & 0xFFFFFFFF));
+    xc->setRegOperand(this, 1, (RegVal)(uint32_t)(data >> 32));
+    return NoFault;
+}
+
+std::string
+MFpLdrD::generateDisassembly(Addr pc,
+    const loader::SymbolTable *symtab) const
+{
+    std::ostringstream ss;
+    ss << "vldr d" << dd << ", [r" << rn
+       << ", #" << (add ? "+" : "-") << imm << "]";
+    return ss.str();
+}
+
+// =====================================================================
+// MFpStrD — VSTR.64 Dd, [Rn, #imm]
+// Stores 8 bytes as a single 64-bit write.
+// =====================================================================
+
+Fault
+MFpStrD::execute(ExecContext *xc, trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    Fault fault = checkMProfileFPEnabled(tc);
+    if (fault != NoFault) return fault;
+    setFPCA(tc);
+
+    Addr base = tc->getReg(RegId(intRegClass, rn));
+    Addr addr = add ? (base + imm) : (base - imm);
+
+    uint32_t word1 = (uint32_t)xc->getRegOperand(this, 1);
+    uint32_t word2 = (uint32_t)xc->getRegOperand(this, 2);
+    uint64_t data = ((uint64_t)word2 << 32) | word1;
+
+    return gem5::writeMemAtomicLE(xc, traceData, data, addr,
+                                  Request::Flags(0), nullptr);
+}
+
+Fault
+MFpStrD::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    Fault fault = checkMProfileFPEnabled(tc);
+    if (fault != NoFault) return fault;
+    setFPCA(tc);
+
+    Addr base = tc->getReg(RegId(intRegClass, rn));
+    Addr addr = add ? (base + imm) : (base - imm);
+
+    uint32_t word1 = (uint32_t)xc->getRegOperand(this, 1);
+    uint32_t word2 = (uint32_t)xc->getRegOperand(this, 2);
+    uint64_t data = ((uint64_t)word2 << 32) | word1;
+
+    return gem5::writeMemTimingLE(xc, traceData, data, addr,
+                                  Request::Flags(0), nullptr);
+}
+
+Fault
+MFpStrD::completeAcc(PacketPtr pkt, ExecContext *xc,
+                      trace::InstRecord *traceData) const
+{
+    return NoFault;
+}
+
+std::string
+MFpStrD::generateDisassembly(Addr pc,
+    const loader::SymbolTable *symtab) const
+{
+    std::ostringstream ss;
+    ss << "vstr d" << dd << ", [r" << rn
+       << ", #" << (add ? "+" : "-") << imm << "]";
     return ss.str();
 }
 

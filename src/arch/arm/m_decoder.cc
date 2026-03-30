@@ -810,17 +810,61 @@ MDecoder::decodeMProfileVfp(ExtMachInst mach_inst)
         }
     }
 
+    // ---- VLDR / VSTR (FP load/store) ----
+    // Encoding: 1110 110x UDL1 Rn Vd 101s imm8
+    //   bit[24]=1, bit[21]=0 distinguishes VLDR/VSTR from VLDM/VSTM.
+    //   bit[20]=L (1=load, 0=store), bit[8]=sz (0=single, 1=double)
+    // DDI0403E A7.7.236 (VLDR), A7.7.255 (VSTR)
+    // Valid for both single (sz=0) and double-word (sz=1) on FPv4-SP.
+    // "supports doubleword data transfer instructions" [DDI0403 A6.3]
+    if (!bit4 && bits(inst, 24) == 1 && bits(inst, 21) == 0) {
+        const bool isLoad = bits(inst, 20);      // L bit
+        const bool U = bits(inst, 23);            // add/sub offset
+        const uint32_t imm8 = bits(inst, 7, 0);
+        const int32_t offset = imm8 << 2;         // imm8 x 4 bytes
+        const RegIndex base = (RegIndex)bits(inst, 19, 16);
+
+        if (single) {
+            // VLDR.32 / VSTR.32: Sd = Vd:D
+            RegIndex sd = (RegIndex)(bits(inst, 15, 12) << 1
+                                     | bits(inst, 22));
+            if (isLoad)
+                return new MFpLdrS(mach_inst, sd, base, offset, U);
+            else
+                return new MFpStrS(mach_inst, sd, base, offset, U);
+        } else {
+            // VLDR.64 / VSTR.64: Dd = D:Vd
+            RegIndex dd = (RegIndex)(bits(inst, 22) << 4
+                                     | bits(inst, 15, 12));
+            if (dd > 15)
+                return new MProfileUndefined(mach_inst,
+                    "VLDR/VSTR D16+ not available on ARMv7-M");
+            if (isLoad)
+                return new MFpLdrD(mach_inst, dd, base, offset, U);
+            else
+                return new MFpStrD(mach_inst, dd, base, offset, U);
+        }
+    }
+
     // ---- VFP data processing ----
     // Encoding: bit4=0, coproc=0xa/0xb
     // DDI0403E A7-242, Table A7-17
     if (!bit4) {
-        // Double-precision: not yet supported in M-profile decoder.
-        // Fall through to ISA-generated decoder.
+        // Double-precision check:
+        // - Load/store (bit25=0): VLDR/VSTR/VLDM/VSTM/VPUSH/VPOP for
+        //   d-registers are valid on FPv4-SP [DDI0403 A6.3].
+        //   VLDR/VSTR are intercepted above; others fall through to
+        //   the ISA-generated decoder.
+        // - Data-processing (bit25=1): VADD.F64, VMUL.F64, etc. require
+        //   M_PROFILE_FPU_DP.
         if (!single) {
+            bool is_load_store = (bits(inst, 25) == 0);
+            if (is_load_store)
+                return nullptr;  // allow — fall through to ISA decoder
             if (!has(ArmExtension::M_PROFILE_FPU_DP))
                 return new MProfileUndefined(mach_inst,
-                    "VFP double-precision without FPU_DP");
-            return nullptr;  // fall through for now
+                    "VFP double-precision arithmetic without FPU_DP");
+            return nullptr;  // fall through for DP-capable processors
         }
 
         switch (opc1 & 0xb /* mask to match A-profile table */) {
