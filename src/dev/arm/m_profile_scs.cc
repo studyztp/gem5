@@ -342,6 +342,12 @@ MProfileSCS::readRegByAddr(Addr alignedAddr)
         return readIpr(alignedAddr);
     } else if (alignedAddr >= 0xD00 && alignedAddr <= 0xD3F) {
         return readScb(alignedAddr - 0xD00);
+    } else if (alignedAddr == 0xD88) {
+        // CPACR — Coprocessor Access Control [DDI0403E B3.2.20]
+        return tc->readMiscRegNoEffect(ArmISA::MISCREG_M_CPACR);
+    } else if (alignedAddr >= 0xF34 && alignedAddr <= 0xF3C) {
+        // FP extension registers [DDI0403E B3.2.22-24]
+        return readFpExt(alignedAddr);
     }
     return 0;
 }
@@ -607,11 +613,22 @@ MProfileSCS::write(PacketPtr pkt)
         // -- SCB registers --
         writeScb(daddr - 0xD00, data);
 
-    } else if (daddr == 0xF00) {
-        // -- STIR: software trigger --
-        uint32_t excNum = (data & 0x1FF) + 16;
-        if (excNum < interrupts.size())
-            pendInterrupt(interrupts[excNum]);
+    } else if (daddr == 0xD88) {
+        // -- CPACR: Coprocessor Access Control [DDI0403E B3.2.20] --
+        // Only CP10/CP11 (bits [23:20]) are meaningful on M-profile.
+        // CP10 and CP11 must be set identically; other CP fields are RAZ/WI.
+        tc->setMiscRegNoEffect(ArmISA::MISCREG_M_CPACR, data);
+
+    } else if (daddr >= 0xF00 && daddr <= 0xF3C) {
+        if (daddr == 0xF00) {
+            // -- STIR: software trigger --
+            uint32_t excNum = (data & 0x1FF) + 16;
+            if (excNum < interrupts.size())
+                pendInterrupt(interrupts[excNum]);
+        } else if (daddr >= 0xF34 && daddr <= 0xF3C) {
+            // -- FP extension registers [DDI0403E B3.2.22-24] --
+            writeFpExt(daddr, data);
+        }
 
     } else {
         warn("MProfileSCS: write to unimplemented offset %#x", daddr);
@@ -753,6 +770,44 @@ MProfileSCS::writeScb(Addr offset, uint32_t data)
 
       default:
         warn("MProfileSCS: SCB write at unknown offset %#x", offset);
+    }
+}
+
+// -- FP extension register helpers --
+
+uint32_t
+MProfileSCS::readFpExt(Addr alignedAddr)
+{
+    switch (alignedAddr) {
+      case 0xF34: return tc->readMiscRegNoEffect(ArmISA::MISCREG_M_FPCCR);
+      case 0xF38: return tc->readMiscRegNoEffect(ArmISA::MISCREG_M_FPCAR);
+      case 0xF3C: return tc->readMiscRegNoEffect(ArmISA::MISCREG_M_FPDSCR);
+      default:
+        warn("MProfileSCS: FP ext read at unknown offset %#x", alignedAddr);
+        return 0;
+    }
+}
+
+void
+MProfileSCS::writeFpExt(Addr addr, uint32_t data)
+{
+    switch (addr) {
+      case 0xF34:
+        // FPCCR: bits 31:30 (ASPEN, LSPEN) are R/W config.
+        // Bits 8:0 are status — written by hardware during exception entry.
+        // For now, allow full write (firmware rarely touches status bits).
+        tc->setMiscRegNoEffect(ArmISA::MISCREG_M_FPCCR, data);
+        break;
+      case 0xF38:
+        tc->setMiscRegNoEffect(ArmISA::MISCREG_M_FPCAR, data);
+        break;
+      case 0xF3C:
+        // FPDSCR: default FPSCR for new FP contexts.
+        // Only bits [26:22] (AHP, DN, FZ, RMode) are defined.
+        tc->setMiscRegNoEffect(ArmISA::MISCREG_M_FPDSCR, data & 0x07C00000);
+        break;
+      default:
+        warn("MProfileSCS: FP ext write at unknown offset %#x", addr);
     }
 }
 

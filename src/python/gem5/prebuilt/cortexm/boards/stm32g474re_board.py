@@ -144,7 +144,7 @@ def _make_flash_bus():
         frontend_latency=0,
         forward_latency=0,
         response_latency=0,
-        width=8,
+        width=4,
         header_latency=0,
         clk_domain=SrcClockDomain(
             clock="10GHz",
@@ -195,7 +195,7 @@ def _make_addr_router():
         frontend_latency=0,
         forward_latency=0,
         response_latency=0,
-        width=8,
+        width=4,
         header_latency=0,
     )
 
@@ -235,8 +235,8 @@ class STM32G474RETimingBoard(ArmMSystem):
         super().__init__()
 
         platform = STM32G474REPlatform()
-        memories = platform.default_memories()
         self._enable_art = enable_art
+        memories = platform.default_memories(enable_art=enable_art)
 
         self.cache_line_size = 8
 
@@ -260,12 +260,23 @@ class STM32G474RETimingBoard(ArmMSystem):
         self.cpu.createInterruptController()
 
         # -- Buses --
-        # flash_bus: zero-latency direct path from ART caches to flash.
+        # flash_bus: zero-latency direct path for ICode (instruction fetch).
+        # dcode_flash_bus: separate path for DCode (literal pool / data
+        #   from Flash).  On real STM32G4, the flash controller has
+        #   independent ICode and DCode interfaces [RM0440 §3.1].
+        #   Without separate buses, DCode literal pool loads serialize
+        #   with ICode instruction fetches, causing +382% error on
+        #   bench_ldr_literal.
         # system_bus: AHB bus matrix (1-cy arbitration) for SRAM + SCS.
         self.flash_bus = _make_flash_bus()
+        self.dcode_flash_bus = _make_flash_bus()
         self.system_bus = _make_system_bus()
 
         # -- Memories: split flash vs SRAM onto separate buses --
+        # Flash memories connect to BOTH flash_bus (ICode) and
+        # dcode_flash_bus (DCode).  This models the real STM32G4 flash
+        # controller's dual-port interface — one physical flash with
+        # independent ICode/DCode read ports [RM0440 §3.1].
         flash_starts = {int(r.start) for r in platform.code_ranges}
 
         self.mem_ranges = []
@@ -274,6 +285,7 @@ class STM32G474RETimingBoard(ArmMSystem):
             self.mem_ranges.append(mem.range)
             if int(mem.range.start) in flash_starts:
                 mem.port = self.flash_bus.mem_side_ports
+                mem.port = self.dcode_flash_bus.mem_side_ports
             else:
                 mem.port = self.system_bus.mem_side_ports
 
@@ -374,12 +386,14 @@ class STM32G474RETimingBoard(ArmMSystem):
             self.art_icache.mem_side = self.flash_bus.cpu_side_ports
 
             self.art_dcache.cpu_side = self.dcode_bus.mem_side_ports
-            self.art_dcache.mem_side = self.flash_bus.cpu_side_ports
+            self.art_dcache.mem_side = self.dcode_flash_bus.cpu_side_ports
         else:
-            # No ART: icode/dcode buses route flash directly to flash_bus,
-            # non-flash already goes to system_bus via default port.
+            # No ART: ICode and DCode use separate flash buses to avoid
+            # serialization when both need Flash access simultaneously.
+            # This models the real STM32G4 flash controller's independent
+            # ICode/DCode interfaces [RM0440 §3.1].
             self.icode_bus.mem_side_ports = self.flash_bus.cpu_side_ports
-            self.dcode_bus.mem_side_ports = self.flash_bus.cpu_side_ports
+            self.dcode_bus.mem_side_ports = self.dcode_flash_bus.cpu_side_ports
 
     def set_workload(self, firmware_path):
         """Set the bare-metal firmware ELF to execute."""

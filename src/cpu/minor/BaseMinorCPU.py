@@ -143,6 +143,17 @@ class MinorFU(SimObject):
     )
 
 
+class DynamicLatencyIntDivFU(MinorFU):
+    """MinorFU with data-dependent SDIV/UDIV latency.
+
+    Overrides dynamicExtraLatency() to compute 2-12 cycle latency
+    based on the dividend's significant bits [DDI0439D Table 3-1]."""
+
+    type = "DynamicLatencyIntDivFU"
+    cxx_header = "cpu/minor/func_unit.hh"
+    cxx_class = "gem5::DynamicLatencyIntDivFU"
+
+
 class MinorFUPool(SimObject):
     type = "MinorFUPool"
     cxx_header = "cpu/minor/func_unit.hh"

@@ -1236,6 +1236,12 @@ namespace ArmISA
         MISCREG_M_BFAR,
         MISCREG_M_AFSR,
 
+        // M-profile FP extension registers [DDI0403E B3.2.20, B3.2.22]
+        MISCREG_M_CPACR,    // Coprocessor Access Control (0xE000ED88)
+        MISCREG_M_FPCCR,    // FP Context Control (0xE000EF34)
+        MISCREG_M_FPCAR,    // FP Context Address (0xE000EF38)
+        MISCREG_M_FPDSCR,   // FP Default Status Control (0xE000EF3C)
+
         // NUM_PHYS_MISCREGS specifies the number of actual physical
         // registers, not considering the following pseudo-registers
         // (dummy registers), like MISCREG_UNKNOWN, MISCREG_IMPDEF_UNIMPL.
@@ -2535,6 +2541,10 @@ namespace ArmISA
         "m_mmfar",
         "m_bfar",
         "m_afsr",
+        "m_cpacr",
+        "m_fpccr",
+        "m_fpcar",
+        "m_fpdscr",
 
         "num_phys_regs",
 

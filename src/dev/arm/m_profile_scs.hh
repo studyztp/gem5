@@ -358,6 +358,12 @@ class MProfileSCS : public BasicPioDevice
 
     /** Write an SCB register by offset from 0xD00. */
     void writeScb(Addr offset, uint32_t data);
+
+    /** Read an FP extension register (FPCCR/FPCAR/FPDSCR) by SCS offset. */
+    uint32_t readFpExt(Addr alignedAddr);
+
+    /** Write an FP extension register by SCS offset. */
+    void writeFpExt(Addr addr, uint32_t data);
 };
 
 } // namespace gem5

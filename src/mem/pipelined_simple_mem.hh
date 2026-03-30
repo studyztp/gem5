@@ -29,7 +29,13 @@
 #ifndef __MEM_PIPELINED_SIMPLE_MEMORY_HH__
 #define __MEM_PIPELINED_SIMPLE_MEMORY_HH__
 
-#include "mem/simple_mem.hh"
+#include <list>
+#include <memory>
+#include <vector>
+
+#include "base/random.hh"
+#include "mem/abstract_mem.hh"
+#include "mem/port.hh"
 #include "params/PipelinedSimpleMemory.hh"
 
 namespace gem5
@@ -39,52 +45,143 @@ namespace memory
 {
 
 /**
- * A pipelined memory model inheriting from SimpleMemory.
+ * Multi-ported pipelined memory with per-port read buffers and priority.
  *
- * Models two AHB-Lite behaviors:
- *  1. Address/data phase overlap: accepts up to max_outstanding
- *     concurrent requests instead of blocking on isBusy.
- *  2. Read buffer: serves subsequent reads from the same aligned block
- *     at buffer_hit_cycles instead of the full latency, modelling a
- *     flash controller's internal read register.
+ * Models a flash controller with independent ICode/DCode read ports,
+ * per-port read buffers, priority-based scheduling, and AHB-style
+ * address/data phase overlap.
+ *
+ * Per-port state: read buffer (address + size), priority, retry flags.
+ * Shared state: flash array (response queue, address phase, outstanding).
+ *
+ * Priority: higher-priority ports can use up to maxOutstanding even
+ * under contention; lower-priority ports are limited to maxPerPort.
+ * Response queue is sorted by (tick, priority descending).
  */
-class PipelinedSimpleMemory : public SimpleMemory
+class PipelinedSimpleMemory : public AbstractMemory
 {
+  public:
+    /**
+     * Inner port class — one instance per connection.
+     * Per-port state: read buffer, priority, retry flags.
+     */
+    class MemoryPort : public ResponsePort
+    {
+      public:
+        PipelinedSimpleMemory &mem;
+        const PortID portId;
+
+        /** Per-port read buffer state. */
+        Addr bufferedBlockAddr;
+        unsigned readBufferSize;  // bytes, 0 = disabled
+
+        /** Per-port priority (higher = higher priority). */
+        unsigned priority;
+
+        /** Per-port retry flags. */
+        bool retryReq;
+        bool retryResp;
+
+        MemoryPort(const std::string &name,
+                   PipelinedSimpleMemory &_mem, PortID _id,
+                   unsigned _readBufferSize, unsigned _priority);
+
+      protected:
+        Tick recvAtomic(PacketPtr pkt) override;
+        Tick recvAtomicBackdoor(
+            PacketPtr pkt, MemBackdoorPtr &backdoor) override;
+        void recvFunctional(PacketPtr pkt) override;
+        void recvMemBackdoorReq(
+            const MemBackdoorReq &req,
+            MemBackdoorPtr &backdoor) override;
+        bool recvTimingReq(PacketPtr pkt) override;
+        void recvRespRetry() override;
+        AddrRangeList getAddrRanges() const override;
+    };
+
   private:
-    /** Maximum number of outstanding requests. */
+    /** Port vector — one per connection. */
+    std::vector<std::unique_ptr<MemoryPort>> ports;
+
+    /** Latency params. */
+    const Tick latency;
+    const Tick latencyVar;
+
+    /** Maximum total outstanding requests (flash pipeline depth). */
     const unsigned maxOutstanding;
 
-    /** Minimum cycles between accepting consecutive requests. */
+    /** Max outstanding per low-priority port under contention. */
+    const unsigned maxPerPort;
+
+    /** Minimum cycles between consecutive request acceptance. */
     const Cycles addressPhaseCycles;
 
-    /** Tick at which the next request can be accepted. */
+    /** Tick at which the next request can be accepted (shared). */
     Tick nextAcceptTick;
-
-    /** Read buffer size in bytes (0 = disabled, must be power of 2). */
-    const unsigned readBufferSize;
 
     /** Latency for a read buffer hit. */
     const Cycles bufferHitCycles;
 
-    /** Address of the currently buffered aligned block (~0 = invalid). */
-    Addr bufferedBlockAddr;
-
-    /** Tick at which the last response will be sent.  Used to enforce
-     *  in-order response delivery: each new response's data phase cannot
-     *  start until the previous one completes (AHB ordered bus). */
+    /** Tick at which the last response will be sent (shared). */
     Tick lastResponseTick;
 
-    /** Event to send retry when a queue slot opens. */
-    EventFunctionWrapper retryEvent;
+    /** Pending response with port ID and priority for queue ordering. */
+    struct DeferredPacket
+    {
+        PacketPtr pkt;
+        Tick tick;
+        PortID portId;
+        unsigned priority;
 
-    /** Send retry to upstream if appropriate. */
-    void sendRetry();
+        DeferredPacket(PacketPtr _pkt, Tick _tick, PortID _id, unsigned _pri)
+            : pkt(_pkt), tick(_tick), portId(_id), priority(_pri)
+        {}
+    };
 
-  protected:
-    bool recvTimingReq(PacketPtr pkt) override;
+    /** Response queue sorted by (tick, then priority descending). */
+    std::list<DeferredPacket> packetQueue;
+
+    /** Event to dequeue completed responses. */
+    EventFunctionWrapper dequeueEvent;
+
+    /** Per-port outstanding request count. */
+    std::vector<unsigned> portOutstanding;
+
+    /** Per-port retry events. */
+    std::vector<EventFunctionWrapper> retryEvents;
+
+    /** Check if this port has the highest priority among all ports. */
+    bool isHighestPriority(PortID portId) const;
+
+    /** Insert packet into queue sorted by (tick, priority desc). */
+    void insertSorted(DeferredPacket &&entry);
+
+    /** Dequeue and send the front response. */
+    void dequeue();
+
+    /** Send retry to upstream on a specific port. */
+    void sendRetry(PortID portId);
+
+    /** Random number generator for latency variance. */
+    mutable Random::RandomPtr rng = Random::genRandom();
+
+    /** Compute access latency (with optional random variance). */
+    Tick getLatency() const;
 
   public:
-    PipelinedSimpleMemory(const PipelinedSimpleMemoryParams &p);
+    PARAMS(PipelinedSimpleMemory);
+    PipelinedSimpleMemory(const Params &p);
+
+    Port &getPort(const std::string &if_name,
+                  PortID idx = InvalidPortID) override;
+
+    void init() override;
+
+    /** Handle timing request from a specific port. */
+    bool recvTimingReq(PacketPtr pkt, PortID portId);
+
+    /** Handle response retry from a specific port. */
+    void recvRespRetry(PortID portId);
 };
 
 } // namespace memory

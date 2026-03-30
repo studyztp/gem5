@@ -450,6 +450,16 @@ class SingleStageFetch1 : public Fetch1
     SingleStageFetch2 *fetch2;
     BranchData lastPrediction;
 
+    /** Direct access to the eToF1 latch INPUT wire.
+     *  In the 3-stage pipeline, Execute writes the branch result to
+     *  eToF1.input() and Fetch1 reads from eToF1.output() (1-cycle delay).
+     *  By also reading eToF1.input(), we can see the branch result in
+     *  the SAME cycle Execute produces it — matching the real Cortex-M4
+     *  where the branch target feeds back to Fetch within the same clock.
+     *  This bypasses the executeBranchDelay latch for 0-cycle redirect. */
+    Latch<BranchData>::Input eToF1Input;
+
+
   public:
     SingleStageFetch1(const std::string &name_,
         MinorCPU &cpu_,
@@ -458,7 +468,8 @@ class SingleStageFetch1 : public Fetch1
         Latch<ForwardLineData>::Input out_,
         Latch<BranchData>::Output prediction_,
         std::vector<InputBuffer<ForwardLineData>> &next_stage_input_buffer,
-        SingleStageFetch2 *fetch2_);
+        SingleStageFetch2 *fetch2_,
+        Latch<BranchData>::Input eToF1Input_);
 
     ~SingleStageFetch1() override = default;
 

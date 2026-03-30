@@ -49,7 +49,8 @@ SimObject('BranchPredictor.py',
     'BranchTargetBuffer', 'SimpleBTB', 'BTBIndexingPolicy', 'BTBSetAssociative',
     'ReturnAddrStack',
     'ITTAGE', 'ITTAGE_TAGE',
-    'LocalBP', 'TournamentBP', 'BiModeBP', 'TAGEBase', 'TAGE', 'LoopPredictor',
+    'LocalBP', 'StaticBTFNT', 'TournamentBP', 'BiModeBP',
+    'TAGEBase', 'TAGE', 'LoopPredictor',
     'TAGE_SC_L_TAGE', 'TAGE_SC_L_TAGE_64KB', 'TAGE_SC_L_TAGE_8KB',
     'LTAGE', 'TAGE_SC_L_LoopPredictor', 'StatisticalCorrector', 'TAGE_SC_L',
     'TAGE_SC_L_64KB_StatisticalCorrector',
@@ -65,6 +66,7 @@ SimObject('BranchPredictor.py',
 
 Source('bpred_unit.cc')
 Source('2bit_local.cc')
+Source('static_btfnt.cc')
 Source('simple_indirect.cc')
 Source('conditional.cc')
 Source('it_tage.cc')

@@ -764,6 +764,25 @@ Execute::issue(ThreadID thread_id)
                          *  this instruction to get to the end of its FU */
                         cpu.activityRecorder->activity();
 
+                        /* Dynamic FU latency callback (e.g., data-
+                         * dependent SDIV/UDIV).  Source register values
+                         * are valid because commit() runs before issue()
+                         * in evaluate(), so all producers have committed.
+                         */
+                        Cycles dynExtra =
+                            fu->description.dynamicExtraLatency(
+                                cpu.getContext(thread_id),
+                                inst->staticInst);
+                        if (dynExtra != Cycles(0)) {
+                            fu->nextInsertCycle = cpu.curCycle() +
+                                fu->description.opLat + dynExtra;
+                            extra_dest_retire_lat += dynExtra;
+                            DPRINTF(MinorExecute, "Dynamic extra latency"
+                                " for %s: %d cycles (total %d)\n",
+                                *inst, dynExtra,
+                                fu->description.opLat + dynExtra);
+                        }
+
                         /* Mark the destinations for this instruction as
                          *  busy */
                         scoreboard[thread_id].markupInstDests(inst, cpu.curCycle() +

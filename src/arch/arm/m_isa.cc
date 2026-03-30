@@ -179,6 +179,18 @@ MISA::clear()
     miscRegs[MISCREG_M_MMFAR] = 0;
     miscRegs[MISCREG_M_BFAR] = 0;
     miscRegs[MISCREG_M_AFSR] = 0;
+
+    // -- FP extension registers (DDI0403E B3.2.20, B3.2.22) --
+    // CPACR: all coprocessors disabled at reset (CP10/CP11 = 0b00).
+    // Firmware must set CP10=CP11=0b11 before executing FP instructions.
+    miscRegs[MISCREG_M_CPACR] = 0;
+    // FPCCR: ASPEN=1 (bit 31), LSPEN=1 (bit 30) — automatic and lazy
+    // state preservation both enabled by default.
+    miscRegs[MISCREG_M_FPCCR] = 0xC0000000;
+    // FPCAR: undefined at reset (lazy stacking address)
+    miscRegs[MISCREG_M_FPCAR] = 0;
+    // FPDSCR: default FPSCR value for new FP contexts = 0
+    miscRegs[MISCREG_M_FPDSCR] = 0;
 }
 
 // =========================================================================
@@ -471,6 +483,8 @@ MISA::copyRegsFrom(ThreadContext *src)
         MISCREG_M_SHPR3, MISCREG_M_SHCSR, MISCREG_M_CFSR,
         MISCREG_M_HFSR, MISCREG_M_DFSR, MISCREG_M_MMFAR,
         MISCREG_M_BFAR, MISCREG_M_AFSR,
+        MISCREG_M_CPACR, MISCREG_M_FPCCR, MISCREG_M_FPCAR,
+        MISCREG_M_FPDSCR,
     };
     for (auto reg : mRegs)
         tc->setMiscRegNoEffect(reg, src->readMiscRegNoEffect(reg));

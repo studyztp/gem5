@@ -26,6 +26,7 @@
 
 from m5.objects.InstDecoder import InstDecoder
 from m5.params import *
+from m5.proxy import *
 
 
 class ArmMDecoder(InstDecoder):
@@ -48,3 +49,7 @@ class ArmMDecoder(InstDecoder):
     # ISA reference — needed by BaseCPU.createThreads() which creates
     # decoders as ArmMDecoder(isa=isa_instance).
     isa = Param.BaseISA("ISA object for this decoder")
+
+    # System reference — needed for release/extension checking (e.g.,
+    # M_PROFILE_FPU_SP) when decoding coprocessor instructions.
+    system = Param.System(Parent.any, "System for release checking")

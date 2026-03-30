@@ -856,10 +856,12 @@ SingleStageFetch1::SingleStageFetch1(const std::string &name_,
     Latch<ForwardLineData>::Input out_,
     Latch<BranchData>::Output prediction_,
     std::vector<InputBuffer<ForwardLineData>> &next_stage_input_buffer,
-    SingleStageFetch2 *fetch2_) :
+    SingleStageFetch2 *fetch2_,
+    Latch<BranchData>::Input eToF1Input_) :
     Fetch1(name_, cpu_, params, inp_, out_, prediction_,
         next_stage_input_buffer),
-    fetch2(fetch2_)
+    fetch2(fetch2_),
+    eToF1Input(eToF1Input_)
 {
 }
 
@@ -872,9 +874,13 @@ SingleStageFetch1::evaluate()
     for (ThreadID tid = 0; tid < cpu.numThreads; tid++)
         fetchInfo[tid].blocked = fetch2->isNextStageBlocked(tid);
 
-    /* Branch redirects: Execute branch from eToF1 latch,
-     * prediction from previous cycle */
-    handleBranchRedirects(*inp.outputWire, lastPrediction);
+    /* Branch redirects: Read Execute's branch result from the
+     * eToF1 INPUT wire (same-cycle bypass) instead of the OUTPUT
+     * wire (1-cycle delayed).  This models the Cortex-M4's 3-stage
+     * pipeline where the branch target feeds back to Fetch within
+     * the same clock cycle.  Execute has already evaluated this
+     * cycle (Pipeline::evaluate runs Execute before Fetch). */
+    handleBranchRedirects(*eToF1Input.inputWire, lastPrediction);
 
     /* Step I-cache queues */
     stepQueues();
@@ -886,11 +892,6 @@ SingleStageFetch1::evaluate()
     ThreadID discarded_tid = InvalidThreadID;
     processCompletedFetch(line, was_discarded, discarded_tid);
 
-    /* Issue new I-cache fetch (no inputBuffer reservation).
-     * Must run AFTER processCompletedFetch so the transfers queue
-     * slot is freed and fetchLimit check passes. */
-    tryToFetch();
-
     /* --- Handoff: push line to Fetch2's inputBuffer --- */
     if (!line.isBubble()) {
         fetch2->inputBuffer[line.id.threadId].setTail(line);
@@ -899,10 +900,36 @@ SingleStageFetch1::evaluate()
 
     /* --- Fetch2 phase: decode + branch prediction --- */
     BranchData prediction;
-    fetch2->runDecodeCore(prediction);
+    fetch2->runDecodeCore(prediction, *eToF1Input.inputWire);
 
-    /* Save prediction for next cycle */
-    lastPrediction = prediction;
+    /* Apply predicted-taken redirect IMMEDIATELY in this cycle,
+     * rather than waiting for next cycle via lastPrediction.
+     * This models the Cortex-M4's early address resolution:
+     * the branch target is computed during decode and the
+     * pipeline refill starts in the same cycle — there is no
+     * speculative prediction delay on real hardware [DDI0439D §3.3]. */
+    if (prediction.isStreamChange()) {
+        Fetch1ThreadInfo &thread = fetchInfo[prediction.threadId];
+        if (thread.state != FetchHalted &&
+            prediction.newStreamSeqNum == thread.streamSeqNum) {
+            changeStream(prediction);
+        }
+    }
+
+    /* Clear lastPrediction — it was consumed immediately above */
+    lastPrediction = BranchData::bubble();
+
+    /* Issue new I-cache fetch AFTER decode + branch prediction.
+     * If a branch was predicted taken, changeStream() already updated
+     * the PC to the branch target, so this fetch is for the correct
+     * address.
+     *
+     * If no prediction was produced but the lookahead scan detects a
+     * branch instruction next in the line, suppress the sequential
+     * prefetch. */
+    if (!prediction.isBubble() || !fetch2->scanNextForBranch()) {
+        tryToFetch();
+    }
 
     /* --- Post-evaluate --- */
     postEvaluate(line);

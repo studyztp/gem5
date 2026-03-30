@@ -192,7 +192,7 @@ class Fetch2 : public Named
     /** Predicts branches for the given instruction.  Updates the
      *  instruction's predicted... fields and also the branch which
      *  carries the prediction to Fetch1 */
-    void predictBranch(MinorDynInstPtr inst, BranchData &branch);
+    virtual void predictBranch(MinorDynInstPtr inst, BranchData &branch);
 
     /** Use the current threading policy to determine the next thread to
      *  fetch from. */
@@ -265,8 +265,37 @@ class SingleStageFetch2 : public Fetch2
     void evaluate() override;
 
     /** Run decode core logic. Called by SingleStageFetch1 in combined
-     *  single-stage mode. Uses Fetch1StageId for activation. */
-    void runDecodeCore(BranchData &prediction_out);
+     *  single-stage mode. Uses Fetch1StageId for activation.
+     *  @param executeBranch same-cycle Execute branch (eToF1 input wire) */
+    void runDecodeCore(BranchData &prediction_out,
+                       const BranchData &executeBranch);
+
+    /** Override: for direct branches, predict taken and supply target
+     *  from branchTarget() — modeling Cortex-M4 early address speculation
+     *  [DDI0439D §3.3.1]. Calls base class first to preserve BPredUnit
+     *  history and stats, then overrides the result for direct branches. */
+    void predictBranch(MinorDynInstPtr inst, BranchData &branch) override;
+
+    /** Override: on misprediction, check if the correct target is already
+     *  in the input buffer before dumping. For 16-bit branches, the
+     *  fall-through is in the same 4-byte fetch line — no re-fetch needed.
+     *  Uses same-cycle execute branch (not the 1-cycle delayed latch). */
+    void reactToExecuteBranch(const BranchData &executeBranch);
+
+    /** Saved fetch line from before a taken prediction.  When a 16-bit
+     *  branch is predicted taken, the fall-through instruction is in the
+     *  same 4-byte fetch line.  We save it here so that if Execute says
+     *  BadlyPredictedBranch (actually not-taken), we can restore it
+     *  instead of re-fetching from Flash. */
+    ForwardLineData savedLine;
+
+    /** Peek at the next instruction in the current input line without
+     *  advancing decode state. Returns true if it is a control-flow
+     *  instruction (branch/call/return). Used by SingleStageFetch1 to
+     *  suppress sequential prefetching when a branch is imminent —
+     *  modeling the Cortex-M4's ability to detect branches in the
+     *  32-bit fetch word during decode [DDI0439D §3.3]. */
+    bool scanNextForBranch();
 
     /** Check if the next stage (Decode) is blocked. */
     bool isNextStageBlocked(ThreadID tid) const {

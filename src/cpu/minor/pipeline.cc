@@ -125,7 +125,7 @@ Pipeline::Pipeline(MinorCPU &cpu_, const BaseMinorCPUParams &params) :
         fetch2 = ssf2;
         fetch1 = new SingleStageFetch1(cpu.name() + ".fetch1", cpu,
             params, eToF1.output(), f1ToF2.input(), f2ToF1.output(),
-            fetch2->inputBuffer, ssf2);
+            fetch2->inputBuffer, ssf2, eToF1.input());
     } else {
         fetch2 = new Fetch2(cpu.name() + ".fetch2", cpu, params,
             f1ToF2.output(), eToF1.output(), f2ToF1.input(), f2ToD.input(),

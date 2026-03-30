@@ -178,9 +178,23 @@ MMMU::StackingPort::StackingPort(const std::string &name, MMMU &mmu)
 void
 MMMU::StackingPort::schedTimingReq(PacketPtr pkt, Tick when)
 {
+    // If the packet is ready now and nothing is in flight, send
+    // immediately without going through the event queue.  This
+    // avoids the +1 tick delay that would misalign the request
+    // with the bus clock edge.
+    if (when <= curTick() && !waitingOnRetry && pendingQueue.empty()) {
+        if (sendTimingReq(pkt)) {
+            return;  // sent successfully
+        }
+        // Rejected — fall through to queue it.
+        waitingOnRetry = true;
+    }
+
     pendingQueue.push({when, pkt});
-    if (!waitingOnRetry && !sendEvent.scheduled())
-        mmu.schedule(sendEvent, std::max(when, curTick() + 1));
+    if (!waitingOnRetry && !sendEvent.scheduled()) {
+        Tick sendTick = std::max(pendingQueue.top().tick, curTick() + 1);
+        mmu.schedule(sendEvent, sendTick);
+    }
 }
 
 void
@@ -196,24 +210,25 @@ MMMU::StackingPort::processSendEvent()
 
     pendingQueue.pop();
     if (!sendTimingReq(top.pkt)) {
-        // Rejected — put back and wait for retry.
         pendingQueue.push({curTick(), top.pkt});
         waitingOnRetry = true;
         return;
     }
 
-    if (!pendingQueue.empty() && !sendEvent.scheduled())
-        mmu.schedule(sendEvent,
-            std::max(pendingQueue.top().tick, curTick() + 1));
+    if (!pendingQueue.empty() && !sendEvent.scheduled()) {
+        Tick sendTick = std::max(pendingQueue.top().tick, curTick() + 1);
+        mmu.schedule(sendEvent, sendTick);
+    }
 }
 
 void
 MMMU::StackingPort::recvReqRetry()
 {
     waitingOnRetry = false;
-    if (!pendingQueue.empty() && !sendEvent.scheduled())
-        mmu.schedule(sendEvent,
-            std::max(pendingQueue.top().tick, curTick() + 1));
+    if (!pendingQueue.empty() && !sendEvent.scheduled()) {
+        Tick sendTick = std::max(pendingQueue.top().tick, curTick() + 1);
+        mmu.schedule(sendEvent, sendTick);
+    }
 }
 
 bool
@@ -336,6 +351,9 @@ MMMU::storeToStack(Addr frameptr, const std::vector<uint32_t> &values,
             pkt->pushSenderState(
                 new StackingSenderState(stackingGeneration));
             Tick cpuClkPeriod = tc->getCpuPtr()->clockPeriod();
+            // Model AHB burst timing: first beat takes 1 extra cycle
+            // for address calculation / AHB address phase, giving
+            // 1 + N total cycles [DDI0439D §3.3.2, Table 3-1].
             Tick sendTick = curTick() + i * cpuClkPeriod;
             DPRINTF(MProfileStacking,
                     "storeToStack: scheduling write[%u] addr=%#x "
@@ -414,6 +432,9 @@ MMMU::readFromStack(Addr frameptr, uint32_t numWords, ThreadContext *tc)
 
             pkt->pushSenderState(
                 new StackingSenderState(stackingGeneration));
+            // Model AHB burst timing: first beat takes 1 extra cycle
+            // for address calculation / AHB address phase, giving
+            // 1 + N total cycles [DDI0439D §3.3.2, Table 3-1].
             Tick sendTick = curTick() + i * cpuClkPeriod;
             DPRINTF(MProfileStacking,
                     "readFromStack: scheduling read[%u] addr=%#x "

@@ -464,7 +464,8 @@ class MacroMemOp : public PredMacroOp
   protected:
     MacroMemOp(const char *mnem, ExtMachInst machInst, OpClass __opClass,
                RegIndex rn, bool index, bool up, bool user,
-               bool writeback, bool load, uint32_t reglist);
+               bool writeback, bool load, uint32_t reglist,
+               bool noPairedLoads = false);
 };
 
 /**

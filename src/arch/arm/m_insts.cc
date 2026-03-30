@@ -589,6 +589,32 @@ BkptSemiMProfile::generateDisassembly(Addr pc,
 }
 
 // =========================================================================
+// BarrierMProfile::execute — DMB / DSB
+// =========================================================================
+//
+// M-profile DMB/DSB: memory barrier without pipeline flush.
+// On Cortex-M4 (in-order, no data cache), these just drain the write
+// buffer.  The actual barrier semantics are enforced by the
+// IsReadBarrier/IsWriteBarrier flags which prevent the MinorCPU LSQ
+// from reordering memory accesses across this instruction.
+//
+// The execute body is empty — all work is done by the flags.
+
+Fault
+BarrierMProfile::execute(ExecContext *xc,
+                         trace::InstRecord *traceData) const
+{
+    return NoFault;
+}
+
+std::string
+BarrierMProfile::generateDisassembly(
+    Addr pc, const loader::SymbolTable *symtab) const
+{
+    return std::string(mnemonic) + "\tsy";
+}
+
+// =========================================================================
 // LdrexMProfile::execute — LDREX / LDREXB / LDREXH
 // =========================================================================
 //

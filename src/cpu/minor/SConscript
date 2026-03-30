@@ -43,7 +43,7 @@ Import('*')
 if env['CONF']['BUILD_ISA']:
     SimObject('BaseMinorCPU.py', sim_objects=[
         'MinorOpClass', 'MinorOpClassSet', 'MinorFUTiming', 'MinorFU',
-        'MinorFUPool', 'BaseMinorCPU'],
+        'DynamicLatencyIntDivFU', 'MinorFUPool', 'BaseMinorCPU'],
         enums=['ThreadPolicy'])
 
     Source('activity.cc')

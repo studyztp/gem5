@@ -126,6 +126,8 @@ class STM32F405Platform(ArmMPlatform):
     # 82 external IRQs (RM0090 Table 62: position 0-81).
     # 4-bit priority (16 programmable levels, standard for Cortex-M4).
     # SysTick and BASEPRI/FAULTMASK are present (Cortex-M4).
+    # PPB (Private Peripheral Bus) is zero wait-state on Cortex-M4.
+    # Override BasicPioDevice's default pio_latency=100ns.
     scs = MProfileSCS(
         num_irqs=82,
         priority_bits=4,
@@ -133,6 +135,7 @@ class STM32F405Platform(ArmMPlatform):
         has_basepri=True,
         systick_calib=0x8019A27F,  # NOREF=1, SKEW=0, TENMS=1679999
         # (10ms at 168MHz HCLK)
+        pio_latency="1ns",
     )
 
     def cpuid(self):
@@ -249,6 +252,9 @@ class STM32G474REPlatform(ArmMPlatform):
     # -- SCS --
     # 102 external IRQs (RM0440 Table 98: position 0-101).
     # 4-bit priority (16 programmable levels).
+    # PPB (Private Peripheral Bus) is zero wait-state on Cortex-M4.
+    # Override BasicPioDevice's default pio_latency=100ns (designed for
+    # slow PCI devices) to match the real hardware.  [DDI0439D §3.3.1]
     scs = MProfileSCS(
         num_irqs=102,
         priority_bits=4,
@@ -256,48 +262,75 @@ class STM32G474REPlatform(ArmMPlatform):
         has_basepri=True,
         systick_calib=0x8019F0BF,  # NOREF=1, SKEW=0, TENMS=1699999
         # (10ms at 170MHz HCLK)
+        pio_latency="1ns",
     )
 
     def cpuid(self):
         """CPUID for Cortex-M4 r0p1 (DDI0403E B3.2.3)."""
         return 0x410FC241
 
-    def default_memories(self):
+    def default_memories(self, enable_art=False):
         """
         Create default SimpleMemory objects matching this chip's layout.
 
         Returns a list of memories with reasonable latencies for a
         Cortex-M4 @ 170MHz.  No boot alias — correctly linked
         firmware places the vector table at 0x08000000.
+
+        Args:
+            enable_art: If True, the ART accelerator models the AHB
+                address phase (CPU→ART), so Flash does not need its own
+                address_phase_cycles.  If False, Flash models the AHB
+                address phase directly (CPU→Flash).
         """
+        # Flash timing at 170 MHz: 4 wait states [RM0440 Table 19].
+        #
+        # Without ART: CPU accesses Flash via AHB directly.
+        #   address_phase_cycles=1: AHB address phase (1 cy)
+        #   latency="29ns": data phase (ceil(29000/5882) = 5 cy)
+        #   Total: 1 + 5 = 6 cy per Flash access
+        #   read_buffer_size=8: 64-bit Flash read serves 2 ICode fetches
+        #
+        # With ART: ART models the AHB address phase (CPU→ART).
+        #   address_phase_cycles=0: no extra address phase on Flash
+        #   latency="29ns": full Flash access time (5 cy)
+        #   Total: 5 cy from Flash (ART adds 1 cy address on top)
+        #   read_buffer_size=0: ART has its own buffers, Flash read
+        #   buffer is redundant
+        if enable_art:
+            flash_addr_phase = 0
+            flash_read_buf = [0, 0]
+            flash_max_outstanding = 1
+        else:
+            flash_addr_phase = 1
+            flash_read_buf = [8, 8]
+            flash_max_outstanding = 2
+
         return [
             # Flash Bank 1: 4 WS at 170MHz [RM0440 Table 19].
-            # address_phase_cycles=1 models the AHB address phase (1 cy).
-            # latency models the data phase only: 4 WS = 4 cycles.
-            # 4 cy × 5882 ticks = 23528 ticks = 23.528 ns.
-            # Using "23ns" so ceil(23000/5882) = ceil(3.91) = 4 cycles.
-            # The total request-to-response is 4 cy (latency) + bus
-            # propagation, matching the real 4 WS timing.
-            # read_buffer_size=8: models the 64-bit flash read interface
-            # [RM0440 §4.2].  Consecutive 4-byte reads within the same
-            # 8-byte aligned block hit the read buffer at 1 cycle instead
-            # of the full 4-cycle flash latency.
+            # port[0] = ICode (instruction fetch), priority=0 (low)
+            # port[1] = DCode (literal pool data), priority=1 (high)
+            # DCode has priority over ICode [RM0440 §3.3.4]
             PipelinedSimpleMemory(
                 range=AddrRange(0x08000000, size="256KiB"),
                 latency="29ns",
-                max_outstanding=2,
-                address_phase_cycles=1,
-                read_buffer_size=8,
+                max_outstanding=flash_max_outstanding,
+                max_per_port=1,
+                address_phase_cycles=flash_addr_phase,
                 buffer_hit_cycles=1,
+                port_priority=[0, 0],
+                port_read_buffer_size=flash_read_buf,
             ),
-            # Flash Bank 2: same latency and read buffer as Bank 1.
+            # Flash Bank 2: same config as Bank 1.
             PipelinedSimpleMemory(
                 range=AddrRange(0x08040000, size="256KiB"),
                 latency="29ns",
-                max_outstanding=2,
-                address_phase_cycles=1,
-                read_buffer_size=8,
+                max_outstanding=flash_max_outstanding,
+                max_per_port=1,
+                address_phase_cycles=flash_addr_phase,
                 buffer_hit_cycles=1,
+                port_priority=[0, 0],
+                port_read_buffer_size=flash_read_buf,
             ),
             # SRAM1: zero wait state [RM0440 §2].
             # With frontend_latency=0 on system_bus (address phase now
@@ -305,7 +338,7 @@ class STM32G474REPlatform(ArmMPlatform):
             # address_phase (1 cy) + latency (1 ns < 1 cy) ≈ 2 cycles.
             PipelinedSimpleMemory(
                 range=AddrRange(0x20000000, size="80KiB"),
-                latency="1ns",
+                latency="0ns",
                 max_outstanding=2,
                 address_phase_cycles=1,
                 read_buffer_size=0,
@@ -314,7 +347,7 @@ class STM32G474REPlatform(ArmMPlatform):
             # SRAM2: zero wait state, hardware parity check.
             PipelinedSimpleMemory(
                 range=AddrRange(0x20014000, size="16KiB"),
-                latency="1ns",
+                latency="0ns",
                 max_outstanding=2,
                 address_phase_cycles=1,
                 read_buffer_size=0,
@@ -323,7 +356,7 @@ class STM32G474REPlatform(ArmMPlatform):
             # CCM SRAM: zero wait state, hardware parity check.
             PipelinedSimpleMemory(
                 range=AddrRange(0x10000000, size="32KiB"),
-                latency="1ns",
+                latency="0ns",
                 max_outstanding=2,
                 address_phase_cycles=1,
                 read_buffer_size=0,

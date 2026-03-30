@@ -57,7 +57,8 @@ namespace ArmISA
 MacroMemOp::MacroMemOp(const char *mnem, ExtMachInst machInst,
                        OpClass __opClass, RegIndex rn,
                        bool index, bool up, bool user, bool writeback,
-                       bool load, uint32_t reglist) :
+                       bool load, uint32_t reglist,
+                       bool noPairedLoads) :
     PredMacroOp(mnem, machInst, __opClass)
 {
     uint32_t regs = reglist;
@@ -74,8 +75,10 @@ MacroMemOp::MacroMemOp(const char *mnem, ExtMachInst machInst,
     if (!ones) {
         numMicroops = 1;
     } else if (load) {
-        numMicroops = ((ones + 1) / 2)
-                    + ((ones % 2 == 0 && exception_ret) ? 1 : 0)
+        unsigned load_ops = noPairedLoads ? ones : ((ones + 1) / 2);
+        numMicroops = load_ops
+                    + ((ones % 2 == 0 && exception_ret && !noPairedLoads)
+                       ? 1 : 0)
                     + (copy_base ? 1 : 0)
                     + (writeback? 1 : 0)
                     + (pc_temp ? 1 : 0);
@@ -102,8 +105,9 @@ MacroMemOp::MacroMemOp(const char *mnem, ExtMachInst machInst,
 
     unsigned reg = 0;
     while (mem_ops != 0) {
-        // Do load operations in pairs if possible
-        if (load && mem_ops >= 2 &&
+        // Do load operations in pairs if possible (disabled for M-profile
+        // 32-bit bus via noPairedLoads)
+        if (load && mem_ops >= 2 && !noPairedLoads &&
             !(mem_ops == 2 && bits(regs, int_reg::Pc) && exception_ret)) {
             // 64-bit memory operation
             // Find 2 set register bits (clear them after finding)

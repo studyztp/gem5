@@ -49,6 +49,7 @@
 #include <unordered_map>
 
 #include "arch/arm/decoder.hh"
+#include "arch/arm/m_system.hh"
 #include "arch/arm/types.hh"
 #include "enums/DecoderFlavor.hh"
 #include "params/ArmMDecoder.hh"
@@ -70,6 +71,17 @@ class MDecoder : public InstDecoder
     bool dvmEnabled;
 
   protected:
+    // -- System pointer for release/extension checking --
+    // Used to gate M-profile-specific instructions (e.g., FPU) on the
+    // CPU's declared extensions (M_PROFILE_FPU_SP, M_PROFILE_FPU_DP).
+    ArmMSystem *mSystem;
+
+    /** Check whether the system's release includes a given extension. */
+    bool has(ArmExtension ext) const
+    {
+        return mSystem && mSystem->has(ext);
+    }
+
     // -- Instruction assembly state (from Decoder) --
     ExtMachInst emi;
     uint32_t data;
@@ -118,6 +130,11 @@ class MDecoder : public InstDecoder
     StaticInstPtr tryMProfileDecode(ExtMachInst mach_inst);
     StaticInstPtr tryMProfileDecode16(ExtMachInst mach_inst);
     StaticInstPtr tryMProfileDecode32(ExtMachInst mach_inst);
+
+    /** Decode VFP (CP10/CP11) coprocessor instructions for M-profile.
+     *  Returns nullptr if the encoding is not recognized (falls through
+     *  to ISA-generated decoder). */
+    StaticInstPtr decodeMProfileVfp(ExtMachInst mach_inst);
 };
 
 } // namespace ArmISA

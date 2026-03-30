@@ -71,6 +71,7 @@ Source("decoder.cc", tags=['arm isa'])
 Source("faults.cc", tags=['arm isa'])
 Source("m_decoder.cc", tags=['arm isa'])
 Source("m_faults.cc", tags=['arm isa'])
+Source("m_fp_insts.cc", tags=['arm isa'])
 Source("m_insts.cc", tags=['arm isa'])
 Source("m_isa.cc", tags=['arm isa'])
 Source("m_fs_workload.cc", tags=['arm isa'])
@@ -234,6 +235,9 @@ DebugFlag("MProfileCPSR",
     tags=['arm isa'])
 DebugFlag("MProfileStacking",
     "Trace M-profile exception stacking/unstacking and barrier",
+    tags=['arm isa'])
+DebugFlag("MProfileFP",
+    "Trace M-profile floating-point instruction execution",
     tags=['arm isa'])
 DebugFlag("ArmTme", "Transactional Memory Extension",
     tags=['arm isa'])

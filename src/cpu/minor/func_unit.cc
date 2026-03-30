@@ -37,12 +37,15 @@
 
 #include "cpu/minor/func_unit.hh"
 
+#include <algorithm>
+#include <cstdlib>
 #include <iomanip>
 #include <sstream>
 #include <typeinfo>
 
 #include "base/named.hh"
 #include "base/trace.hh"
+#include "debug/MinorExecute.hh"
 #include "debug/MinorTiming.hh"
 #include "enums/OpClass.hh"
 
@@ -73,6 +76,47 @@ MinorFUTiming::MinorFUTiming(
     srcRegsRelativeLats(params.srcRegsRelativeLats),
     opClasses(params.opClasses)
 { }
+
+Cycles
+DynamicLatencyIntDivFU::dynamicExtraLatency(
+    ThreadContext *tc, const StaticInstPtr &inst) const
+{
+    if (inst->opClass() != IntDivOp)
+        return Cycles(0);
+
+    // Read source registers to find the dividend.  The dividend
+    // determines the divider's iteration count.  We read all integer
+    // source registers and use the one with the most significant bits.
+    uint32_t maxVal = 0;
+    for (int i = 0; i < inst->numSrcRegs(); i++) {
+        RegId srcReg = inst->srcRegIdx(i);
+        if (srcReg.classValue() == IntRegClass) {
+            uint32_t val = tc->getReg(srcReg);
+            uint32_t absVal = static_cast<uint32_t>(
+                std::abs(static_cast<int32_t>(val)));
+            if (absVal > maxVal)
+                maxVal = absVal;
+        }
+    }
+
+    unsigned sigBits = (maxVal == 0) ? 0
+        : (32 - __builtin_clz(maxVal));
+
+    // Latency formula: 4 + ceil(sigBits / 4), clamped to [2, 12]
+    // [DDI0439D Table 3-1, footnote a]
+    unsigned latency = (maxVal == 0) ? 2
+        : std::clamp(4u + (sigBits + 3) / 4, 2u, 12u);
+
+    DPRINTF(MinorExecute, "IntDiv dynamicExtraLatency: maxVal=%#x "
+            "sigBits=%u latency=%u opLat=%u extra=%u\n",
+            maxVal, sigBits, latency, (unsigned)opLat,
+            latency > opLat ? latency - (unsigned)opLat : 0);
+
+    // Return extra cycles beyond opLat
+    if (latency > opLat)
+        return Cycles(latency - opLat);
+    return Cycles(0);
+}
 
 namespace minor
 {

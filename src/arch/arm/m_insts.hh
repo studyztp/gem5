@@ -40,7 +40,11 @@
  * Each class documents the ARMv7-M reference for that instruction.
  */
 
+#include <type_traits>
+
+#include "arch/arm/insts/macromem.hh"
 #include "arch/arm/insts/pred_inst.hh"
+#include "arch/arm/regs/int.hh"
 #include "arch/arm/regs/misc.hh"
 
 namespace gem5
@@ -80,6 +84,10 @@ namespace ArmISA
  */
 class MrsMProfile : public PredOp
 {
+  private:
+    RegId srcRegIdxArr[1];  // placeholder (misc reg not tracked here)
+    RegId destRegIdxArr[1];
+
   protected:
     RegIndex dest;
     uint8_t sysM;
@@ -88,7 +96,16 @@ class MrsMProfile : public PredOp
     MrsMProfile(ExtMachInst mach_inst, RegIndex _dest, uint8_t _sysM)
         : PredOp("mrs", mach_inst, IntAluOp),
           dest(_dest), sysM(_sysM)
-    {}
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setDestRegIdx(_numDestRegs++, intRegClass[dest]);
+        _numTypedDestRegs[intRegClass.type()]++;
+    }
 
     Fault execute(ExecContext *xc,
                   trace::InstRecord *traceData) const override;
@@ -110,6 +127,10 @@ class MrsMProfile : public PredOp
  */
 class MsrMProfile : public PredOp
 {
+  private:
+    RegId srcRegIdxArr[1];
+    RegId destRegIdxArr[1];  // placeholder
+
   protected:
     RegIndex op1;
     uint8_t sysM;
@@ -118,7 +139,15 @@ class MsrMProfile : public PredOp
     MsrMProfile(ExtMachInst mach_inst, RegIndex _op1, uint8_t _sysM)
         : PredOp("msr", mach_inst, IntAluOp),
           op1(_op1), sysM(_sysM)
-    {}
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setSrcRegIdx(_numSrcRegs++, intRegClass[op1]);
+    }
 
     Fault execute(ExecContext *xc,
                   trace::InstRecord *traceData) const override;
@@ -188,6 +217,10 @@ class CpsMProfile : public PredOp
  */
 class BxMProfile : public PredOp
 {
+  private:
+    RegId srcRegIdxArr[1];
+    RegId destRegIdxArr[1];  // placeholder
+
   protected:
     RegIndex op1;
 
@@ -196,6 +229,14 @@ class BxMProfile : public PredOp
         : PredOp("bx", mach_inst, IntAluOp),
           op1(_op1)
     {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setSrcRegIdx(_numSrcRegs++, intRegClass[op1]);
+
         flags[IsIndirectControl] = true;
         flags[IsUncondControl] = true;
     }
@@ -221,6 +262,10 @@ class BxMProfile : public PredOp
  */
 class BlxRegMProfile : public PredOp
 {
+  private:
+    RegId srcRegIdxArr[1];
+    RegId destRegIdxArr[1];
+
   protected:
     RegIndex op1;
 
@@ -229,6 +274,16 @@ class BlxRegMProfile : public PredOp
         : PredOp("blx", mach_inst, IntAluOp),
           op1(_op1)
     {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setSrcRegIdx(_numSrcRegs++, intRegClass[op1]);
+        setDestRegIdx(_numDestRegs++, intRegClass[int_reg::Lr]);
+        _numTypedDestRegs[intRegClass.type()]++;
+
         flags[IsIndirectControl] = true;
         flags[IsUncondControl] = true;
         flags[IsCall] = true;
@@ -424,6 +479,43 @@ class BkptSemiMProfile : public PredOp
 };
 
 /**
+ * M-profile memory barrier: DMB / DSB.
+ *
+ * On Cortex-M4 (in-order, no data cache), DMB and DSB both just drain
+ * the write buffer.  The A-profile DSB has IsSerializeAfter which
+ * causes a full pipeline flush — correct for out-of-order A-profile
+ * but far too expensive for M-profile's simple pipeline.
+ *
+ * This class uses IsReadBarrier + IsWriteBarrier (memory ordering)
+ * WITHOUT IsSerializeAfter (no pipeline flush).
+ *
+ * ISB is NOT intercepted — the A-profile ISB with IsSquashAfter is
+ * correct for M-profile (pipeline flush is required for ISB on all
+ * profiles).
+ *
+ * Reference: DDI0403E A7.7.27 (DMB), A7.7.28 (DSB)
+ */
+class BarrierMProfile : public PredOp
+{
+  public:
+    BarrierMProfile(const char *mnem, ExtMachInst mach_inst)
+        : PredOp(mnem, mach_inst, IntAluOp)
+    {
+        flags[IsReadBarrier] = true;
+        flags[IsWriteBarrier] = true;
+        // Intentionally NO IsSerializeAfter — M-profile DSB/DMB
+        // should not flush the pipeline on a simple in-order core.
+    }
+
+    Fault execute(ExecContext *xc,
+                  trace::InstRecord *traceData) const override;
+
+    std::string generateDisassembly(
+            Addr pc,
+            const loader::SymbolTable *symtab) const override;
+};
+
+/**
  * M-profile LDREX / LDREXB / LDREXH: Load Register Exclusive.
  *
  * The shared ISA-generated LDREX instruction class calls
@@ -443,6 +535,10 @@ class BkptSemiMProfile : public PredOp
  */
 class LdrexMProfile : public PredOp
 {
+  private:
+    RegId srcRegIdxArr[1];
+    RegId destRegIdxArr[1];
+
   protected:
     RegIndex dest;     // Rt
     RegIndex base;     // Rn
@@ -455,6 +551,16 @@ class LdrexMProfile : public PredOp
         : PredOp("ldrex", mach_inst, MemReadOp),
           dest(_dest), base(_base), imm(_imm), accessSize(_size)
     {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setSrcRegIdx(_numSrcRegs++, intRegClass[base]);
+        setDestRegIdx(_numDestRegs++, intRegClass[dest]);
+        _numTypedDestRegs[intRegClass.type()]++;
+
         flags[IsLoad] = true;
     }
 
@@ -464,6 +570,52 @@ class LdrexMProfile : public PredOp
     std::string generateDisassembly(
             Addr pc,
             const loader::SymbolTable *symtab) const override;
+};
+
+/**
+ * M-profile PUSH/POP: Multi-register transfer without 8B pairing.
+ *
+ * The Cortex-M4 has a 32-bit AHB bus — each register transfer is
+ * 4 bytes, 1 cycle per beat [DDI0439D Table 3-1: LDM/STM = 1+N].
+ * The A-profile MacroMemOp pairs loads into 8-byte ldr2_uop micro-ops,
+ * which is correct for 64-bit buses but wrong for M-profile.
+ *
+ * This class creates a MacroMemOp with noPairedLoads=true, forcing
+ * all loads to be single 4-byte MicroLdrUop.
+ *
+ * Handles:
+ *   PUSH {reglist}       — STMDB SP!, {reglist}
+ *   POP  {reglist}       — LDMIA SP!, {reglist}
+ *   STM/LDM with SP      — 32-bit Thumb T1/T2 encodings
+ *
+ * Reference: DDI0403E A7.7.99 (POP), A7.7.101 (PUSH)
+ */
+class PushPopMProfile : public MacroMemOp
+{
+  public:
+    PushPopMProfile(const char *mnem, ExtMachInst machInst,
+                    bool load, uint32_t reglist)
+        : MacroMemOp(mnem, machInst,
+                     load ? MemReadOp : MemWriteOp,
+                     int_reg::Sp,  // rn = SP
+                     load,         // index: false for PUSH (STMDB),
+                                   //        true for POP (LDMIA)
+                                   // (matches A-profile data.isa:1217/1268)
+                     load,         // up: false for PUSH, true for POP
+                     false,        // user = false (no user mode on M-profile)
+                     true,         // writeback = always (SP updated)
+                     load,         // load
+                     reglist,
+                     true)         // noPairedLoads = true
+    {
+        // "LDM and STM cannot be pipelined with preceding or following
+        // instructions." [DDI0439D §3.3.2]
+        // Set IsSerializeAfter on the last micro-op to force a pipeline
+        // flush after the transfer completes.  This models the pipeline
+        // refill cost (fetch from Flash + decode + execute restart).
+        assert(numMicroops > 0);
+        microOps[numMicroops - 1]->setFlag(StaticInst::IsSerializeAfter);
+    }
 };
 
 } // namespace ArmISA

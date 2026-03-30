@@ -25,6 +25,7 @@
 #ifndef __MEM_CACHE_ART_HH__
 #define __MEM_CACHE_ART_HH__
 
+#include <deque>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -78,6 +79,21 @@ class ART : public NoncoherentCache
 
     /** Cycles to serve a request from the ART prefetch/current buffer. */
     const Cycles bufferHitLatency;
+
+    /** Earliest tick at which the ART can process the next request.
+     *  Models the 1-cycle AHB address phase [RM0440 Figure 3]. */
+    Tick nextAcceptTick = 0;
+
+    /** Queued requests waiting for address phase to free. */
+    std::deque<PacketPtr> pendingReqs;
+
+    /** Event to process the next queued request. */
+    EventFunctionWrapper processQueuedReqEvent;
+
+    /** Process the next queued request when address phase frees. */
+    void processQueuedReq();
+
+    bool cacheFetchOn = false;
 
     /** Start of the flash memory region (prefetch bounds check). */
     const Addr flashStartAddr;

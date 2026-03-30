@@ -44,6 +44,7 @@ Follows the U74CPU pattern from prebuilt/riscvmatched/riscvmatched_core.py.
 
 from m5.objects.ArmMCPU import ArmMMinorCPU
 from m5.objects.BaseMinorCPU import (
+    DynamicLatencyIntDivFU,
     MinorFU,
     MinorFUPool,
     MinorFUTiming,
@@ -51,9 +52,9 @@ from m5.objects.BaseMinorCPU import (
 )
 from m5.objects.BranchPredictor import (
     BranchPredictor,
-    LocalBP,
     ReturnAddrStack,
     SimpleBTB,
+    StaticBTFNT,
 )
 from m5.params import NULL
 
@@ -80,26 +81,42 @@ class M4IntMulFU(MinorFU):
     timings = [MinorFUTiming(description="M4Mul", srcRegsRelativeLats=[0])]
 
 
-class M4IntDivFU(MinorFU):
-    """SDIV, UDIV — 2-12 cycles data-dependent; 7 = representative average.
-    Non-pipelined (blocks issue for the full duration)."""
+class M4IntDivFU(DynamicLatencyIntDivFU):
+    """SDIV, UDIV — 2-12 cycles data-dependent [DDI0439D Table 3-1].
+    opLat=2 is the minimum; dynamicExtraLatency() computes the
+    remainder at commit time based on operand leading zeros.
+    Non-pipelined (FU stays stalled until commit)."""
 
     opClasses = minorMakeOpClassSet(["IntDiv"])
-    opLat = 7
-    issueLat = 7
+    opLat = 2
+    issueLat = 2
 
 
 class M4FloatFU(MinorFU):
     """VFPv4 single-precision + DSP SIMD — single-cycle operations.
-    VADD/VSUB/VMUL/VCMP/VCVT = 1 cy [DDI0439D Table 7-1]."""
+    VADD/VSUB/VMUL/VCMP/VCVT = 1 cy [DDI0439D Table 7-1].
+
+    Note: ARM ISA maps VFP single-precision Thumb instructions to
+    SimdFloat* OpClasses (not Float*).  Both families are included
+    here so that VFP instructions can be dispatched.
+    """
 
     opClasses = minorMakeOpClassSet(
         [
+            # A-profile / generic Float OpClasses
             "FloatAdd",
             "FloatCmp",
             "FloatCvt",
             "FloatMisc",
             "FloatMult",
+            # VFP Thumb single-precision (SimdFloat* from fp.isa)
+            "SimdFloatAdd",
+            "SimdFloatAlu",
+            "SimdFloatCmp",
+            "SimdFloatCvt",
+            "SimdFloatMisc",
+            "SimdFloatMult",
+            # DSP SIMD (integer SIMD instructions)
             "SimdAdd",
             "SimdAlu",
             "SimdCmp",
@@ -118,7 +135,9 @@ class M4FloatMacFU(MinorFU):
     """VMLA/VFMA/VFMS/VNMLA/VNMLS — 3-cycle multiply-accumulate.
     Non-pipelined [DDI0439D Table 7-1]."""
 
-    opClasses = minorMakeOpClassSet(["FloatMultAcc", "SimdMultAcc"])
+    opClasses = minorMakeOpClassSet(
+        ["FloatMultAcc", "SimdMultAcc", "SimdFloatMultAcc"]
+    )
     opLat = 3
     issueLat = 3
     timings = [MinorFUTiming(description="M4FMac", srcRegsRelativeLats=[2])]
@@ -128,7 +147,9 @@ class M4FloatDivFU(MinorFU):
     """VDIV.F32 = 14 cy, VSQRT.F32 = 14 cy — non-pipelined.
     [DDI0439D Table 7-1, pages 7-4/7-5]."""
 
-    opClasses = minorMakeOpClassSet(["FloatDiv", "FloatSqrt"])
+    opClasses = minorMakeOpClassSet(
+        ["FloatDiv", "FloatSqrt", "SimdFloatDiv", "SimdFloatSqrt"]
+    )
     opLat = 14
     issueLat = 14
 
@@ -144,7 +165,7 @@ class M4MemFU(MinorFU):
     issueLat = 1
     timings = [
         MinorFUTiming(
-            description="M4Mem", srcRegsRelativeLats=[1], extraAssumedLat=2
+            description="M4Mem", srcRegsRelativeLats=[1], extraAssumedLat=1
         )
     ]
 
@@ -180,13 +201,15 @@ class CortexM4FUPool(MinorFUPool):
 
 
 class CortexM4BP(BranchPredictor):
-    """Small predictor approximating the M4's limited address speculation.
-    The Cortex-M4 can 'speculate the address early' [DDI0439D p.3-4],
-    reducing P from worst-case 3 to best-case 1.  A tiny LocalBP captures
-    tight-loop patterns without being unrealistically accurate."""
+    """Static BTFNT predictor modeling the M4's branch handling.
+    The Cortex-M4 has no learned branch predictor [DDI0439D §3.3].
+    Backward branches are predicted taken via early address speculation;
+    forward branches are assumed not-taken (fall through).
+    A small BTB caches branch targets after first execution, modeling
+    the pipeline's early target computation on subsequent encounters."""
 
     instShiftAmt = 1  # Thumb: 2-byte (half-word) aligned
-    conditionalBranchPred = LocalBP(localPredictorSize=64, localCtrBits=2)
+    conditionalBranchPred = StaticBTFNT()
     btb = SimpleBTB(numEntries=16, tagBits=16, instShiftAmt=1)
     ras = ReturnAddrStack(numEntries=4)
     indirectBranchPred = NULL
@@ -244,7 +267,7 @@ class CortexM4CPU(ArmMMinorCPU):
     executeInputWidth = 1  # SINGLE-ISSUE
     executeCycleInput = True
     executeIssueLimit = 1  # SINGLE-ISSUE
-    executeCommitLimit = 1  # SINGLE-ISSUE
+    executeCommitLimit = 2  # SINGLE-ISSUE
     executeMemoryIssueLimit = 1
     executeMemoryCommitLimit = 1
     executeInputBufferSize = 3

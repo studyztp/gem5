@@ -271,6 +271,12 @@ class LocalBP(ConditionalPredictor):
     localCtrBits = Param.Unsigned(2, "Bits per counter")
 
 
+class StaticBTFNT(ConditionalPredictor):
+    type = "StaticBTFNT"
+    cxx_class = "gem5::branch_prediction::StaticBTFNT"
+    cxx_header = "cpu/pred/static_btfnt.hh"
+
+
 class TournamentBP(ConditionalPredictor):
     type = "TournamentBP"
     cxx_class = "gem5::branch_prediction::TournamentBP"

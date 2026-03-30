@@ -706,12 +706,167 @@ SingleStageFetch2::evaluate()
 }
 
 void
-SingleStageFetch2::runDecodeCore(BranchData &prediction_out)
+SingleStageFetch2::predictBranch(MinorDynInstPtr inst, BranchData &branch)
 {
-    reactToExecuteBranch();
+    /* Call base class — creates BPredUnit history entry, updates stats,
+     * does BTB lookup.  On first encounter BTB misses and BPredUnit
+     * forces predTaken = false (NoTarget fallback, bpred_unit.cc:316). */
+    Fetch2::predictBranch(inst, branch);
+
+    /* Override for direct branches: if the base predicted not-taken
+     * (BTB miss on first encounter), override to taken with the
+     * target computed from the instruction encoding.  This models the
+     * Cortex-M4's early address speculation [DDI0439D §3.3.1]. */
+    if (inst->triedToPredict && !inst->predictedTaken &&
+        inst->staticInst->isDirectCtrl()) {
+
+        /* Save a deep copy of the current input line BEFORE
+         * decodeInstructions() calls dumpAllInput() on the taken
+         * prediction.  For 16-bit branches, the fall-through instruction
+         * is in this same line.  If Execute later says
+         * BadlyPredictedBranch (not-taken), we can restore it instead
+         * of re-fetching from Flash. */
+        ThreadID tid = inst->id.threadId;
+        const ForwardLineData *cur_line = getInput(tid);
+        savedLine.freeLine();
+        savedLine = ForwardLineData::bubble();
+        if (cur_line && !cur_line->isBubble() && cur_line->lineWidth > 0) {
+            /* Deep copy: first copy metadata, then allocate fresh
+             * line buffer and copy the data bytes. */
+            uint8_t *orig_line = cur_line->line;
+            unsigned int width = cur_line->lineWidth;
+            savedLine = *cur_line;          // copies metadata + old ptr
+            savedLine.line = nullptr;       // clear so allocateLine passes
+            savedLine.packet = nullptr;     // we own the copy, not the pkt
+            savedLine.allocateLine(width);
+            memcpy(savedLine.line, orig_line, width);
+        }
+
+        auto target = inst->staticInst->branchTarget(*inst->pc);
+        inst->predictedTaken = true;
+        set(inst->predictedTarget, target);
+
+        Fetch2ThreadInfo &thread = fetchInfo[tid];
+        thread.expectedStreamSeqNum = inst->id.streamSeqNum;
+        branch = BranchData(BranchData::BranchPrediction,
+            inst->id.threadId,
+            inst->id.streamSeqNum, thread.predictionSeqNum + 1,
+            *inst->predictedTarget, inst);
+        thread.predictionSeqNum++;
+    }
+}
+
+void
+SingleStageFetch2::reactToExecuteBranch(const BranchData &executeBranch)
+{
+    /* Use the same-cycle execute branch (eToF1 input wire) passed from
+     * SingleStageFetch1, NOT the latched branchInp.outputWire which is
+     * 1 cycle old.  The latched wire is still used for updateBranchPrediction
+     * (which needs the previous cycle's result for history management). */
+    BranchData &latched_branch = *branchInp.outputWire;
+    updateBranchPrediction(latched_branch);
+
+    /* React to the SAME-CYCLE execute branch for input buffer management */
+    if (executeBranch.isStreamChange()) {
+        ThreadID tid = executeBranch.threadId;
+
+        if (executeBranch.reason == BranchData::BadlyPredictedBranch ||
+            executeBranch.reason == BranchData::BadlyPredictedBranchTarget) {
+            /* Misprediction.  Check if the correct target (fall-through)
+             * was in the saved line from before the taken prediction.
+             * For 16-bit branches, the fall-through is in the same
+             * 4-byte fetch line that was saved in predictBranch(). */
+            Addr target_addr = executeBranch.target->instAddr();
+            if (!savedLine.isBubble() &&
+                target_addr >= savedLine.lineBaseAddr &&
+                target_addr < savedLine.lineBaseAddr + savedLine.lineWidth) {
+                /* Restore the saved line into the input buffer. */
+                DPRINTF(Fetch, "Misprediction target %#x in saved line, "
+                    "restoring\n", target_addr);
+                dumpAllInput(tid);
+                inputBuffer[tid].setTail(savedLine);
+                inputBuffer[tid].pushTail();
+                fetchInfo[tid].havePC = false;
+                savedLine = ForwardLineData::bubble();
+            } else {
+                dumpAllInput(tid);
+                fetchInfo[tid].havePC = false;
+                savedLine = ForwardLineData::bubble();
+            }
+        } else {
+            /* Other stream changes (UnpredictedBranch, Interrupt, etc.) */
+            dumpAllInput(tid);
+            fetchInfo[tid].havePC = false;
+        }
+    } else if (latched_branch.isStreamChange()) {
+        /* Fallback: if no same-cycle branch but latched branch has a
+         * stream change (shouldn't happen normally in single-stage mode
+         * since we use same-cycle bypass), handle it the old way. */
+        dumpAllInput(latched_branch.threadId);
+        fetchInfo[latched_branch.threadId].havePC = false;
+    }
+}
+
+void
+SingleStageFetch2::runDecodeCore(BranchData &prediction_out,
+                                 const BranchData &executeBranch)
+{
+    reactToExecuteBranch(executeBranch);
     discardStaleLines();
     decodeInstructions(prediction_out);
     postDecode(Pipeline::Fetch1StageId);
+}
+
+bool
+SingleStageFetch2::scanNextForBranch()
+{
+    /* Only single-threaded M-profile */
+    ThreadID tid = 0;
+    Fetch2ThreadInfo &fetch_info = fetchInfo[tid];
+    const ForwardLineData *line_in = getInput(tid);
+
+    /* Nothing to scan if no line or PC not valid */
+    if (!line_in || !fetch_info.havePC)
+        return false;
+
+    /* Any remaining bytes in the current line? */
+    if (fetch_info.inputIndex >= line_in->lineWidth)
+        return false;
+
+    ThreadContext *tc = cpu.getContext(tid);
+    InstDecoder *decoder = tc->getDecoderPtr();
+
+    /* Save decode state so we can restore after peeking */
+    unsigned int saved_inputIndex = fetch_info.inputIndex;
+    std::unique_ptr<PCStateBase> saved_pc(fetch_info.pc->clone());
+
+    /* Feed the next instruction's bytes to the decoder */
+    uint8_t *line = line_in->line;
+    memcpy(decoder->moreBytesPtr(), line + fetch_info.inputIndex,
+           decoder->moreBytesSize());
+
+    if (!decoder->instReady()) {
+        decoder->moreBytes(*fetch_info.pc,
+            line_in->lineBaseAddr + fetch_info.inputIndex);
+    }
+
+    bool found_branch = false;
+    if (decoder->instReady()) {
+        StaticInstPtr static_inst = decoder->decode(*fetch_info.pc);
+        found_branch = static_inst->isControl();
+
+        DPRINTF(Fetch, "Branch lookahead: %s at PC %s -> %s\n",
+                static_inst->disassemble(fetch_info.pc->instAddr()),
+                *saved_pc,
+                found_branch ? "BRANCH (suppress prefetch)" : "not branch");
+    }
+
+    /* Restore state — the instruction will be properly decoded next cycle */
+    fetch_info.inputIndex = saved_inputIndex;
+    set(fetch_info.pc, saved_pc);
+    decoder->reset();
+
+    return found_branch;
 }
 
 } // namespace minor

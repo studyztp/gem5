@@ -53,7 +53,9 @@
 #include "cpu/func_unit.hh"
 #include "cpu/minor/buffers.hh"
 #include "cpu/minor/dyn_inst.hh"
+#include "cpu/thread_context.hh"
 #include "cpu/timing_expr.hh"
+#include "params/DynamicLatencyIntDivFU.hh"
 #include "params/MinorFU.hh"
 #include "params/MinorFUPool.hh"
 #include "params/MinorOpClass.hh"
@@ -183,6 +185,29 @@ class MinorFU : public SimObject
         cantForwardFromFUIndices(params.cantForwardFromFUIndices),
         timings(params.timings)
     { }
+
+    /** Compute data-dependent extra latency at commit time.
+     *  Called by Execute::commit() when the instruction reaches the
+     *  FU front.  Override in subclasses for ops with variable latency
+     *  (e.g., SDIV).  Returns extra cycles beyond opLat. */
+    virtual Cycles dynamicExtraLatency(
+        ThreadContext *tc, const StaticInstPtr &inst) const
+    {
+        return Cycles(0);
+    }
+};
+
+/** SDIV/UDIV functional unit with data-dependent latency.
+ *  Overrides dynamicExtraLatency() to compute 2-12 cycle latency
+ *  based on the dividend's significant bits [DDI0439D Table 3-1]. */
+class DynamicLatencyIntDivFU : public MinorFU
+{
+  public:
+    DynamicLatencyIntDivFU(const DynamicLatencyIntDivFUParams &params)
+        : MinorFU(params) {}
+
+    Cycles dynamicExtraLatency(
+        ThreadContext *tc, const StaticInstPtr &inst) const override;
 };
 
 /** A collection of MinorFUs */
