@@ -434,14 +434,14 @@ class Queue : public Named, public Reservable
     push(ElemType &data)
     {
         if (!BubbleTraits::isBubble(data)) {
+            freeReservation();
+            queue.push_back(data);
             if (queue.size() >= capacity) {
                 DPRINTF(Minor, "%s: push rejected, queue full "
                     "(size=%d, capacity=%d)\n",
                     name(), queue.size(), capacity);
                 return false;
             }
-            freeReservation();
-            queue.push_back(data);
             DPRINTF(Minor, "%s: push accepted (size=%d/%d)\n",
                 name(), queue.size(), capacity);
             return true;

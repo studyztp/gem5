@@ -46,20 +46,6 @@ Prediction
 StaticBTFNT::lookup(ThreadID tid, Addr pc, void *&bp_history)
 {
     bp_history = nullptr;
-
-    auto it = directionCache.find(pc);
-    if (it != directionCache.end()) {
-        /* Known branch — target was computed at decode on a previous
-         * encounter.  Predict taken regardless of direction, modeling
-         * the Cortex-M4's early address speculation where the branch
-         * target is available at decode [DDI0439D §3.3.1]. */
-        DPRINTF(Branch, "StaticBTFNT: PC %#x known → taken\n", pc);
-        return predictWithDefaultLatency(true);
-    }
-
-    /* First encounter — target not yet computed.  Predict not-taken.
-     * Execute will resolve and populate the cache + BTB for next time. */
-    DPRINTF(Branch, "StaticBTFNT: PC %#x unknown → not-taken\n", pc);
     return predictWithDefaultLatency(false);
 }
 

@@ -880,6 +880,16 @@ SingleStageFetch1::evaluate()
      * pipeline where the branch target feeds back to Fetch within
      * the same clock cycle.  Execute has already evaluated this
      * cycle (Pipeline::evaluate runs Execute before Fetch). */
+    {
+        const BranchData &execBranch = *eToF1Input.inputWire;
+        if (execBranch.isStreamChange()) {
+            DPRINTF(Fetch, "SF1: Execute redirect reason=%d target=%#x "
+                "inst=[%s] pc=%#x\n",
+                execBranch.reason,
+                execBranch.target ? execBranch.target->instAddr() : 0,
+                *execBranch.inst, execBranch.inst->pc->instAddr());
+        }
+    }
     handleBranchRedirects(*eToF1Input.inputWire, lastPrediction);
 
     /* Step I-cache queues */
@@ -909,10 +919,27 @@ SingleStageFetch1::evaluate()
      * pipeline refill starts in the same cycle — there is no
      * speculative prediction delay on real hardware [DDI0439D §3.3]. */
     if (prediction.isStreamChange()) {
+        DPRINTF(Fetch, "SF1: Decode prediction reason=%d target=%#x "
+            "inst=[%s] pc=%#x\n",
+            prediction.reason,
+            prediction.target ? prediction.target->instAddr() : 0,
+            *prediction.inst, prediction.inst->pc->instAddr());
         Fetch1ThreadInfo &thread = fetchInfo[prediction.threadId];
         if (thread.state != FetchHalted &&
             prediction.newStreamSeqNum == thread.streamSeqNum) {
             changeStream(prediction);
+        }
+    } else {
+        if (fetch2->forwardedSavedLine!=0) {
+            /* savedLine was restored in reactToExecuteBranch.
+             * Advance fetchAddr past the savedLine so we fetch the
+             * NEXT word (continuation) instead of redundantly
+             * re-fetching the same line. Use thread 0 directly —
+             * getScheduledThread() can return -1 when blocked. */
+            Fetch1ThreadInfo &thread = fetchInfo[0];
+            DPRINTF(Fetch, "SF1: savedLine forwarded, advancing "
+                "fetchAddr to %#x\n", fetch2->forwardedSavedLine);
+            thread.fetchAddr = fetch2->forwardedSavedLine;
         }
     }
 
@@ -928,6 +955,7 @@ SingleStageFetch1::evaluate()
      * branch instruction next in the line, suppress the sequential
      * prefetch. */
     if (!prediction.isBubble() || !fetch2->scanNextForBranch()) {
+    // if (!prediction.isBubble()) {
         tryToFetch();
     }
 

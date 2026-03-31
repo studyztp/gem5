@@ -288,6 +288,7 @@ class SingleStageFetch2 : public Fetch2
      *  BadlyPredictedBranch (actually not-taken), we can restore it
      *  instead of re-fetching from Flash. */
     ForwardLineData savedLine;
+    Addr forwardedSavedLine = 0;
 
     /** Peek at the next instruction in the current input line without
      *  advancing decode state. Returns true if it is a control-flow

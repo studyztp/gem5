@@ -713,6 +713,18 @@ SingleStageFetch2::predictBranch(MinorDynInstPtr inst, BranchData &branch)
      * forces predTaken = false (NoTarget fallback, bpred_unit.cc:316). */
     Fetch2::predictBranch(inst, branch);
 
+    /* Log prediction result for every branch instruction */
+    if (inst->triedToPredict) {
+        DPRINTF(Fetch, "SF2: predict pc=%#x [%s] direct=%d uncond=%d "
+            "cond=%d basePredTaken=%d\n",
+            inst->pc->instAddr(), inst->staticInst->disassemble(
+                inst->pc->instAddr()),
+            inst->staticInst->isDirectCtrl(),
+            inst->staticInst->isUncondCtrl(),
+            inst->staticInst->isCondCtrl(),
+            inst->predictedTaken);
+    }
+
     /* Override for direct branches: if the base predicted not-taken
      * (BTB miss on first encounter), override to taken with the
      * target computed from the instruction encoding.  This models the
@@ -743,16 +755,19 @@ SingleStageFetch2::predictBranch(MinorDynInstPtr inst, BranchData &branch)
         }
 
         auto target = inst->staticInst->branchTarget(*inst->pc);
-        inst->predictedTaken = true;
         set(inst->predictedTarget, target);
-
-        Fetch2ThreadInfo &thread = fetchInfo[tid];
-        thread.expectedStreamSeqNum = inst->id.streamSeqNum;
-        branch = BranchData(BranchData::BranchPrediction,
-            inst->id.threadId,
-            inst->id.streamSeqNum, thread.predictionSeqNum + 1,
-            *inst->predictedTarget, inst);
-        thread.predictionSeqNum++;
+        if (inst->staticInst->isUncondCtrl()) {
+            inst->predictedTaken = true;
+            Fetch2ThreadInfo &thread = fetchInfo[tid];
+            thread.expectedStreamSeqNum = inst->id.streamSeqNum;
+            branch = BranchData(BranchData::BranchPrediction,
+                inst->id.threadId,
+                inst->id.streamSeqNum, thread.predictionSeqNum + 1,
+                *inst->predictedTarget, inst);
+            thread.predictionSeqNum++;
+            DPRINTF(Fetch, "SF2: OVERRIDE uncond direct pc=%#x → target=%#x\n",
+                inst->pc->instAddr(), target->instAddr());
+        }
     }
 }
 
@@ -769,20 +784,30 @@ SingleStageFetch2::reactToExecuteBranch(const BranchData &executeBranch)
     /* React to the SAME-CYCLE execute branch for input buffer management */
     if (executeBranch.isStreamChange()) {
         ThreadID tid = executeBranch.threadId;
-
+        DPRINTF(Fetch, "SF2: reactExec reason=%d target=%#x "
+            "pc=%#x [%s]\n",
+            executeBranch.reason,
+            executeBranch.target ? executeBranch.target->instAddr() : 0,
+            executeBranch.inst->pc->instAddr(),
+            *executeBranch.inst);
         if (executeBranch.reason == BranchData::BadlyPredictedBranch ||
             executeBranch.reason == BranchData::BadlyPredictedBranchTarget) {
             /* Misprediction.  Check if the correct target (fall-through)
-             * was in the saved line from before the taken prediction.
-             * For 16-bit branches, the fall-through is in the same
-             * 4-byte fetch line that was saved in predictBranch(). */
+                * was in the saved line from before the taken prediction.
+                * For 16-bit branches, the fall-through is in the same
+                * 4-byte fetch line that was saved in predictBranch(). */
             Addr target_addr = executeBranch.target->instAddr();
             if (!savedLine.isBubble() &&
                 target_addr >= savedLine.lineBaseAddr &&
                 target_addr < savedLine.lineBaseAddr + savedLine.lineWidth) {
+                savedLine.id.streamSeqNum =
+                    executeBranch.newStreamSeqNum;
+                forwardedSavedLine =
+                    savedLine.lineBaseAddr + savedLine.lineWidth;
                 /* Restore the saved line into the input buffer. */
-                DPRINTF(Fetch, "Misprediction target %#x in saved line, "
-                    "restoring\n", target_addr);
+                DPRINTF(Fetch, "SF2: Mispred target %#x in saved line, "
+                    "restoring and changing streamSeqNum to %d\n",
+                    target_addr, savedLine.id.streamSeqNum);
                 dumpAllInput(tid);
                 inputBuffer[tid].setTail(savedLine);
                 inputBuffer[tid].pushTail();
@@ -793,24 +818,61 @@ SingleStageFetch2::reactToExecuteBranch(const BranchData &executeBranch)
                 fetchInfo[tid].havePC = false;
                 savedLine = ForwardLineData::bubble();
             }
+        } else if (executeBranch.reason ==
+                   BranchData::UnpredictedBranch) {
+            /* Conditional branch predicted not-taken but actually taken.
+             * Check if the target is in the savedLine (saved at decode
+             * when we pre-computed the target for direct branches). */
+            Addr target_addr = executeBranch.target->instAddr();
+            if (!savedLine.isBubble() &&
+                target_addr >= savedLine.lineBaseAddr &&
+                target_addr < savedLine.lineBaseAddr +
+                              savedLine.lineWidth) {
+                savedLine.id.streamSeqNum =
+                    executeBranch.newStreamSeqNum;
+                forwardedSavedLine =
+                    savedLine.lineBaseAddr + savedLine.lineWidth;
+                DPRINTF(Fetch, "SF2: UnpredBranch target %#x in saved "
+                    "line [%#x, %#x), restoring and changing streamSeqNum"
+                    "to %d\n",
+                    savedLine.lineBaseAddr,
+                    savedLine.lineBaseAddr + savedLine.lineWidth,
+                    target_addr,
+                    savedLine.id.streamSeqNum);
+                dumpAllInput(tid);
+                /* Update the line's PC to point at the target so that
+                 * decodeInstructions computes the correct inputIndex */
+                set(savedLine.pc, *executeBranch.target);
+                inputBuffer[tid].setTail(savedLine);
+                inputBuffer[tid].pushTail();
+                fetchInfo[tid].havePC = false;
+                savedLine = ForwardLineData::bubble();
+            } else {
+                dumpAllInput(tid);
+                fetchInfo[tid].havePC = false;
+                savedLine = ForwardLineData::bubble();
+            }
         } else {
-            /* Other stream changes (UnpredictedBranch, Interrupt, etc.) */
+            /* Other stream changes (Interrupt, etc.) */
             dumpAllInput(tid);
             fetchInfo[tid].havePC = false;
+            savedLine = ForwardLineData::bubble();
         }
-    } else if (latched_branch.isStreamChange()) {
-        /* Fallback: if no same-cycle branch but latched branch has a
-         * stream change (shouldn't happen normally in single-stage mode
-         * since we use same-cycle bypass), handle it the old way. */
-        dumpAllInput(latched_branch.threadId);
-        fetchInfo[latched_branch.threadId].havePC = false;
     }
+    // else if (latched_branch.isStreamChange()) {
+    //     /* Fallback: if no same-cycle branch but latched branch has a
+    //      * stream change (shouldn't happen normally in single-stage mode
+    //      * since we use same-cycle bypass), handle it the old way. */
+    //     dumpAllInput(latched_branch.threadId);
+    //     fetchInfo[latched_branch.threadId].havePC = false;
+    // }
 }
 
 void
 SingleStageFetch2::runDecodeCore(BranchData &prediction_out,
                                  const BranchData &executeBranch)
 {
+    forwardedSavedLine = 0;
     reactToExecuteBranch(executeBranch);
     discardStaleLines();
     decodeInstructions(prediction_out);
@@ -849,6 +911,7 @@ SingleStageFetch2::scanNextForBranch()
         decoder->moreBytes(*fetch_info.pc,
             line_in->lineBaseAddr + fetch_info.inputIndex);
     }
+
 
     bool found_branch = false;
     if (decoder->instReady()) {
