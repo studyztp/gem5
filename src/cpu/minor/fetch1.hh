@@ -45,6 +45,7 @@
 #ifndef __CPU_MINOR_FETCH1_HH__
 #define __CPU_MINOR_FETCH1_HH__
 
+#include <list>
 #include <vector>
 
 #include "arch/generic/mmu.hh"
@@ -411,6 +412,11 @@ class Fetch1 : public Named
      *  Execute signalling a branch with the reason HaltFetch */
     bool isDrained();
 
+    /** Try to issue a new I-cache fetch request.
+     *  Returns the ThreadID that was fetched, or InvalidThreadID.
+     *  Does NOT call nextStageReserve.reserve(). */
+    virtual ThreadID tryToFetch();
+
   protected:
     /** Core evaluation logic, parameterized by data sources/sinks.
      *  Contains: branch redirect handling, fetch issuing, I-cache
@@ -423,11 +429,6 @@ class Fetch1 : public Named
      *  Pure logic — no inputBuffer or reservation interaction. */
     void handleBranchRedirects(const BranchData &execute_branch,
                                const BranchData &fetch2_branch);
-
-    /** Try to issue a new I-cache fetch request.
-     *  Returns the ThreadID that was fetched, or InvalidThreadID.
-     *  Does NOT call nextStageReserve.reserve(). */
-    ThreadID tryToFetch();
 
     /** Process a completed I-cache response from the transfers queue.
      *  Writes result to line_out. Sets was_discarded and discarded_tid
@@ -458,7 +459,6 @@ class SingleStageFetch1 : public Fetch1
      *  where the branch target feeds back to Fetch within the same clock.
      *  This bypasses the executeBranchDelay latch for 0-cycle redirect. */
     Latch<BranchData>::Input eToF1Input;
-
 
   public:
     SingleStageFetch1(const std::string &name_,

@@ -144,7 +144,7 @@ class STM32F405Platform(ArmMPlatform):
 
     def default_memories(self):
         """
-        Create default SimpleMemory objects matching this chip's layout.
+        Create default PipelinedSimpleMemory objects matching this chip's layout.
 
         Returns a list of memories with reasonable latencies for a
         Cortex-M4 @ 168MHz.  Override or create your own list for
@@ -168,24 +168,26 @@ class STM32F405Platform(ArmMPlatform):
             # Flash: ~30ns models typical 5-6 wait states at 168MHz.
             # In real hardware, the ART accelerator hides most of
             # this latency for sequential instruction fetches.
-            SimpleMemory(
+            PipelinedSimpleMemory(
                 range=AddrRange(0x08000000, size="1MiB"),
                 latency="30ns",
+                port_priority=[0, 1],
+                port_read_buffer_size=[8, 8],
             ),
             # SRAM1: zero wait state at 168MHz.
             SimpleMemory(
                 range=AddrRange(0x20000000, size="112KiB"),
-                latency="5ns",
+                latency="0ns",
             ),
             # SRAM2: zero wait state, non-cached.
             SimpleMemory(
                 range=AddrRange(0x2001C000, size="16KiB"),
-                latency="5ns",
+                latency="0ns",
             ),
             # CCM SRAM: zero wait state, no DMA access.
             SimpleMemory(
                 range=AddrRange(0x10000000, size="64KiB"),
-                latency="5ns",
+                latency="0ns",
             ),
         ]
 
@@ -271,7 +273,7 @@ class STM32G474REPlatform(ArmMPlatform):
 
     def default_memories(self, enable_art=False):
         """
-        Create default SimpleMemory objects matching this chip's layout.
+        Create default PipelinedSimpleMemory objects matching this chip's layout.
 
         Returns a list of memories with reasonable latencies for a
         Cortex-M4 @ 170MHz.  No boot alias — correctly linked
@@ -279,32 +281,30 @@ class STM32G474REPlatform(ArmMPlatform):
 
         Args:
             enable_art: If True, the ART accelerator models the AHB
-                address phase (CPU→ART), so Flash does not need its own
+                address phase (CPU->ART), so Flash does not need its own
                 address_phase_cycles.  If False, Flash models the AHB
-                address phase directly (CPU→Flash).
+                address phase directly (CPU->Flash).
         """
         # Flash timing at 170 MHz: 4 wait states [RM0440 Table 19].
         #
         # Without ART: CPU accesses Flash via AHB directly.
-        #   address_phase_cycles=1: AHB address phase (1 cy)
+        #   address_phase_cycles=1 (default): AHB address phase (1 cy)
         #   latency="29ns": data phase (ceil(29000/5882) = 5 cy)
         #   Total: 1 + 5 = 6 cy per Flash access
         #   read_buffer_size=8: 64-bit Flash read serves 2 ICode fetches
         #
-        # With ART: ART models the AHB address phase (CPU→ART).
+        # With ART: ART models the AHB address phase (CPU->ART).
         #   address_phase_cycles=0: no extra address phase on Flash
         #   latency="29ns": full Flash access time (5 cy)
         #   Total: 5 cy from Flash (ART adds 1 cy address on top)
         #   read_buffer_size=0: ART has its own buffers, Flash read
         #   buffer is redundant
         if enable_art:
-            flash_addr_phase = 0
+            flash_addr_latency = "0ns"
             flash_read_buf = [0, 0]
-            flash_max_outstanding = 1
         else:
-            flash_addr_phase = 1
+            flash_addr_latency = "1ns"
             flash_read_buf = [8, 8]
-            flash_max_outstanding = 2
 
         return [
             # Flash Bank 1: 4 WS at 170MHz [RM0440 Table 19].
@@ -313,53 +313,35 @@ class STM32G474REPlatform(ArmMPlatform):
             # DCode has priority over ICode [RM0440 §3.3.4]
             PipelinedSimpleMemory(
                 range=AddrRange(0x08000000, size="256KiB"),
-                latency="29ns",
-                max_outstanding=flash_max_outstanding,
-                max_per_port=1,
-                address_phase_cycles=flash_addr_phase,
-                buffer_hit_cycles=1,
-                port_priority=[0, 0],
+                latency="29412ps",
+                address_phase_latency=flash_addr_latency,
+                port_priority=[0, 1],
                 port_read_buffer_size=flash_read_buf,
             ),
             # Flash Bank 2: same config as Bank 1.
             PipelinedSimpleMemory(
                 range=AddrRange(0x08040000, size="256KiB"),
-                latency="29ns",
-                max_outstanding=flash_max_outstanding,
-                max_per_port=1,
-                address_phase_cycles=flash_addr_phase,
-                buffer_hit_cycles=1,
-                port_priority=[0, 0],
+                latency="29412ps",
+                address_phase_latency=flash_addr_latency,
+                port_priority=[0, 1],
                 port_read_buffer_size=flash_read_buf,
             ),
             # SRAM1: 80KB @ 0x20000000, zero wait state [RM0440 §2].
-            PipelinedSimpleMemory(
+            SimpleMemory(
                 range=AddrRange(0x20000000, size="80KiB"),
                 latency="0ns",
-                max_outstanding=2,
-                address_phase_cycles=1,
-                read_buffer_size=0,
-                buffer_hit_cycles=1,
             ),
             # SRAM2: 48KB @ 0x20014000, zero wait state.
             # Real chip: SRAM2=16KB, but extended to 48KB so that
             # SRAM1+SRAM2 = 128KB contiguous (0x20000000-0x2001FFFF),
             # matching linker scripts that use LENGTH=128K.
-            PipelinedSimpleMemory(
+            SimpleMemory(
                 range=AddrRange(0x20014000, size="48KiB"),
                 latency="0ns",
-                max_outstanding=2,
-                address_phase_cycles=1,
-                read_buffer_size=0,
-                buffer_hit_cycles=1,
             ),
             # CCM SRAM: zero wait state, hardware parity check.
-            PipelinedSimpleMemory(
+            SimpleMemory(
                 range=AddrRange(0x10000000, size="32KiB"),
                 latency="0ns",
-                max_outstanding=2,
-                address_phase_cycles=1,
-                read_buffer_size=0,
-                buffer_hit_cycles=1,
             ),
         ]

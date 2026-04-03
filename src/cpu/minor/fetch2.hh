@@ -282,14 +282,6 @@ class SingleStageFetch2 : public Fetch2
      *  Uses same-cycle execute branch (not the 1-cycle delayed latch). */
     void reactToExecuteBranch(const BranchData &executeBranch);
 
-    /** Saved fetch line from before a taken prediction.  When a 16-bit
-     *  branch is predicted taken, the fall-through instruction is in the
-     *  same 4-byte fetch line.  We save it here so that if Execute says
-     *  BadlyPredictedBranch (actually not-taken), we can restore it
-     *  instead of re-fetching from Flash. */
-    ForwardLineData savedLine;
-    Addr forwardedSavedLine = 0;
-
     /** Peek at the next instruction in the current input line without
      *  advancing decode state. Returns true if it is a control-flow
      *  instruction (branch/call/return). Used by SingleStageFetch1 to

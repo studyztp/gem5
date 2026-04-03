@@ -28,35 +28,24 @@ class PipelinedSimpleMemory(AbstractMemory):
         "Vector of response ports (one per bus connection)"
     )
 
-    # Params from SimpleMemory that we need since we no longer inherit it
     latency = Param.Latency("30ns", "Request to response latency")
     latency_var = Param.Latency("0ns", "Request to response latency variance")
-    bandwidth = Param.MemoryBandwidth(
-        "12.8GiB/s", "Combined read and write bandwidth"
-    )
 
-    # Shared flash pipeline params
-    max_outstanding = Param.Unsigned(
-        2,
-        "Maximum total outstanding requests across all ports "
-        "(models flash array pipeline depth)",
-    )
-    max_per_port = Param.Unsigned(
-        1,
-        "Maximum outstanding requests per port under contention. "
-        "When multiple ports compete, lower-priority ports are limited "
-        "to this value. The highest-priority port can use up to "
-        "max_outstanding.",
-    )
-    address_phase_cycles = Param.Cycles(
-        1,
-        "Minimum cycles between accepting consecutive requests "
+    # Shared pipeline params
+    address_phase_latency = Param.Latency(
+        "0ns",
+        "Latency for the address phase before a request can be processed "
         "(models AHB address phase occupancy)",
     )
-    buffer_hit_cycles = Param.Cycles(
-        1,
-        "Latency in cycles for a read buffer hit "
+    buffer_hit_latency = Param.Latency(
+        "0ns",
+        "Latency for a read buffer hit "
         "(models bus transfer time without memory access)",
+    )
+    memory_read_request_size = Param.Unsigned(
+        8,
+        "The read request size in bytes to the memory. "
+        "Per-port read_buffer_size must not exceed this value.",
     )
 
     # Per-port configuration (VectorParam indexed by port ID).
@@ -65,23 +54,44 @@ class PipelinedSimpleMemory(AbstractMemory):
     port_priority = VectorParam.Unsigned(
         [0],
         "Per-port priority (higher value = higher priority). "
-        "Highest-priority port bypasses max_per_port limit. "
         "E.g., [0, 1] = port 0 low priority, port 1 high priority.",
     )
     port_read_buffer_size = VectorParam.Unsigned(
         [0],
         "Per-port read buffer size in bytes (0 = disabled). "
-        "Each port has its own read buffer modelling the flash "
-        "controller's per-interface read register. Must be 0 or "
-        "power of 2.  E.g., [8, 8] = both ports have 8-byte buffers.",
+        "Must be 0 or power of 2, and at most memory_read_request_size. "
+        "E.g., [8, 8] = both ports have 8-byte buffers.",
+    )
+    port_arrive_buffer_size = VectorParam.Unsigned(
+        [0],
+        "Per-port arrive buffer size limit (0 = unlimited). "
+        "Limits how many requests can queue before address phase. "
+        "E.g., [2, 2] = each port buffers up to 2 incoming requests.",
+    )
+    port_ready_to_fire_buffer_size = VectorParam.Unsigned(
+        [0],
+        "Per-port ready-to-fire buffer size limit (0 = unlimited). "
+        "Limits how many requests can wait for flash arbitration. "
+        "E.g., [1, 1] = each port has 1 slot for flash arbitration.",
     )
 
-    # Legacy single-value param kept for backward compatibility.
-    # If port_read_buffer_size is not set, this value is used for all ports.
+    # Default single-value params for all ports.
+    # Overridden by the per-port VectorParam if set.
     read_buffer_size = Param.Unsigned(
         0,
         "Default read buffer size for all ports (overridden by "
-        "port_read_buffer_size if set). Kept for backward compatibility.",
+        "port_read_buffer_size if set).",
+    )
+    arrive_buffer_size = Param.Unsigned(
+        0,
+        "Default arrive buffer size limit for all ports (0 = unlimited). "
+        "Overridden by port_arrive_buffer_size if set.",
+    )
+    ready_to_fire_buffer_size = Param.Unsigned(
+        0,
+        "Default ready-to-fire buffer size limit for all ports "
+        "(0 = unlimited). Overridden by port_ready_to_fire_buffer_size "
+        "if set.",
     )
 
     def controller(self):

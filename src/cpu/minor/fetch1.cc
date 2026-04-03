@@ -78,7 +78,7 @@ Fetch1::Fetch1(const std::string &name_,
     fetchInfo(params.numThreads),
     threadPriority(0),
     requests(name_ + ".requests", "lines", params.fetch1FetchLimit),
-    transfers(name_ + ".transfers", "lines", params.fetch1FetchLimit),
+    transfers(name_ + ".transfers", "lines", params.fetch1FetchLimit * 3),
     icacheState(IcacheRunning),
     lineSeqNum(InstId::firstLineSeqNum),
     numFetchesInMemorySystem(0),
@@ -182,6 +182,11 @@ Fetch1::fetchLine(ThreadID tid)
         aligned_pc, request_size, Request::INST_FETCH, cpu.instRequestorId(),
         /* I've no idea why we need the PC, but give it */
         thread.fetchAddr);
+
+    /* Propagate streamSeqNum to the memory system so that the flash
+     * controller can detect stream changes (branch redirects) and
+     * retract speculative flash reads [DDI0439D §2.2.1]. */
+    request->request->setStreamId(thread.streamSeqNum);
 
     DPRINTF(Fetch, "Submitting ITLB request\n");
     numFetchesInITLB++;
@@ -390,8 +395,22 @@ Fetch1::popAndDiscard(FetchQueue &queue)
 unsigned int
 Fetch1::numInFlightFetches()
 {
-    return requests.occupiedSpace() +
-        transfers.occupiedSpace();
+    /* Count only fetches for the current stream. Wrong-path fetches
+     * (from a mispredicted or redirected stream) will drain when their
+     * memory responses arrive, but should not block new correct-path
+     * fetches from being issued. */
+    unsigned int count = 0;
+    for (auto &req : requests.getQueue()) {
+        Fetch1ThreadInfo &thread = fetchInfo[req->id.threadId];
+        if (req->id.streamSeqNum == thread.streamSeqNum)
+            count++;
+    }
+    for (auto &req : transfers.getQueue()) {
+        Fetch1ThreadInfo &thread = fetchInfo[req->id.threadId];
+        if (req->id.streamSeqNum == thread.streamSeqNum)
+            count++;
+    }
+    return count;
 }
 
 /** Print the appropriate MinorLine line for a fetch response */
@@ -666,6 +685,12 @@ Fetch1::tryToFetch()
         } else {
             DPRINTF(Fetch, "No active threads available to fetch from\n");
         }
+    } else {
+        DPRINTF(Fetch, "tryToFetch blocked: inFlight=%d (requests=%d "
+            "transfers=%d) >= fetchLimit=%d, inMemory=%d\n",
+            numInFlightFetches(), requests.occupiedSpace(),
+            transfers.occupiedSpace(), fetchLimit,
+            numFetchesInMemorySystem);
     }
 
     return InvalidThreadID;
@@ -678,29 +703,35 @@ Fetch1::processCompletedFetch(ForwardLineData &line_out,
 {
     was_discarded = false;
 
-    /* As we've thrown away early lines, if there is a line, it must
-     *  be from the right stream */
+    /* Drain all completed discardable (stale) entries immediately
+     * without consuming a pipeline cycle for each one. */
+    while (!transfers.empty() &&
+        transfers.front()->isComplete() &&
+        transfers.front()->isDiscardable())
+    {
+        was_discarded = true;
+        discarded_tid = transfers.front()->id.threadId;
+
+        DPRINTF(Fetch, "Discarding translated fetch as it's for"
+            " an old stream\n");
+
+        popAndDiscard(transfers);
+    }
+
+    if (was_discarded) {
+        cpu.wakeupOnEvent(Pipeline::Fetch1StageId);
+    }
+
+    /* Process the first non-discardable completed entry */
     if (!transfers.empty() &&
         transfers.front()->isComplete())
     {
         Fetch1::FetchRequestPtr response = transfers.front();
 
-        if (response->isDiscardable()) {
-            was_discarded = true;
-            discarded_tid = response->id.threadId;
+        DPRINTF(Fetch, "Processing fetched line: %s\n",
+            response->id);
 
-            DPRINTF(Fetch, "Discarding translated fetch as it's for"
-                " an old stream\n");
-
-            /* Wake up next cycle just in case there was some other
-             *  action to do */
-            cpu.wakeupOnEvent(Pipeline::Fetch1StageId);
-        } else {
-            DPRINTF(Fetch, "Processing fetched line: %s\n",
-                response->id);
-
-            processResponse(response, line_out);
-        }
+        processResponse(response, line_out);
 
         popAndDiscard(transfers);
     }
@@ -838,8 +869,15 @@ SingleStageFetch1::recvTimingResp(PacketPtr pkt)
         minorTraceResponseLine(name(), fetch_request);
 
     if (pkt->isError()) {
-        DPRINTF(Fetch, "Received error response packet: %s\n",
-            fetch_request->id);
+        DPRINTF(Fetch, "SF1: Received error response addr=%#x id=%s "
+            "inFlight=%d (stale stream retraction)\n",
+            pkt->getAddr(), fetch_request->id, numFetchesInMemorySystem);
+    }
+
+    if (fetch_request->isDiscardable()) {
+        DPRINTF(Fetch, "SF1: Response for old stream addr=%#x id=%s "
+            "will be discarded, inFlight=%d\n",
+            pkt->getAddr(), fetch_request->id, numFetchesInMemorySystem);
     }
 
     /* Use immediate wakeup so the pipeline evaluates at the current
@@ -882,12 +920,11 @@ SingleStageFetch1::evaluate()
      * cycle (Pipeline::evaluate runs Execute before Fetch). */
     {
         const BranchData &execBranch = *eToF1Input.inputWire;
-        if (execBranch.isStreamChange()) {
-            DPRINTF(Fetch, "SF1: Execute redirect reason=%d target=%#x "
-                "inst=[%s] pc=%#x\n",
+        if (execBranch.isStreamChange() && execBranch.target) {
+            DPRINTF(Fetch, "SF1: Execute redirect reason=%d "
+                "target=%#x\n",
                 execBranch.reason,
-                execBranch.target ? execBranch.target->instAddr() : 0,
-                *execBranch.inst, execBranch.inst->pc->instAddr());
+                execBranch.target->instAddr());
         }
     }
     handleBranchRedirects(*eToF1Input.inputWire, lastPrediction);
@@ -895,8 +932,6 @@ SingleStageFetch1::evaluate()
     /* Step I-cache queues */
     stepQueues();
 
-    /* Process completed I-cache response — pop from transfers queue
-     * BEFORE tryToFetch so numInFlightFetches sees the freed slot */
     ForwardLineData line;
     bool was_discarded = false;
     ThreadID discarded_tid = InvalidThreadID;
@@ -919,27 +954,13 @@ SingleStageFetch1::evaluate()
      * pipeline refill starts in the same cycle — there is no
      * speculative prediction delay on real hardware [DDI0439D §3.3]. */
     if (prediction.isStreamChange()) {
-        DPRINTF(Fetch, "SF1: Decode prediction reason=%d target=%#x "
-            "inst=[%s] pc=%#x\n",
-            prediction.reason,
-            prediction.target ? prediction.target->instAddr() : 0,
-            *prediction.inst, prediction.inst->pc->instAddr());
         Fetch1ThreadInfo &thread = fetchInfo[prediction.threadId];
         if (thread.state != FetchHalted &&
             prediction.newStreamSeqNum == thread.streamSeqNum) {
+            DPRINTF(Fetch, "SF1: Decode prediction reason=%d target=%#x\n",
+                prediction.reason,
+                prediction.target ? prediction.target->instAddr() : 0);
             changeStream(prediction);
-        }
-    } else {
-        if (fetch2->forwardedSavedLine!=0) {
-            /* savedLine was restored in reactToExecuteBranch.
-             * Advance fetchAddr past the savedLine so we fetch the
-             * NEXT word (continuation) instead of redundantly
-             * re-fetching the same line. Use thread 0 directly —
-             * getScheduledThread() can return -1 when blocked. */
-            Fetch1ThreadInfo &thread = fetchInfo[0];
-            DPRINTF(Fetch, "SF1: savedLine forwarded, advancing "
-                "fetchAddr to %#x\n", fetch2->forwardedSavedLine);
-            thread.fetchAddr = fetch2->forwardedSavedLine;
         }
     }
 

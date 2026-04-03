@@ -480,6 +480,10 @@ class Queue : public Named, public Reservable
     /** Number of slots already occupied in this buffer */
     unsigned int occupiedSpace() const { return queue.size(); }
 
+    /** Access the underlying deque for iteration */
+    const std::deque<ElemType> &getQueue() const { return queue; }
+    std::deque<ElemType> &getQueue() { return queue; }
+
     /** Number of slots which are reserved. */
     unsigned int reservedSpace() const { return numReservedSlots; }
 

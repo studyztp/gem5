@@ -44,16 +44,207 @@ namespace memory
 
 PipelinedSimpleMemory::MemoryPort::MemoryPort(
     const std::string &name, PipelinedSimpleMemory &_mem, PortID _id,
-    unsigned _readBufferSize, unsigned _priority)
+    unsigned _readBufferSize, unsigned _priority,
+    size_t _arriveLimit, size_t _readyToFireLimit)
     : ResponsePort(name, _id),
       mem(_mem),
       portId(_id),
-      bufferedBlockAddr(~(Addr)0),
-      readBufferSize(_readBufferSize),
+      portBufferedBlockAddr(~(Addr)0),
+      portBufferBlockSize(_readBufferSize),
+      lastStreamId(0),
       priority(_priority),
       retryReq(false),
-      retryResp(false)
+      retryResp(false),
+      arriveBufferSizeLimit(_arriveLimit),
+      popArriveBufferEvent([this]{popArriveBuffer();}, name+"_popArriveBuffer",
+          false, Event::Default_Pri),
+      popOutputBufferEvent([this]{popOutputBuffer();}, name+"_popOutputBuffer",
+          false, Event::Default_Pri - 1),
+      readyToFireBufferSizeLimit(_readyToFireLimit),
+      staleReturnEvent([this]{retryStaleReturn();}, name+"_staleReturn"),
+      addressPhaseLatency(_mem.params().address_phase_latency),
+      bufferHitLatency(_mem.params().buffer_hit_latency)
 {}
+
+void
+PipelinedSimpleMemory::MemoryPort::popArriveBuffer() {
+    DPRINTF(PipelinedMem, "port[%d] popArriveBuffer: arriveBuffer=%d "
+            "readyToFire=%d outputBuffer=%d\n",
+            portId, arriveBuffer.size(), readyToFireBuffer.size(),
+            outputBuffer.size());
+
+    while (!readyToFireBuffer.empty()
+        && readyToFireBuffer.front().pkt->req->hasStreamId()
+        && readyToFireBuffer.front().pkt->req->streamId()!=lastStreamId) {
+        PacketPtr stale = readyToFireBuffer.front().pkt;
+        DPRINTF(PipelinedMem, "port[%d] returning stale pkt addr=%#x "
+                "streamId=%d (current=%d)\n",
+                portId, stale->getAddr(),
+                stale->req->streamId(), lastStreamId);
+        stale->makeResponse();
+        stale->setBadAddress();
+        readyToFireBuffer.pop_front();
+        if (retryResp) {
+            staleReturnQueue.push_back(stale);
+        } else if (!sendTimingResp(stale)) {
+            retryResp = true;
+            staleReturnQueue.push_back(stale);
+        }
+    }
+
+    if (!arriveBuffer.empty()
+            && (readyToFireBufferSizeLimit==0
+            || readyToFireBuffer.size() < readyToFireBufferSizeLimit)) {
+        arriveBuffer.front().tick = curTick();
+        DPRINTF(PipelinedMem, "port[%d] moving pkt addr=%#x from "
+                "arriveBuffer to readyToFire\n",
+                portId, arriveBuffer.front().pkt->getAddr());
+        readyToFireBuffer.push_back(std::move(arriveBuffer.front()));
+        arriveBuffer.pop();
+    }
+
+    popReadyToFireBuffer();
+
+    /* If arriveBuffer still has entries, schedule another address phase
+     * so the next packet can reach readyToFireBuffer while flash is busy
+     * (enabling piggyback). */
+    if (!arriveBuffer.empty() && !popArriveBufferEvent.scheduled()) {
+        Tick nextAddr = curTick() + addressPhaseLatency;
+        DPRINTF(PipelinedMem, "port[%d] arriveBuffer not empty, "
+                "scheduling next address phase at tick=%d\n",
+                portId, nextAddr);
+        mem.schedule(popArriveBufferEvent, std::max(nextAddr, curTick()));
+    }
+}
+
+void
+PipelinedSimpleMemory::MemoryPort::popOutputBuffer() {
+    if (retryResp)
+        return;
+    if (!outputBuffer.empty()) {
+        DPRINTF(PipelinedMem, "port[%d] popOutputBuffer: sending resp "
+                "addr=%#x type=%d tick=%d\n",
+                portId, outputBuffer.front().pkt->getAddr(),
+                outputBuffer.front().returnType, outputBuffer.front().tick);
+        retryResp = !sendTimingResp(outputBuffer.front().pkt);
+        if (!retryResp) {
+            if (outputBuffer.front().returnType == ReturnFromMem
+                    && portBufferBlockSize > 0) {
+                portBufferedBlockAddr = outputBuffer.front().pkt->getAddr()
+                                            & ~(Addr)(portBufferBlockSize - 1);
+                DPRINTF(PipelinedMem, "port[%d] buffer updated: "
+                        "blockAddr=%#x\n", portId, portBufferedBlockAddr);
+            }
+            outputBuffer.pop_front();
+            if (!outputBuffer.empty()) {
+                DPRINTF(PipelinedMem, "port[%d] next output at tick=%d\n",
+                        portId, outputBuffer.front().tick);
+                mem.reschedule(popOutputBufferEvent,
+                    std::max(outputBuffer.front().tick, curTick()),
+                    true);
+            }
+        } else {
+            DPRINTF(PipelinedMem, "port[%d] sendTimingResp failed, "
+                    "waiting for retry\n", portId);
+        }
+    }
+}
+
+void
+PipelinedSimpleMemory::MemoryPort::popReadyToFireBuffer() {
+    if (!readyToFireBuffer.empty()) {
+        Addr pktAddr = readyToFireBuffer.front().pkt->getAddr();
+        DPRINTF(PipelinedMem, "port[%d] popReadyToFire: addr=%#x "
+                "bufferBlock=%#x\n", portId, pktAddr, portBufferedBlockAddr);
+
+        if (portBufferBlockSize > 0) {
+            Addr pktBlockAddr = pktAddr & ~(Addr)(portBufferBlockSize - 1);
+            if (pktBlockAddr == portBufferedBlockAddr) {
+                DPRINTF(PipelinedMem, "port[%d] BUFFER HIT addr=%#x "
+                        "block=%#x\n", portId, pktAddr, pktBlockAddr);
+                readyToFireBuffer.front().tick = curTick() + bufferHitLatency;
+                readyToFireBuffer.front().returnType = ReturnFromBuffer;
+                outputBuffer.push_back(readyToFireBuffer.front());
+                mem.access(readyToFireBuffer.front().pkt);
+                readyToFireBuffer.pop_front();
+                scheduleNextPopArriveBuffer(curTick() + bufferHitLatency);
+                return;
+            }
+        }
+
+        DPRINTF(PipelinedMem, "port[%d] BUFFER MISS addr=%#x, "
+                "requesting flash\n", portId, pktAddr);
+        Tick nextAcceptTick = mem.recvTimingReq();
+        if (!readyToFireBuffer.empty() && mem.currentFetchingPkt
+                && portId == mem.currentFetchingPkt->portId) {
+            Addr pktMemReadAddr =
+                readyToFireBuffer.front().pkt->getAddr()
+                & ~(Addr)(mem.readMemoryRequestSize - 1);
+            if (pktMemReadAddr == mem.currentFetchingBlockAddr) {
+                DPRINTF(PipelinedMem, "port[%d] PIGGYBACK addr=%#x on "
+                        "fetchBlock=%#x, ready at tick=%d\n",
+                        portId, readyToFireBuffer.front().pkt->getAddr(),
+                        mem.currentFetchingBlockAddr, nextAcceptTick);
+                readyToFireBuffer.front().tick = nextAcceptTick;
+                readyToFireBuffer.front().returnType = ReturnFromPiggyback;
+                outputBuffer.push_back(readyToFireBuffer.front());
+                mem.access(readyToFireBuffer.front().pkt);
+                readyToFireBuffer.pop_front();
+            }
+        }
+        scheduleNextPopArriveBuffer(nextAcceptTick);
+    }
+}
+
+void
+PipelinedSimpleMemory::MemoryPort::scheduleNextPopArriveBuffer(Tick nextScheduleTime) {
+    if (!outputBuffer.empty() && !popOutputBufferEvent.scheduled()) {
+        Tick outTick = std::max(outputBuffer.front().tick, curTick());
+        DPRINTF(PipelinedMem, "port[%d] scheduling popOutputBuffer at "
+                "tick=%d\n", portId, outTick);
+        mem.schedule(popOutputBufferEvent, outTick);
+    }
+    {
+        Tick schedTick;
+        if (!outputBuffer.empty() && !readyToFireBuffer.empty()) {
+            /* readyToFireBuffer has a pending request waiting for flash.
+             * Schedule at flash-done time so we don't retry before flash
+             * is ready (which would cause an infinite loop). */
+            schedTick = std::max(nextScheduleTime, curTick());
+        } else if (!outputBuffer.empty()) {
+            /* outputBuffer has responses to send, no pending flash request.
+             * Schedule when the response is ready. */
+            schedTick = std::max(outputBuffer.front().tick, curTick());
+        } else {
+            schedTick = std::max(nextScheduleTime, curTick());
+        }
+        if (!popArriveBufferEvent.scheduled()) {
+            DPRINTF(PipelinedMem, "port[%d] scheduling popArriveBuffer at "
+                    "tick=%d\n", portId, schedTick);
+            mem.schedule(popArriveBufferEvent, schedTick);
+        }
+    }
+
+}
+
+void
+PipelinedSimpleMemory::MemoryPort::retryStaleReturn() {
+    if (retryResp)
+        return;
+    while (!staleReturnQueue.empty()) {
+        PacketPtr stale = staleReturnQueue.front();
+        DPRINTF(PipelinedMem, "port[%d] retrying stale return addr=%#x\n",
+                portId, stale->getAddr());
+        retryResp = !sendTimingResp(stale);
+        if (!retryResp) {
+            staleReturnQueue.pop_front();
+        } else {
+            DPRINTF(PipelinedMem, "port[%d] stale return failed, "
+                    "waiting for recvRespRetry\n", portId);
+            return;
+        }
+    }
+}
 
 Tick
 PipelinedSimpleMemory::MemoryPort::recvAtomic(PacketPtr pkt)
@@ -74,7 +265,23 @@ PipelinedSimpleMemory::MemoryPort::recvAtomicBackdoor(
 void
 PipelinedSimpleMemory::MemoryPort::recvFunctional(PacketPtr pkt)
 {
+    pkt->pushLabel(mem.name());
+
     mem.functionalAccess(pkt);
+
+    // Check in-flight packets across all per-port buffers
+    for (auto &port : mem.ports) {
+        for (auto &dp : port->outputBuffer) {
+            if (pkt->trySatisfyFunctional(dp.pkt))
+                break;
+        }
+        for (auto &dp : port->readyToFireBuffer) {
+            if (pkt->trySatisfyFunctional(dp.pkt))
+                break;
+        }
+    }
+
+    pkt->popLabel();
 }
 
 void
@@ -87,13 +294,59 @@ PipelinedSimpleMemory::MemoryPort::recvMemBackdoorReq(
 bool
 PipelinedSimpleMemory::MemoryPort::recvTimingReq(PacketPtr pkt)
 {
-    return mem.recvTimingReq(pkt, portId);
+    DPRINTF(PipelinedMem, "port[%d] recvTimingReq: addr=%#x size=%d %s\n",
+            portId, pkt->getAddr(), pkt->getSize(), pkt->cmdString());
+
+    if (pkt->req->hasStreamId()) {
+        uint32_t streamId = pkt->req->streamId();
+        if (lastStreamId != streamId) {
+            DPRINTF(PipelinedMem, "port[%d] stream change %d -> %d, "
+                    "flushing stale arrivals\n",
+                    portId, lastStreamId, streamId);
+            lastStreamId = streamId;
+            while (!arriveBuffer.empty()
+                    && arriveBuffer.front().pkt->req->streamId()!=streamId) {
+                PacketPtr stale = arriveBuffer.front().pkt;
+                DPRINTF(PipelinedMem, "port[%d] returning stale arrival "
+                        "addr=%#x streamId=%d (current=%d)\n",
+                        portId, stale->getAddr(),
+                        stale->req->streamId(), streamId);
+                stale->makeResponse();
+                stale->setBadAddress();
+                arriveBuffer.pop();
+                staleReturnQueue.push_back(stale);
+            }
+            if (!staleReturnQueue.empty() && !retryResp
+                    && !staleReturnEvent.scheduled())
+                mem.schedule(staleReturnEvent, curTick() + 1);
+        }
+    }
+    if (arriveBufferSizeLimit != 0
+            && arriveBuffer.size() >= arriveBufferSizeLimit) {
+        DPRINTF(PipelinedMem, "port[%d] arriveBuffer full (%d/%d), "
+                "rejecting\n", portId, arriveBuffer.size(),
+                arriveBufferSizeLimit);
+        retryReq = true;
+        return false;
+    }
+    arriveBuffer.push(DeferredPacket(pkt, curTick(), portId, priority, NotScheduled));
+    Tick addrPhaseDone = curTick() + addressPhaseLatency;
+    DPRINTF(PipelinedMem, "port[%d] accepted, arriveBuffer=%d, "
+            "scheduling popArriveBuffer at tick=%d\n",
+            portId, arriveBuffer.size(), addrPhaseDone);
+    if (!popArriveBufferEvent.scheduled()) {
+        mem.schedule(popArriveBufferEvent, addrPhaseDone);
+    }
+    return true;
 }
 
 void
 PipelinedSimpleMemory::MemoryPort::recvRespRetry()
 {
-    mem.recvRespRetry(portId);
+    assert(retryResp);
+    retryResp = false;
+    popOutputBuffer();
+    retryStaleReturn();
 }
 
 AddrRangeList
@@ -121,35 +374,37 @@ PipelinedSimpleMemory::PipelinedSimpleMemory(const Params &p)
     : AbstractMemory(p),
       latency(p.latency),
       latencyVar(p.latency_var),
-      maxOutstanding(p.max_outstanding),
-      maxPerPort(p.max_per_port),
-      addressPhaseCycles(p.address_phase_cycles),
       nextAcceptTick(0),
-      bufferHitCycles(p.buffer_hit_cycles),
-      lastResponseTick(0),
-      dequeueEvent([this]{ dequeue(); }, name())
+      currentFetchingBlockAddr(~(Addr)0),
+      readMemoryRequestSize(p.memory_read_request_size),
+      retryEvent([this]{ retry(); }, name())
 {
     for (int i = 0; i < p.port_port_connection_count; ++i) {
-        // Per-port read buffer size: use port_read_buffer_size if set,
-        // else fall back to read_buffer_size (legacy single-value param).
         unsigned bufSize = getPerPort(p.port_read_buffer_size, i,
                                       p.read_buffer_size);
         unsigned pri = getPerPort(p.port_priority, i, 0);
+        unsigned arriveLimit = getPerPort(p.port_arrive_buffer_size, i,
+                                          p.arrive_buffer_size);
+        unsigned readyToFireLimit = getPerPort(
+                p.port_ready_to_fire_buffer_size, i,
+                p.ready_to_fire_buffer_size);
 
         fatal_if(bufSize != 0 && !isPowerOf2(bufSize),
                  "port[%d] read_buffer_size must be 0 or power of 2, "
                  "got %d", i, bufSize);
+        fatal_if(bufSize > p.memory_read_request_size,
+                 "port[%d] read_buffer_size (%d) exceeds "
+                 "memory_read_request_size (%d)",
+                 i, bufSize, p.memory_read_request_size);
 
         std::string portName = csprintf("%s.port[%d]", name(), i);
         ports.emplace_back(
-            std::make_unique<MemoryPort>(portName, *this, i, bufSize, pri));
-        retryEvents.emplace_back(
-            [this, i]{ sendRetry(i); }, name(), false,
-            Event::Default_Pri + 1);
-        portOutstanding.push_back(0);
+            std::make_unique<MemoryPort>(portName, *this, i, bufSize, pri,
+                                         arriveLimit, readyToFireLimit));
 
         DPRINTF(PipelinedMem, "port[%d] created: priority=%d "
-                "readBufferSize=%d\n", i, pri, bufSize);
+                "readBufferSize=%d arriveLimit=%d readyToFireLimit=%d\n",
+                i, pri, bufSize, arriveLimit, readyToFireLimit);
     }
 }
 
@@ -159,7 +414,6 @@ PipelinedSimpleMemory::getPort(const std::string &if_name, PortID idx)
     if (if_name == "port") {
         if (idx < ports.size())
             return *ports[idx];
-        // idx might be InvalidPortID for legacy single-port usage
         if (idx == InvalidPortID && ports.size() == 1)
             return *ports[0];
     }
@@ -173,9 +427,6 @@ PipelinedSimpleMemory::init()
     for (auto &p : ports) {
         if (!p->isConnected())
             fatal("%s: port %s is not connected.\n", name(), p->name());
-        // Notify downstream crossbar of our address ranges.
-        // Without this, the crossbar's gotAllAddrRanges stays false
-        // and it asserts on the first request.
         p->sendRangeChange();
     }
 }
@@ -188,281 +439,79 @@ PipelinedSimpleMemory::getLatency() const
     return latency;
 }
 
-// =========================================================================
-// Priority helpers
-// =========================================================================
-
-bool
-PipelinedSimpleMemory::isHighestPriority(PortID portId) const
+DrainState
+PipelinedSimpleMemory::drain()
 {
-    unsigned myPri = ports[portId]->priority;
-    for (size_t i = 0; i < ports.size(); ++i) {
-        if ((PortID)i != portId && ports[i]->priority > myPri)
-            return false;
-    }
-    return true;
-}
-
-void
-PipelinedSimpleMemory::insertSorted(DeferredPacket &&entry)
-{
-    // Insert sorted by (tick ascending, priority descending).
-    // Higher priority responses at the same tick go first.
-    auto it = packetQueue.end();
-    while (it != packetQueue.begin()) {
-        auto prev = std::prev(it);
-        if (prev->tick < entry.tick)
-            break;
-        if (prev->tick == entry.tick && prev->priority >= entry.priority)
-            break;
-        it = prev;
-    }
-    packetQueue.insert(it, std::move(entry));
-}
-
-// =========================================================================
-// recvTimingReq — per-port read buffer, priority, shared address phase
-// =========================================================================
-
-bool
-PipelinedSimpleMemory::recvTimingReq(PacketPtr pkt, PortID portId)
-{
-    auto &port = *ports[portId];
-
-    panic_if(pkt->cacheResponding(), "Should not see packets where cache "
-             "is responding");
-
-    panic_if(!(pkt->isRead() || pkt->isWrite()),
-             "Should only see read and writes at memory controller, "
-             "saw %s to %#llx\n", pkt->cmdString(), pkt->getAddr());
-
-    if (port.retryReq)
-        return false;
-
-    // Outstanding limit with priority-aware contention.
-    bool contention = false;
-    for (size_t i = 0; i < ports.size(); ++i)
-        if ((PortID)i != portId && portOutstanding[i] != 0)
-            contention = true;
-
-    // Highest-priority port can use full maxOutstanding even under
-    // contention.  Lower-priority ports are limited to maxPerPort.
-    unsigned limit;
-    if (!contention || isHighestPriority(portId))
-        limit = maxOutstanding;
-    else
-        limit = maxPerPort;
-
-    if (portOutstanding[portId] >= limit ||
-        packetQueue.size() >= maxOutstanding) {
-        DPRINTF(PipelinedMem, "port[%d] Rejected %s addr %#x: "
-                "portOutstanding=%d/%d total=%d/%d contention=%d "
-                "priority=%d\n", portId,
-                pkt->cmdString(), pkt->getAddr(),
-                portOutstanding[portId], limit,
-                (unsigned)packetQueue.size(), maxOutstanding,
-                contention, port.priority);
-        port.retryReq = true;
-        if (!retryEvents[portId].scheduled() && !packetQueue.empty()) {
-            DPRINTF(PipelinedMem, "port[%d] Scheduling retry at tick %d\n",
-                    portId, packetQueue.front().tick);
-            schedule(retryEvents[portId], packetQueue.front().tick);
+    for (auto &port : ports) {
+        if (!port->outputBuffer.empty() || !port->readyToFireBuffer.empty()
+                || !port->arriveBuffer.empty()) {
+            return DrainState::Draining;
         }
-        return false;
     }
+    return DrainState::Drained;
+}
 
-    // Reject if address phase is still occupied (shared)
+Tick
+PipelinedSimpleMemory::recvTimingReq()
+{
     if (curTick() < nextAcceptTick) {
-        DPRINTF(PipelinedMem, "port[%d] Rejected %s addr %#x: address "
-                "phase busy until tick %d\n", portId,
-                pkt->cmdString(), pkt->getAddr(), nextAcceptTick);
-        port.retryReq = true;
-        if (!retryEvents[portId].scheduled()) {
-            schedule(retryEvents[portId], nextAcceptTick);
-        }
-        return false;
+        DPRINTF(PipelinedMem, "flash busy until tick=%d\n", nextAcceptTick);
+        return nextAcceptTick;
     }
+    currentFetchingBlockAddr = 0;
 
-    // Consume upstream bus delays
-    Tick receive_delay = pkt->headerDelay + pkt->payloadDelay;
-    pkt->headerDelay = pkt->payloadDelay = 0;
-
-    // Address phase occupancy (shared)
-    nextAcceptTick = clockEdge(addressPhaseCycles);
-
-    // Per-port read buffer lookup (each port has its own buffer size)
-    Tick access_latency = getLatency();
-    if (pkt->isRead() && port.readBufferSize > 0) {
-        Addr blockAddr = pkt->getAddr()
-                         & ~(Addr)(port.readBufferSize - 1);
-        if (blockAddr == port.bufferedBlockAddr) {
-            access_latency = cyclesToTicks(bufferHitCycles);
-            DPRINTF(PipelinedMem, "port[%d] Read buffer HIT %s addr %#x "
-                    "(block %#x, bufSize=%d): access_latency=%d ticks\n",
-                    portId, pkt->cmdString(), pkt->getAddr(),
-                    blockAddr, port.readBufferSize, access_latency);
-        } else {
-            access_latency = getLatency();
-            port.bufferedBlockAddr = blockAddr;
-            DPRINTF(PipelinedMem, "port[%d] Read buffer MISS %s addr %#x "
-                    "(block %#x, bufSize=%d): access_latency=%d ticks, "
-                    "buffer filled\n",
-                    portId, pkt->cmdString(), pkt->getAddr(),
-                    blockAddr, port.readBufferSize, access_latency);
-        }
-    } else {
-        // Write invalidates this port's read buffer if it hits
-        if (pkt->isWrite() && port.readBufferSize > 0) {
-            Addr blockAddr = pkt->getAddr()
-                             & ~(Addr)(port.readBufferSize - 1);
-            if (blockAddr == port.bufferedBlockAddr) {
-                port.bufferedBlockAddr = ~(Addr)0;
-                DPRINTF(PipelinedMem, "port[%d] Write invalidated read "
-                        "buffer block %#x\n", portId, blockAddr);
+    DeferredPacket *best = nullptr;
+    for (size_t i = 0; i < ports.size(); ++i) {
+        if (!ports[i]->readyToFireBuffer.empty()) {
+            auto &candidate = ports[i]->readyToFireBuffer.front();
+            if (!best
+                || candidate.tick < best->tick
+                || (candidate.tick == best->tick
+                    && candidate.priority > best->priority)) {
+                best = &candidate;
             }
         }
-        DPRINTF(PipelinedMem, "port[%d] %s addr %#x: "
-                "access_latency=%d ticks (full latency)\n",
-                portId, pkt->cmdString(), pkt->getAddr(), access_latency);
     }
 
-    // In-order response delivery (shared data bus)
-    Tick data_phase_start = std::max(curTick() + receive_delay,
-                                     lastResponseTick);
-    Tick when_to_send = data_phase_start + access_latency;
-
-    DPRINTF(PipelinedMem, "port[%d] Accepted %s addr %#x size %d: "
-            "portOutstanding=%d total=%d/%d priority=%d "
-            "receive_delay=%d access_latency=%d "
-            "data_phase_start=%d when_to_send=%d lastResponseTick=%d "
-            "nextAcceptTick=%d\n",
-            portId, pkt->cmdString(), pkt->getAddr(), pkt->getSize(),
-            portOutstanding[portId] + 1,
-            (unsigned)packetQueue.size() + 1, maxOutstanding,
-            port.priority,
-            receive_delay, access_latency, data_phase_start,
-            when_to_send, lastResponseTick, nextAcceptTick);
-
-    // Track per-port outstanding count
-    ++portOutstanding[portId];
-
-    // Check before access() turns the packet into a response.
-    bool needsResponse = pkt->needsResponse();
-
-    // Access backing store (this calls pkt->makeResponse() internally)
-    access(pkt);
-    lastResponseTick = when_to_send;
-
-    if (needsResponse) {
-        assert(pkt->isResponse());
-
-        // Insert sorted by (tick ascending, priority descending)
-        insertSorted(DeferredPacket(pkt, when_to_send, portId,
-                                    port.priority));
-
-        if (!dequeueEvent.scheduled())
-            schedule(dequeueEvent, packetQueue.front().tick);
-    } else {
-        // No response needed but the write still occupies the data
-        // phase.  Decrement portOutstanding immediately (no dequeue
-        // will happen for this packet).
-        --portOutstanding[portId];
-        delete pkt;
+    if (!best) {
+        DPRINTF(PipelinedMem, "no ready packets across any port\n");
+        return nextAcceptTick;
     }
 
-    return true;
-}
+    nextAcceptTick = curTick() + getLatency();
 
-// =========================================================================
-// dequeue — send response through the originating port
-// =========================================================================
+    currentFetchingPkt = *best;
+    currentFetchingBlockAddr = currentFetchingPkt->pkt->getAddr()
+                                        & ~(Addr)(readMemoryRequestSize - 1);
 
-void
-PipelinedSimpleMemory::dequeue()
-{
-    assert(!packetQueue.empty());
-    auto &entry = packetQueue.front();
-    auto &port = *ports[entry.portId];
+    auto &targetPort = ports[currentFetchingPkt->portId];
+    targetPort->readyToFireBuffer.pop_front();
+    currentFetchingPkt->returnType = ReturnFromMem;
+    currentFetchingPkt->tick = nextAcceptTick;
+    targetPort->outputBuffer.push_back(*currentFetchingPkt);
+    access(currentFetchingPkt->pkt);
 
-    DPRINTF(PipelinedMem, "port[%d] Dequeuing response addr %#x at "
-            "tick %d (priority=%d)\n", entry.portId,
-            entry.pkt->getAddr(), curTick(), entry.priority);
-
-    port.retryResp = !port.sendTimingResp(entry.pkt);
-
-    if (!port.retryResp) {
-        --portOutstanding[entry.portId];
-        packetQueue.pop_front();
-
-        if (!packetQueue.empty()) {
-            // Use reschedule — event may already be scheduled if
-            // packets arrived between the front and now.
-            reschedule(dequeueEvent,
-                       std::max(packetQueue.front().tick, curTick()),
-                       true);
-        }
+    if (!targetPort->popOutputBufferEvent.scheduled()) {
+        schedule(targetPort->popOutputBufferEvent, nextAcceptTick);
     }
-}
-
-// =========================================================================
-// Retry — per-port
-// =========================================================================
-
-void
-PipelinedSimpleMemory::sendRetry(PortID portId)
-{
-    auto &port = *ports[portId];
-
-    // Priority-aware contention check.
-    bool contention = false;
-    for (size_t i = 0; i < ports.size(); ++i)
-        if ((PortID)i != portId && portOutstanding[i] != 0)
-            contention = true;
-
-    unsigned limit;
-    if (!contention || isHighestPriority(portId))
-        limit = maxOutstanding;
-    else
-        limit = maxPerPort;
-
-    DPRINTF(PipelinedMem, "port[%d] retryEvent fired: retryReq=%d "
-            "portOutstanding=%d/%d total=%d/%d contention=%d "
-            "priority=%d\n",
-            portId, port.retryReq,
-            portOutstanding[portId], limit,
-            (unsigned)packetQueue.size(), maxOutstanding,
-            contention, port.priority);
-
-    if (port.retryReq &&
-        portOutstanding[portId] < limit &&
-        packetQueue.size() < maxOutstanding &&
-        curTick() >= nextAcceptTick) {
-        port.retryReq = false;
-        port.sendRetryReq();
-    } else if (port.retryReq) {
-        // Still can't retry — reschedule for the earliest time the
-        // blocking condition could clear.
-        Tick retryAt = nextAcceptTick;
-        if (!packetQueue.empty())
-            retryAt = std::min(retryAt, packetQueue.front().tick);
-        retryAt = std::max(retryAt, curTick() + 1);
-
-        if (!retryEvents[portId].scheduled()) {
-            DPRINTF(PipelinedMem, "port[%d] Rescheduling retry at %d\n",
-                    portId, retryAt);
-            schedule(retryEvents[portId], retryAt);
-        }
+    if (!targetPort->popArriveBufferEvent.scheduled()) {
+        schedule(targetPort->popArriveBufferEvent, nextAcceptTick);
     }
+
+    DPRINTF(PipelinedMem, "flash FETCH: port[%d] addr=%#x block=%#x "
+            "latency=%d ready at tick=%d\n",
+            currentFetchingPkt->portId,
+            currentFetchingPkt->pkt->getAddr(),
+            currentFetchingBlockAddr,
+            nextAcceptTick - curTick(), nextAcceptTick);
+    return nextAcceptTick;
 }
 
 void
-PipelinedSimpleMemory::recvRespRetry(PortID portId)
-{
-    auto &port = *ports[portId];
-    assert(port.retryResp);
-    port.retryResp = false;
-    dequeue();
+PipelinedSimpleMemory::retry() {
+    recvTimingReq();
 }
+
 
 } // namespace memory
 } // namespace gem5

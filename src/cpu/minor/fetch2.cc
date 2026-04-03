@@ -267,7 +267,8 @@ Fetch2::reactToExecuteBranch()
 
     /* React to branches from Execute to update local branch prediction
      *  structures */
-    updateBranchPrediction(branch_inp);
+    if (!branch_inp.isBubble() && branch_inp.inst)
+        updateBranchPrediction(branch_inp);
 
     /* If a branch arrives, don't try and do anything about it.  Only
      *  react to your own predictions */
@@ -725,49 +726,22 @@ SingleStageFetch2::predictBranch(MinorDynInstPtr inst, BranchData &branch)
             inst->predictedTaken);
     }
 
-    /* Override for direct branches: if the base predicted not-taken
-     * (BTB miss on first encounter), override to taken with the
-     * target computed from the instruction encoding.  This models the
-     * Cortex-M4's early address speculation [DDI0439D §3.3.1]. */
     if (inst->triedToPredict && !inst->predictedTaken &&
-        inst->staticInst->isDirectCtrl()) {
-
-        /* Save a deep copy of the current input line BEFORE
-         * decodeInstructions() calls dumpAllInput() on the taken
-         * prediction.  For 16-bit branches, the fall-through instruction
-         * is in this same line.  If Execute later says
-         * BadlyPredictedBranch (not-taken), we can restore it instead
-         * of re-fetching from Flash. */
+        inst->staticInst->isDirectCtrl() &&
+        inst->staticInst->isUncondCtrl()) {
         ThreadID tid = inst->id.threadId;
-        const ForwardLineData *cur_line = getInput(tid);
-        savedLine.freeLine();
-        savedLine = ForwardLineData::bubble();
-        if (cur_line && !cur_line->isBubble() && cur_line->lineWidth > 0) {
-            /* Deep copy: first copy metadata, then allocate fresh
-             * line buffer and copy the data bytes. */
-            uint8_t *orig_line = cur_line->line;
-            unsigned int width = cur_line->lineWidth;
-            savedLine = *cur_line;          // copies metadata + old ptr
-            savedLine.line = nullptr;       // clear so allocateLine passes
-            savedLine.packet = nullptr;     // we own the copy, not the pkt
-            savedLine.allocateLine(width);
-            memcpy(savedLine.line, orig_line, width);
-        }
-
         auto target = inst->staticInst->branchTarget(*inst->pc);
         set(inst->predictedTarget, target);
-        if (inst->staticInst->isUncondCtrl()) {
-            inst->predictedTaken = true;
-            Fetch2ThreadInfo &thread = fetchInfo[tid];
-            thread.expectedStreamSeqNum = inst->id.streamSeqNum;
-            branch = BranchData(BranchData::BranchPrediction,
-                inst->id.threadId,
-                inst->id.streamSeqNum, thread.predictionSeqNum + 1,
-                *inst->predictedTarget, inst);
-            thread.predictionSeqNum++;
-            DPRINTF(Fetch, "SF2: OVERRIDE uncond direct pc=%#x → target=%#x\n",
-                inst->pc->instAddr(), target->instAddr());
-        }
+        inst->predictedTaken = true;
+        Fetch2ThreadInfo &thread = fetchInfo[tid];
+        thread.expectedStreamSeqNum = inst->id.streamSeqNum;
+        branch = BranchData(BranchData::BranchPrediction,
+            inst->id.threadId,
+            inst->id.streamSeqNum, thread.predictionSeqNum + 1,
+            *inst->predictedTarget, inst);
+        thread.predictionSeqNum++;
+        DPRINTF(Fetch, "SF2: OVERRIDE uncond direct pc=%#x → target=%#x\n",
+            inst->pc->instAddr(), target->instAddr());
     }
 }
 
@@ -779,100 +753,38 @@ SingleStageFetch2::reactToExecuteBranch(const BranchData &executeBranch)
      * 1 cycle old.  The latched wire is still used for updateBranchPrediction
      * (which needs the previous cycle's result for history management). */
     BranchData &latched_branch = *branchInp.outputWire;
-    updateBranchPrediction(latched_branch);
+    if (!latched_branch.isBubble() && latched_branch.inst)
+        updateBranchPrediction(latched_branch);
 
     /* React to the SAME-CYCLE execute branch for input buffer management */
     if (executeBranch.isStreamChange()) {
-        ThreadID tid = executeBranch.threadId;
-        DPRINTF(Fetch, "SF2: reactExec reason=%d target=%#x "
-            "pc=%#x [%s]\n",
-            executeBranch.reason,
-            executeBranch.target ? executeBranch.target->instAddr() : 0,
-            executeBranch.inst->pc->instAddr(),
-            *executeBranch.inst);
-        if (executeBranch.reason == BranchData::BadlyPredictedBranch ||
-            executeBranch.reason == BranchData::BadlyPredictedBranchTarget) {
-            /* Misprediction.  Check if the correct target (fall-through)
-                * was in the saved line from before the taken prediction.
-                * For 16-bit branches, the fall-through is in the same
-                * 4-byte fetch line that was saved in predictBranch(). */
-            Addr target_addr = executeBranch.target->instAddr();
-            if (!savedLine.isBubble() &&
-                target_addr >= savedLine.lineBaseAddr &&
-                target_addr < savedLine.lineBaseAddr + savedLine.lineWidth) {
-                savedLine.id.streamSeqNum =
-                    executeBranch.newStreamSeqNum;
-                forwardedSavedLine =
-                    savedLine.lineBaseAddr + savedLine.lineWidth;
-                /* Restore the saved line into the input buffer. */
-                DPRINTF(Fetch, "SF2: Mispred target %#x in saved line, "
-                    "restoring and changing streamSeqNum to %d\n",
-                    target_addr, savedLine.id.streamSeqNum);
-                dumpAllInput(tid);
-                inputBuffer[tid].setTail(savedLine);
-                inputBuffer[tid].pushTail();
-                fetchInfo[tid].havePC = false;
-                savedLine = ForwardLineData::bubble();
-            } else {
-                dumpAllInput(tid);
-                fetchInfo[tid].havePC = false;
-                savedLine = ForwardLineData::bubble();
-            }
-        } else if (executeBranch.reason ==
-                   BranchData::UnpredictedBranch) {
-            /* Conditional branch predicted not-taken but actually taken.
-             * Check if the target is in the savedLine (saved at decode
-             * when we pre-computed the target for direct branches). */
-            Addr target_addr = executeBranch.target->instAddr();
-            if (!savedLine.isBubble() &&
-                target_addr >= savedLine.lineBaseAddr &&
-                target_addr < savedLine.lineBaseAddr +
-                              savedLine.lineWidth) {
-                savedLine.id.streamSeqNum =
-                    executeBranch.newStreamSeqNum;
-                forwardedSavedLine =
-                    savedLine.lineBaseAddr + savedLine.lineWidth;
-                DPRINTF(Fetch, "SF2: UnpredBranch target %#x in saved "
-                    "line [%#x, %#x), restoring and changing streamSeqNum"
-                    "to %d\n",
-                    savedLine.lineBaseAddr,
-                    savedLine.lineBaseAddr + savedLine.lineWidth,
-                    target_addr,
-                    savedLine.id.streamSeqNum);
-                dumpAllInput(tid);
-                /* Update the line's PC to point at the target so that
-                 * decodeInstructions computes the correct inputIndex */
-                set(savedLine.pc, *executeBranch.target);
-                inputBuffer[tid].setTail(savedLine);
-                inputBuffer[tid].pushTail();
-                fetchInfo[tid].havePC = false;
-                savedLine = ForwardLineData::bubble();
-            } else {
-                dumpAllInput(tid);
-                fetchInfo[tid].havePC = false;
-                savedLine = ForwardLineData::bubble();
-            }
-        } else {
-            /* Other stream changes (Interrupt, etc.) */
-            dumpAllInput(tid);
-            fetchInfo[tid].havePC = false;
-            savedLine = ForwardLineData::bubble();
-        }
+        dumpAllInput(executeBranch.threadId);
+        fetchInfo[executeBranch.threadId].havePC = false;
+        /* Reset prediction tracking to match the execute redirect.
+         * Without this, Fetch2's predictionSeqNum stays at a stale value
+         * from a prior prediction, causing newly decoded instructions to
+         * be stamped with the wrong predictionSeqNum. */
+        fetchInfo[executeBranch.threadId].predictionSeqNum =
+            executeBranch.newPredictionSeqNum;
+        fetchInfo[executeBranch.threadId].expectedStreamSeqNum =
+            executeBranch.newStreamSeqNum;
+    } else if (latched_branch.isStreamChange()) {
+        /* Fallback: if no same-cycle branch but latched branch has a
+         * stream change (shouldn't happen normally in single-stage mode
+         * since we use same-cycle bypass), handle it the old way. */
+        dumpAllInput(latched_branch.threadId);
+        fetchInfo[latched_branch.threadId].havePC = false;
+        fetchInfo[latched_branch.threadId].predictionSeqNum =
+            latched_branch.newPredictionSeqNum;
+        fetchInfo[latched_branch.threadId].expectedStreamSeqNum =
+            latched_branch.newStreamSeqNum;
     }
-    // else if (latched_branch.isStreamChange()) {
-    //     /* Fallback: if no same-cycle branch but latched branch has a
-    //      * stream change (shouldn't happen normally in single-stage mode
-    //      * since we use same-cycle bypass), handle it the old way. */
-    //     dumpAllInput(latched_branch.threadId);
-    //     fetchInfo[latched_branch.threadId].havePC = false;
-    // }
 }
 
 void
 SingleStageFetch2::runDecodeCore(BranchData &prediction_out,
                                  const BranchData &executeBranch)
 {
-    forwardedSavedLine = 0;
     reactToExecuteBranch(executeBranch);
     discardStaleLines();
     decodeInstructions(prediction_out);
