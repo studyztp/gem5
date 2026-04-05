@@ -206,17 +206,30 @@ Input<T>::notify(unsigned writer_stage_id, Tick written_at)
     if (!ownerFunc)
         return;
 
-    // Record who wrote and when
     lastWriterStageId = writer_stage_id;
     lastWrittenTick = written_at;
 
     if (writer_stage_id == _stageId) {
-        // Same stage: trigger compute immediately (combinational)
         ownerFunc->compute();
     } else {
-        // Cross-stage: signal needUpdate for next cycle
         ownerFunc->notifyUpdate();
     }
+}
+
+// --- Input::notifyDiscard() implementation ---
+// Discard always triggers compute immediately, ignoring stageId.
+template<typename T>
+void
+Input<T>::notifyDiscard(unsigned writer_stage_id, Tick written_at)
+{
+    if (!ownerFunc)
+        return;
+
+    lastWriterStageId = writer_stage_id;
+    lastWrittenTick = written_at;
+
+    // Always immediate — discard bypasses stage boundaries
+    ownerFunc->compute();
 }
 
 } // namespace gem5

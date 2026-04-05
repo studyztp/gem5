@@ -73,6 +73,21 @@ InstructionDecode::latchInputs()
 void
 InstructionDecode::compute()
 {
+    // Check for discard signal
+    if ((fetchLineIn.hasData() && fetchLineIn.read().discard) ||
+        (localFetchLineValid && localFetchLine.discard)) {
+        DPRINTF(LegoCPUFunc, "InstructionDecode: DISCARD\n");
+        localFetchLineValid = false;
+        localFetchLine = {};
+        lastDecodedSeqNum = 0;
+        fetchLineIn.unblockSource();
+        DecodedInst dd;
+        dd.discard = true;
+        decodedInstOut.write(dd);
+        decodedInstOut.clear();
+        return;
+    }
+
     if (decodedInstOut.isBlocked()) {
         fetchLineIn.blockSource();
         return;
@@ -81,7 +96,8 @@ InstructionDecode::compute()
 
     // Same-stage: update local copy immediately
     if (fetchLineIn.hasData() &&
-        fetchLineIn.getWriterStageId() == getStageId()) {
+        fetchLineIn.getWriterStageId() == getStageId() &&
+        !fetchLineIn.read().discard) {
         localFetchLine = fetchLineIn.read();
         localFetchLineValid = true;
         DPRINTF(LegoCPUFunc, "InstructionDecode::compute() "
@@ -202,6 +218,21 @@ ALUExecute::latchInputs()
 void
 ALUExecute::compute()
 {
+    // Check for discard signal
+    if ((decodedInstIn.hasData() && decodedInstIn.read().discard) ||
+        (localDecodedInstValid && localDecodedInst.discard)) {
+        DPRINTF(LegoCPUFunc, "ALUExecute: DISCARD (signal)\n");
+        localDecodedInstValid = false;
+        localDecodedInst = {};
+        lastExecutedSeqNum = 0;
+        decodedInstIn.unblockSource();
+        ExecResult de;
+        de.discard = true;
+        execResultOut.write(de);
+        execResultOut.clear();
+        return;
+    }
+
     if (execResultOut.isBlocked()) {
         decodedInstIn.blockSource();
         return;
@@ -226,24 +257,9 @@ ALUExecute::compute()
     if (!inst.staticInst)
         return;
 
-    // Check if this instruction is on the correct path.
-    // TC's PC holds the next expected PC (set by PCUpdate).
-    // If mismatch, this was speculatively fetched on a
-    // wrong path — discard without executing.
-    SimpleThread *thread = _subStage->getThread(0);
-    Addr expectedPC = thread->pcState().instAddr();
-
-    if (inst.pc != expectedPC) {
-        DPRINTF(LegoCPUFunc, "ALUExecute: DISCARD seq=%d pc=0x%x "
-                "(expected 0x%x, wrong path)\n",
-                inst.seqNum, inst.pc, expectedPC);
-        lastExecutedSeqNum = inst.seqNum;
-        localDecodedInstValid = false;
-        return;
-    }
-
     lastExecutedSeqNum = inst.seqNum;
 
+    SimpleThread *thread = _subStage->getThread(0);
     BaseCPU *cpu = _subStage->stage()->cpu();
 
     LegoExecContext xc(*cpu, *thread);
@@ -306,10 +322,33 @@ PCUpdate::latchInputs()
 void
 PCUpdate::compute()
 {
-    // Always latch ExecResult from same-stage, but only
-    // process and advance PC when redirect output is not blocked.
+    // Check for discard signal on input. If we originated it
+    // (redirectOut has discard=true from this tick), ignore —
+    // it's our own signal looping back.
+    if ((execResultIn.hasData() && execResultIn.read().discard) ||
+        (localExecResultValid && localExecResult.discard)) {
+        if (redirectOut.hasData() && redirectOut.read().discard) {
+            // Our own discard came back — stop propagation
+            DPRINTF(LegoCPUFunc, "PCUpdate: own discard returned, "
+                    "ignoring\n");
+        } else {
+            // Discard from elsewhere — propagate
+            DPRINTF(LegoCPUFunc, "PCUpdate: external discard, "
+                    "propagating\n");
+            Redirect dr;
+            dr.discard = true;
+            redirectOut.write(dr);
+            redirectOut.clear();
+        }
+        localExecResultValid = false;
+        localExecResult = {};
+        return;
+    }
+
+    // Always latch ExecResult from same-stage
     if (execResultIn.hasData() &&
-        execResultIn.getWriterStageId() == getStageId()) {
+        execResultIn.getWriterStageId() == getStageId() &&
+        !execResultIn.read().discard) {
         localExecResult = execResultIn.read();
         localExecResultValid = true;
     }
@@ -381,8 +420,16 @@ PCUpdate::compute()
     redir.seqNum = lastRedirectSeqNum;
     redir.target = target;
     redir.valid = branchTaken;
+    redir.discard = branchTaken;
 
     redirectOut.write(redir);
+
+    // After discard propagates, rewrite with discard=false
+    // so the target remains available without re-triggering discard
+    if (branchTaken) {
+        redir.discard = false;
+        redirectOut.write(redir);
+    }
 }
 
 void

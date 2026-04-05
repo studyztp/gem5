@@ -50,30 +50,34 @@ enum PortType
 /** Data produced by FetchAddressGen after MMU translation. */
 struct FetchAddr
 {
-    InstSeqNum seqNum;
-    Addr pc;
-    Addr paddr;
-    unsigned size;
+    InstSeqNum seqNum = 0;
+    Addr pc = 0;
+    Addr paddr = 0;
+    unsigned size = 0;
+    bool discard = false;
 
     bool operator==(const FetchAddr &o) const
     { return seqNum == o.seqNum && pc == o.pc
-             && paddr == o.paddr && size == o.size; }
+             && paddr == o.paddr && size == o.size
+             && discard == o.discard; }
 };
 
 /** Data produced by FetchMemResponse after icache returns. */
 struct FetchLine
 {
-    InstSeqNum seqNum;
-    Addr pc;
-    Addr lineBaseAddr;
+    InstSeqNum seqNum = 0;
+    Addr pc = 0;
+    Addr lineBaseAddr = 0;
     std::vector<uint8_t> data;
-    unsigned validBytes;
+    unsigned validBytes = 0;
+    bool discard = false;
 
     bool operator==(const FetchLine &o) const
     {
         if (seqNum != o.seqNum || pc != o.pc
             || lineBaseAddr != o.lineBaseAddr
-            || validBytes != o.validBytes)
+            || validBytes != o.validBytes
+            || discard != o.discard)
             return false;
         if (data.size() != o.data.size())
             return false;
@@ -88,36 +92,41 @@ struct FetchLine
 /** Data produced by InstructionDecode. */
 struct DecodedInst
 {
-    InstSeqNum seqNum;
+    InstSeqNum seqNum = 0;
     StaticInstPtr staticInst;
-    Addr pc;
+    Addr pc = 0;
+    bool discard = false;
 
     bool operator==(const DecodedInst &o) const
-    { return seqNum == o.seqNum && pc == o.pc; }
+    { return seqNum == o.seqNum && pc == o.pc
+             && discard == o.discard; }
 };
 
 /** Data produced by ALUExecute. */
 struct ExecResult
 {
-    InstSeqNum seqNum;
+    InstSeqNum seqNum = 0;
     StaticInstPtr staticInst;
-    Addr pc;
+    Addr pc = 0;
     Fault fault;
+    bool discard = false;
 
     bool operator==(const ExecResult &o) const
-    { return seqNum == o.seqNum && pc == o.pc; }
+    { return seqNum == o.seqNum && pc == o.pc
+             && discard == o.discard; }
 };
 
 /** Control signal from BranchResolve / PCUpdate back to fetch. */
 struct Redirect
 {
-    InstSeqNum seqNum;
-    Addr target;
-    bool valid;
+    InstSeqNum seqNum = 0;
+    Addr target = 0;
+    bool valid = false;
+    bool discard = false;
 
     bool operator==(const Redirect &o) const
     { return seqNum == o.seqNum && target == o.target
-             && valid == o.valid; }
+             && valid == o.valid && discard == o.discard; }
 };
 
 } // namespace gem5

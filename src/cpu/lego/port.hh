@@ -97,9 +97,21 @@ class Output : public PortBase
     }
 
     /** Write a new value. Notifies all consumers.
-     *  No-op if value is unchanged or output is blocked. */
+     *  No-op if value is unchanged or output is blocked.
+     *  Discard writes bypass blocking and trigger immediate notify. */
     bool write(const T &v)
     {
+        if (v.discard) {
+            // Discard bypasses blocking and value-unchanged checks
+            value = v;
+            valid = true;
+            lastWritten = curTick();
+            writerStageId = _stageId;
+            blocked = false;
+            for (auto *input : consumers)
+                input->notifyDiscard(_stageId, lastWritten);
+            return true;
+        }
         if (blocked)
             return false;
         // Don't trigger if value unchanged
@@ -169,6 +181,10 @@ class Input : public PortBase
     /** Called by Output::write() when new data is available.
      *  Stores the writer's stage ID and write tick. */
     void notify(unsigned writer_stage_id, Tick written_at);
+
+    /** Called by Output::write() for discard signals.
+     *  Always triggers compute immediately, ignoring stageId. */
+    void notifyDiscard(unsigned writer_stage_id, Tick written_at);
 
     /** Stage ID of the output that last wrote to this input. */
     unsigned getWriterStageId() const { return lastWriterStageId; }
