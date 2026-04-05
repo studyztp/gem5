@@ -350,7 +350,6 @@ LegoCPU::tick()
 
     if (debug::LegoCPULineTrace) {
         printLineTrace();
-        // Save trace line for stall cycle backfill
         lastTraceLine = "";
         for (auto *stage : stages)
             lastTraceLine += csprintf(" %-16s |", stage->traceStatus());
@@ -362,8 +361,8 @@ LegoCPU::notifyUpdate()
 {
     needUpdate = true;
 
-    // Schedule mid-cycle update to recompute stages with new data.
-    // If tick is already scheduled for this tick, update will run after.
+    // An async response wrote a cross-stage output. Schedule
+    // update event to ensure tick fires next cycle.
     if (!updateEvent.scheduled())
         schedule(updateEvent, curTick());
 }
@@ -371,12 +370,9 @@ LegoCPU::notifyUpdate()
 void
 LegoCPU::update()
 {
-    // Only recompute the stage that received the async response.
-    // Cross-stage data propagation happens at the next tick().
-    // The notifyUpdate chain already set needUpdate = true,
-    // which will schedule tick for next cycle.
-    // We don't recompute here — the data is already written
-    // to the output port. tick() next cycle will deliver it.
+    // Async response arrived mid-cycle. The data is already
+    // written to the output port. Schedule tick for next cycle
+    // so latchInputs() delivers it to the consuming stage.
     if (needUpdate && !tickEvent.scheduled())
         schedule(tickEvent, clockEdge(Cycles(1)));
 }

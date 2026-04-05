@@ -103,11 +103,9 @@ struct ExecResult
     StaticInstPtr staticInst;
     Addr pc;
     Fault fault;
-    bool branchTaken;
 
     bool operator==(const ExecResult &o) const
-    { return seqNum == o.seqNum && pc == o.pc
-             && branchTaken == o.branchTaken; }
+    { return seqNum == o.seqNum && pc == o.pc; }
 };
 
 /** Control signal from BranchResolve / PCUpdate back to fetch. */

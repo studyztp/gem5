@@ -47,7 +47,8 @@ FetchAddressGen::FetchAddressGen(const Params &params)
       redirectIn("redirect", 0, this),
       fetchWidth(params.fetchWidth),
       nextSeqNum(1),
-      waitingForTranslation(false)
+      waitingForTranslation(false),
+      pendingPC(0)
 {
     fatal_if(!isPowerOf2(fetchWidth),
              "fetchWidth must be a power of 2, got %d", fetchWidth);
@@ -59,11 +60,15 @@ FetchAddressGen::FetchAddressGen(const Params &params)
 void
 FetchAddressGen::latchInputs()
 {
-    // Copy cross-stage redirect at cycle boundary
+    // Copy cross-stage redirect at cycle boundary,
+    // but only if it's new (different seqNum)
     if (redirectIn.hasData() &&
         redirectIn.getWriterStageId() != getStageId()) {
-        localRedirect = redirectIn.read();
-        localRedirectValid = true;
+        const Redirect &r = redirectIn.read();
+        if (r.seqNum != localRedirect.seqNum) {
+            localRedirect = r;
+            localRedirectValid = true;
+        }
     }
 }
 
@@ -71,10 +76,21 @@ void
 FetchAddressGen::compute()
 {
     DPRINTF(LegoCPUFunc, "FetchAddressGen::compute() called, "
-            "waitingForTranslation=%d\n", waitingForTranslation);
+            "waitingForTranslation=%d outBlocked=%d\n",
+            waitingForTranslation, fetchAddrOut.isBlocked());
 
-    if (waitingForTranslation)
+    if (waitingForTranslation) {
+        redirectIn.blockSource();
         return;
+    }
+
+    if (fetchAddrOut.isBlocked()) {
+        redirectIn.blockSource();
+        return;
+    }
+
+    // We can accept input — unblock upstream
+    redirectIn.unblockSource();
 
     // Same-stage redirect: update local copy immediately
     if (redirectIn.hasData() &&
@@ -83,49 +99,44 @@ FetchAddressGen::compute()
         localRedirectValid = true;
     }
 
-    // Wait for PCUpdate to provide the next PC, unless this
-    // is the very first fetch (no redirect received yet).
-    if (!localRedirectValid && nextSeqNum > 1)
-        return;
-
-    Addr pc;
+    // Get next PC from PCUpdate redirect (sequential or branch)
     if (localRedirectValid) {
-        // Use the PC from PCUpdate (sequential or branch)
-        pc = localRedirect.target;
-        localRedirectValid = false;  // consume it
-    } else {
+        if (localRedirect.valid) {
+            DPRINTF(LegoCPUFunc, "FetchAddressGen: branch redirect "
+                    "to 0x%x\n", localRedirect.target);
+        }
+        pendingPC = localRedirect.target;
+        localRedirectValid = false;
+    } else if (nextSeqNum == 1) {
         // First fetch: read initial PC from ThreadContext
-        pc = _subStage->getThread(0)->getTC()->pcState().instAddr();
+        pendingPC = _subStage->getThread(0)->getTC()->
+            pcState().instAddr();
+    } else {
+        // No new PC from PCUpdate — wait
+        return;
     }
 
-    // Skip if we already output this PC
-    if (fetchAddrOut.hasData() &&
-        fetchAddrOut.read().pc == pc)
-        return;
+    DPRINTF(LegoCPUFunc, "FetchAddressGen: pendingPC=0x%x\n",
+            pendingPC);
 
     // Align to fetch width
-    Addr aligned_pc = pc & ~(Addr)(fetchWidth - 1);
+    Addr aligned_pc = pendingPC & ~(Addr)(fetchWidth - 1);
 
     // Create translation request
     translationReq = std::make_shared<Request>();
     translationReq->setVirt(aligned_pc, fetchWidth,
                             Request::INST_FETCH,
                             _subStage->stage()->cpu()->instRequestorId(),
-                            pc);
+                            pendingPC);
 
-    DPRINTF(LegoCPUFunc, "FetchAddressGen: sending translation for "
-            "aligned_pc=0x%x pc=0x%x\n", aligned_pc, pc);
+    DPRINTF(LegoCPUFunc, "FetchAddressGen: translating "
+            "aligned_pc=0x%x pc=0x%x\n", aligned_pc, pendingPC);
 
-    DPRINTF(LegoCPUFunc, "FetchAddressGen: set waitingForTranslation=true\n");
     waitingForTranslation = true;
 
-    // Send to MMU via the chain
     _subStage->sendTranslationToStage(
         translationReq, getTranslationCallback(),
         BaseMMU::Execute);
-
-    DPRINTF(LegoCPUFunc, "FetchAddressGen: after sendTranslation, "
-            "waitingForTranslation=%d\n", waitingForTranslation);
 }
 
 void
@@ -145,7 +156,7 @@ FetchAddressGen::translationComplete(const Fault &fault,
 
     FetchAddr result;
     result.seqNum = nextSeqNum++;
-    result.pc = tc->pcState().instAddr();  // actual instruction PC
+    result.pc = pendingPC;
     result.paddr = req->getPaddr();
     result.size = fetchWidth;
 
@@ -187,19 +198,45 @@ FetchMemRequest::FetchMemRequest(const Params &params)
 }
 
 void
+FetchMemRequest::latchInputs()
+{
+    if (fetchAddrIn.hasData() &&
+        fetchAddrIn.getWriterStageId() != getStageId()) {
+        const FetchAddr &src = fetchAddrIn.read();
+        if (src.seqNum != localFetchAddr.seqNum) {
+            localFetchAddr = src;
+            localFetchAddrValid = true;
+        }
+    }
+}
+
+void
 FetchMemRequest::compute()
 {
+    if (fetchLineOut.isBlocked() || waitingForCache) {
+        fetchAddrIn.blockSource();
+    } else {
+        fetchAddrIn.unblockSource();
+    }
+
+    // Same-stage: update local copy immediately
+    if (fetchAddrIn.hasData() &&
+        fetchAddrIn.getWriterStageId() == getStageId()) {
+        localFetchAddr = fetchAddrIn.read();
+        localFetchAddrValid = true;
+    }
+
     DPRINTF(LegoCPUFunc, "FetchMemRequest::compute() called, "
-            "waitingForCache=%d hasData=%d\n",
-            waitingForCache, fetchAddrIn.hasData());
+            "waitingForCache=%d localValid=%d\n",
+            waitingForCache, localFetchAddrValid);
 
     if (waitingForCache)
         return;
 
-    if (!fetchAddrIn.hasData())
+    if (!localFetchAddrValid)
         return;
 
-    const FetchAddr &addr = fetchAddrIn.read();
+    const FetchAddr &addr = localFetchAddr;
     DPRINTF(LegoCPUFunc, "FetchMemRequest: read addr seq=%d pc=0x%x "
             "paddr=0x%x size=%d\n",
             addr.seqNum, addr.pc, addr.paddr, addr.size);
@@ -219,6 +256,7 @@ FetchMemRequest::compute()
             result.seqNum = addr.seqNum;
             result.pc = addr.pc;
             fetchLineOut.write(result);
+            localFetchAddrValid = false;
             DPRINTF(LegoCPUFunc, "FetchMemRequest: cache hit seq=%d "
                     "pc=0x%x (reuse line 0x%x)\n",
                     addr.seqNum, addr.pc, alignedAddr);
@@ -242,6 +280,10 @@ FetchMemRequest::compute()
     _subStage->sendPacketToStage(pkt);
 
     waitingForCache = true;
+    localFetchAddrValid = false;
+
+    // Block upstream from writing new fetchAddr until we're done
+    fetchAddrIn.blockSource();
 
     DPRINTF(LegoCPUFunc, "FetchMemRequest: seq=%d paddr=0x%x\n",
             addr.seqNum, addr.paddr);
@@ -257,7 +299,6 @@ FetchMemRequest::recvTimingResp(PacketPtr pkt)
     result.seqNum = ss->instSeqNum;
     result.pc = fetchAddrIn.hasData() ? fetchAddrIn.read().pc : 0;
     result.validBytes = pkt->getSize();
-    // Use aligned virtual address as base, not physical
     result.lineBaseAddr = result.pc & ~(Addr)(result.validBytes - 1);
 
     const uint8_t *pktData = pkt->getConstPtr<uint8_t>();
@@ -268,6 +309,9 @@ FetchMemRequest::recvTimingResp(PacketPtr pkt)
 
     waitingForCache = false;
     fetchLineOut.write(result);
+
+    // Unblock upstream — we can accept new fetchAddr now
+    fetchAddrIn.unblockSource();
 
     DPRINTF(LegoCPUFunc, "FetchMemRequest: resp seq=%d pc=0x%x bytes=%d\n",
             result.seqNum, result.pc, result.validBytes);

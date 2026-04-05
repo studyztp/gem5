@@ -97,28 +97,36 @@ class Output : public PortBase
     }
 
     /** Write a new value. Notifies all consumers.
-     *  No-op if value is unchanged. */
-    void write(const T &v)
+     *  No-op if value is unchanged or output is blocked. */
+    bool write(const T &v)
     {
+        if (blocked)
+            return false;
         // Don't trigger if value unchanged
         if (valid && value == v)
-            return;
+            return true;
         value = v;
         valid = true;
         lastWritten = curTick();
         writerStageId = _stageId;
         for (auto *input : consumers)
             input->notify(_stageId, lastWritten);
+        return true;
     }
 
     const T &read() const { return value; }
     bool hasData() const { return valid; }
+    bool isBlocked() const { return blocked; }
     Tick getLastWritten() const { return lastWritten; }
     unsigned getWriterStageId() const { return writerStageId; }
+
+    void block() { blocked = true; }
+    void unblock() { blocked = false; }
 
     void clear()
     {
         valid = false;
+        blocked = false;
     }
 
     void addConsumer(Input<T> *input)
@@ -129,6 +137,7 @@ class Output : public PortBase
   private:
     T value;
     bool valid = false;
+    bool blocked = false;
     Tick lastWritten = 0;
     unsigned writerStageId = 0;
     std::vector<Input<T>*> consumers;
@@ -185,6 +194,20 @@ class Input : public PortBase
                 return true;
         }
         return false;
+    }
+
+    /** Block all source outputs from writing. */
+    void blockSource()
+    {
+        for (auto *src : sources)
+            src->block();
+    }
+
+    /** Unblock all source outputs. */
+    void unblockSource()
+    {
+        for (auto *src : sources)
+            src->unblock();
     }
 
     void addSource(Output<T> *output)

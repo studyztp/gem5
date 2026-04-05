@@ -30,6 +30,7 @@
 #ifndef __CPU_LEGO_EXECUTE_FUNCTIONS_HH__
 #define __CPU_LEGO_EXECUTE_FUNCTIONS_HH__
 
+#include "arch/generic/pcstate.hh"
 #include "cpu/lego/port.hh"
 #include "cpu/lego/stage_function.hh"
 #include "cpu/lego/type.hh"
@@ -75,7 +76,7 @@ class ALUExecute : public StageFunction
     PARAMS(ALUExecute);
     ALUExecute(const Params &params);
 
-
+    void latchInputs() override;
     void compute() override;
     void flush() override;
     std::string traceStatus() const override;
@@ -83,6 +84,9 @@ class ALUExecute : public StageFunction
   private:
     Input<DecodedInst> decodedInstIn;
     Output<ExecResult> execResultOut;
+
+    DecodedInst localDecodedInst;
+    bool localDecodedInstValid = false;
 
     InstSeqNum lastExecutedSeqNum;
 };
@@ -98,7 +102,7 @@ class PCUpdate : public StageFunction
     PARAMS(PCUpdate);
     PCUpdate(const Params &params);
 
-
+    void latchInputs() override;
     void compute() override;
     void flush() override;
     std::string traceStatus() const override;
@@ -107,7 +111,15 @@ class PCUpdate : public StageFunction
     Input<ExecResult> execResultIn;
     Output<Redirect> redirectOut;
 
+    ExecResult localExecResult;
+    bool localExecResultValid = false;
+
     InstSeqNum lastUpdatedSeqNum;
+    InstSeqNum lastRedirectSeqNum = 0;
+
+    // Stored for speculative advancement when no new ExecResult
+    std::unique_ptr<PCStateBase> speculativePC;
+    StaticInstPtr lastStaticInst;
 };
 
 } // namespace gem5

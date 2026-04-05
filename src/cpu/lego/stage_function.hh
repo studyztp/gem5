@@ -73,11 +73,6 @@ class StageFunction : public SimObject
     /** Reset all state (squash). */
     virtual void flush() {}
 
-    /** Wire ports to connected functions based on Python params.
-     *  Each subclass reads its own params to find connected functions
-     *  and wires output→input by matching port names. */
-    virtual void connectPorts() {}
-
     /** Return a short trace string for line tracing. */
     virtual std::string traceStatus() const { return ""; }
 

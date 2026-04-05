@@ -70,6 +70,7 @@ class FetchAddressGen : public StageFunctionTranslation
     const size_t fetchWidth;
     InstSeqNum nextSeqNum;
     bool waitingForTranslation;
+    Addr pendingPC;  // PC saved when translation was initiated
 };
 
 /**
@@ -85,7 +86,7 @@ class FetchMemRequest : public StageFunctionWithPort
     PARAMS(FetchMemRequest);
     FetchMemRequest(const Params &params);
 
-
+    void latchInputs() override;
     void compute() override;
     void flush() override;
     void recvTimingResp(PacketPtr pkt) override;
@@ -94,6 +95,10 @@ class FetchMemRequest : public StageFunctionWithPort
   private:
     Input<FetchAddr> fetchAddrIn;
     Output<FetchLine> fetchLineOut;
+
+    FetchAddr localFetchAddr;
+    bool localFetchAddrValid = false;
+
     bool waitingForCache;
 
     /** Last seqNum we sent a request for. */

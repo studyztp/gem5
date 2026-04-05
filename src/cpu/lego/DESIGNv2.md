@@ -659,6 +659,143 @@ Header printed once at startup. Enabled with
 
 ---
 
+## Speculative Fetch (PC+4)
+
+### Real Cortex-M4 Behavior (3-stage: Fetch→Decode→Execute)
+
+In Cortex-M4, fetch speculatively advances `PC+4` every cycle
+without waiting for execute to confirm. This achieves 1 IPC for
+sequential code. Branches cause a 1-2 cycle penalty.
+
+Program: `mov x0,#10; loop: subs x0,x0,#1; bne loop`
+
+```
+Cycle |  Fetch            |  Decode           |  Execute           |
+------+-------------------+-------------------+--------------------+
+    1 | F:mov(0x1000)     |                   |                    |
+    2 | F:subs(0x1004)    | D:mov             |                    |
+    3 | F:bne(0x1008)     | D:subs            | X:mov              |
+    4 | F:0x100c(spec PC+4)| D:bne            | X:subs             |
+    5 | F:subs(0x1004)    | D:DISCARD(0x100c) | X:bne→redir 0x1004 |
+    6 | F:bne(0x1008)     | D:subs            | X:BUBBLE           |
+    7 | F:0x100c(spec)    | D:bne             | X:subs             |
+    8 | F:subs(0x1004)    | D:DISCARD(0x100c) | X:bne→redir 0x1004 |
+```
+
+Key observations:
+- Cycle 4: Fetch speculatively fetches 0x100c (PC+4 after bne)
+- Cycle 5: Execute resolves bne → branch taken → redirect to 0x1004
+  - Decode DISCARDS the wrong-path inst (0x100c), does NOT execute it
+  - Fetch restarts from 0x1004
+- Cycle 6: Execute has a BUBBLE (no instruction from cycle 5 decode)
+- Branch penalty = 1 cycle (the BUBBLE at cycle 6)
+
+### Our Lego CPU 3-Stage Pipeline
+
+With speculative PC+4 and blocking:
+
+```
+Cycle |  S0 (Fetch)       |  S1 (Decode)      |  S2 (Execute)      |
+------+-------------------+-------------------+--------------------+
+    1 | F:mov(0x4000d4)   |                   |                    |
+      | wait(icache)...   |                   |                    |
+    3 | F:subs(0x4000d8)  | D:mov             |                    |
+    4 | F:bne(0x4000dc)   | D:subs            | X:mov,PC→0x4000d8  |
+    5 | F:0x4000e0(spec)  | D:bne             | X:subs,PC→0x4000dc |
+    6 | F:subs(0x4000d8)  | D:DISCARD(0x4000e0)| X:bne→redir 0x4000d8|
+    7 | F:bne(0x4000dc)   | D:subs            | X:BUBBLE           |
+    8 | F:0x4000e0(spec)  | D:bne             | X:subs             |
+```
+
+### How Discard Works Without Flushing
+
+When a redirect arrives from PCUpdate (cross-stage, latched at
+next cycle boundary):
+
+1. `FetchAddressGen` receives the redirect via `latchInputs()`.
+   It resets `pendingPC` to the redirect target and produces a
+   new `FetchAddr` with a new seqNum.
+
+2. The wrong-path instruction is already in Decode's local latch
+   (`localFetchLine`). Decode will process it and write to
+   `decodedInstOut`. BUT:
+
+3. The wrong-path `decodedInst` has a seqNum that is "in the
+   future" — it was fetched speculatively. When Execute sees
+   it, the seqNum won't match what PCUpdate expects.
+
+**Problem:** Our current `ALUExecute` processes ANY instruction
+with a new seqNum, regardless of whether it's on the correct
+path. It writes to ThreadContext registers, corrupting state.
+
+### Solution: SeqNum Validation
+
+Each function should track an `expectedSeqNum`. PCUpdate knows
+which seqNum it last committed. When a redirect happens:
+
+- PCUpdate sends the redirect with the seqNum of the branch
+  instruction
+- FetchAddressGen restarts with new seqNums (continuing from
+  nextSeqNum)
+- Decode/Execute check: if the incoming seqNum doesn't match
+  what's expected, DISCARD (skip compute, don't write output)
+
+Simpler approach for now: since we don't have out-of-order
+completion, each function can check if the incoming seqNum
+is `lastProcessedSeqNum + 1`. If not (gap due to redirect),
+discard.
+
+Actually, the simplest approach: **Execute only executes if
+Decode produced a valid instruction (non-null staticInst).**
+When Decode discards, it produces a BUBBLE (null staticInst).
+Execute sees null → skips. No seqNum tracking needed.
+
+### Decode Discard Logic
+
+When Decode receives a `fetchLine`:
+- If the `fetchLine.seqNum` is from a redirected path (its PC
+  doesn't match what the Redirect expected), produce a BUBBLE
+- Otherwise, decode normally
+
+But Decode doesn't know if a redirect happened — it just sees
+data. The simplest check: **Decode compares the `fetchLine.pc`
+with the PC that PCUpdate last confirmed.** If they match,
+decode. If not, the instruction is from a wrong path → BUBBLE.
+
+Even simpler: since `ALUExecute` only harms state when it calls
+`staticInst->execute()`, we can just check `staticInst != null`
+in ALUExecute. Decode can produce null for discarded instructions.
+But this means Decode needs to know about the redirect...
+
+### Recommended Approach
+
+1. `FetchAddressGen`: On redirect, reset `pendingPC` and continue
+   with new seqNums. No special handling needed.
+
+2. `FetchMemRequest`: Blocking mechanism prevents overrun. Unblock
+   when icache response arrives. On redirect, if waiting for cache,
+   the response comes back but the fetchLine will have the old
+   seqNum — downstream handles it.
+
+3. `InstructionDecode`: Always decode whatever it receives. Let
+   Execute decide if the instruction should run. The seqNum flows
+   through as identification.
+
+4. `ALUExecute`: Compare incoming `decodedInst.pc` against the
+   current ThreadContext PC. If they match → execute. If not →
+   the instruction is from a wrong path → skip (produce BUBBLE).
+   This works because PCUpdate already set TC to the correct PC.
+
+5. `PCUpdate`: Only processes instructions that ALUExecute
+   produced (non-BUBBLE ExecResult). For BUBBLEs, it does nothing.
+
+This means wrong-path instructions flow through the pipeline
+but are discarded at Execute without side effects. No flushing
+needed. The 1-cycle branch penalty comes from the BUBBLE in
+Execute when Decode's input was the discarded instruction.
+
+---
+
 ## Buffering: Per-Function, Not Per-Stage
 
 All buffering is internal to functions. The port system holds only

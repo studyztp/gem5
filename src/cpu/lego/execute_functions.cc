@@ -56,29 +56,29 @@ InstructionDecode::InstructionDecode(const Params &params)
 void
 InstructionDecode::latchInputs()
 {
-    // Copy cross-stage input at cycle boundary
     if (fetchLineIn.hasData() &&
         fetchLineIn.getWriterStageId() != getStageId()) {
         const FetchLine &src = fetchLineIn.read();
-        DPRINTF(LegoCPUFunc, "InstructionDecode::latchInputs() "
-                "latching seq=%d pc=0x%x base=0x%x size=%d\n",
-                src.seqNum, src.pc, src.lineBaseAddr,
-                src.data.size());
-        localFetchLine = src;
-        localFetchLineValid = true;
-    } else {
-        DPRINTF(LegoCPUFunc, "InstructionDecode::latchInputs() "
-                "no cross-stage data (hasData=%d writerStage=%d "
-                "myStage=%d)\n",
-                fetchLineIn.hasData(),
-                fetchLineIn.getWriterStageId(),
-                getStageId());
+        if (src.seqNum != localFetchLine.seqNum) {
+            DPRINTF(LegoCPUFunc, "InstructionDecode::latchInputs() "
+                    "latching seq=%d pc=0x%x base=0x%x size=%d\n",
+                    src.seqNum, src.pc, src.lineBaseAddr,
+                    src.data.size());
+            localFetchLine = src;
+            localFetchLineValid = true;
+        }
     }
 }
 
 void
 InstructionDecode::compute()
 {
+    if (decodedInstOut.isBlocked()) {
+        fetchLineIn.blockSource();
+        return;
+    }
+    fetchLineIn.unblockSource();
+
     // Same-stage: update local copy immediately
     if (fetchLineIn.hasData() &&
         fetchLineIn.getWriterStageId() == getStageId()) {
@@ -129,12 +129,16 @@ InstructionDecode::compute()
                 line.data.data() + offset,
                 decoder->moreBytesSize());
 
-    decoder->moreBytes(tc->pcState(), line.lineBaseAddr + offset);
+    // Use the fetch line's PC for decoding, not TC's pcState
+    // (TC may have been advanced by PCUpdate already).
+    // Create a pcState matching the instruction we're decoding.
+    auto decodePC = tc->pcState().clone();
+    decodePC->set(pcAddr);
+    decoder->moreBytes(*decodePC, line.lineBaseAddr + offset);
 
     StaticInstPtr si = nullptr;
     if (decoder->instReady()) {
-        auto pc = tc->pcState().clone();
-        si = decoder->decode(*pc);
+        si = decoder->decode(*decodePC);
     }
 
     DecodedInst result;
@@ -143,6 +147,7 @@ InstructionDecode::compute()
     result.pc = line.pc;
 
     decodedInstOut.write(result);
+    localFetchLineValid = false;
 
     DPRINTF(LegoCPUFunc, "InstructionDecode: seq=%d pc=0x%x %s\n",
             result.seqNum, result.pc,
@@ -182,12 +187,38 @@ ALUExecute::ALUExecute(const Params &params)
 }
 
 void
+ALUExecute::latchInputs()
+{
+    if (decodedInstIn.hasData() &&
+        decodedInstIn.getWriterStageId() != getStageId()) {
+        const DecodedInst &src = decodedInstIn.read();
+        if (src.seqNum != localDecodedInst.seqNum) {
+            localDecodedInst = src;
+            localDecodedInstValid = true;
+        }
+    }
+}
+
+void
 ALUExecute::compute()
 {
-    if (!decodedInstIn.hasData())
+    if (execResultOut.isBlocked()) {
+        decodedInstIn.blockSource();
+        return;
+    }
+    decodedInstIn.unblockSource();
+
+    // Same-stage: update local copy immediately
+    if (decodedInstIn.hasData() &&
+        decodedInstIn.getWriterStageId() == getStageId()) {
+        localDecodedInst = decodedInstIn.read();
+        localDecodedInstValid = true;
+    }
+
+    if (!localDecodedInstValid)
         return;
 
-    const DecodedInst &inst = decodedInstIn.read();
+    const DecodedInst &inst = localDecodedInst;
 
     if (inst.seqNum == lastExecutedSeqNum)
         return;
@@ -208,9 +239,9 @@ ALUExecute::compute()
     result.staticInst = inst.staticInst;
     result.pc = inst.pc;
     result.fault = fault;
-    result.branchTaken = false;  // PCUpdate detects this via advancePC
 
     execResultOut.write(result);
+    localDecodedInstValid = false;
 
     DPRINTF(LegoCPUFunc, "ALUExecute: seq=%d pc=0x%x fault=%s\n",
             inst.seqNum, inst.pc,
@@ -245,50 +276,87 @@ PCUpdate::PCUpdate(const Params &params)
 }
 
 void
+PCUpdate::latchInputs()
+{
+    if (execResultIn.hasData() &&
+        execResultIn.getWriterStageId() != getStageId()) {
+        const ExecResult &src = execResultIn.read();
+        if (src.seqNum != localExecResult.seqNum) {
+            localExecResult = src;
+            localExecResultValid = true;
+        }
+    }
+}
+
+void
 PCUpdate::compute()
 {
-    if (!execResultIn.hasData())
+    if (redirectOut.isBlocked()) {
+        execResultIn.blockSource();
         return;
+    }
+    execResultIn.unblockSource();
 
-    const ExecResult &result = execResultIn.read();
+    // Same-stage: update local copy immediately
+    if (execResultIn.hasData() &&
+        execResultIn.getWriterStageId() == getStageId()) {
+        localExecResult = execResultIn.read();
+        localExecResultValid = true;
+    }
 
-    if (result.seqNum == lastUpdatedSeqNum)
+    bool branchTaken = false;
+    Addr target = 0;
+
+    if (localExecResultValid &&
+        localExecResult.seqNum != lastUpdatedSeqNum) {
+        // New instruction executed — advance PC using actual
+        // instruction and condition flags from execute
+        const ExecResult &result = localExecResult;
+        lastUpdatedSeqNum = result.seqNum;
+
+        ThreadContext *tc = _subStage->getThread(0)->getTC();
+
+        speculativePC.reset(tc->pcState().clone());
+        result.staticInst->advancePC(*speculativePC);
+        tc->pcState(*speculativePC);
+
+        target = speculativePC->instAddr();
+        lastStaticInst = result.staticInst;
+        localExecResultValid = false;
+
+        // Branch taken = control instruction that went
+        // somewhere other than sequential PC+instSize
+        if (result.staticInst->isControl()) {
+            Addr sequential = result.pc + result.staticInst->size();
+            branchTaken = (target != sequential);
+        }
+
+        if (branchTaken) {
+            DPRINTF(LegoCPUFunc, "PCUpdate: branch taken to 0x%x "
+                    "(from 0x%x)\n", target, result.pc);
+        } else {
+            DPRINTF(LegoCPUFunc, "PCUpdate: sequential 0x%x -> "
+                    "0x%x\n", result.pc, target);
+        }
+    } else if (speculativePC && lastStaticInst &&
+               redirectOut.getLastWritten() != curTick()) {
+        // No new exec result AND we didn't already produce
+        // a redirect this tick — speculatively advance PC
+        lastStaticInst->advancePC(*speculativePC);
+        target = speculativePC->instAddr();
+
+        DPRINTF(LegoCPUFunc, "PCUpdate: speculative to 0x%x\n",
+                target);
+    } else {
         return;
+    }
 
-    lastUpdatedSeqNum = result.seqNum;
-
-    ThreadContext *tc = _subStage->getThread(0)->getTC();
-
-    // Save PC before advancing
-    Addr pcBefore = tc->pcState().instAddr();
-
-    // advancePC handles both sequential and branch cases.
-    // For conditional branches, it checks condition flags
-    // (set by execute) and goes to target or falls through.
-    auto newPC = tc->pcState().clone();
-    result.staticInst->advancePC(*newPC);
-    tc->pcState(*newPC);
-
-    Addr pcAfter = newPC->instAddr();
-
-    // Sequential = PC advanced by instruction size (e.g., +4)
-    // Branch taken = PC jumped somewhere else
-    Addr expectedNext = pcBefore + result.staticInst->size();
-    bool branchTaken = (pcAfter != expectedNext);
+    lastRedirectSeqNum++;
 
     Redirect redir;
-    redir.seqNum = result.seqNum;
-    redir.target = pcAfter;
+    redir.seqNum = lastRedirectSeqNum;
+    redir.target = target;
     redir.valid = branchTaken;
-
-    if (branchTaken) {
-        DPRINTF(LegoCPUFunc, "PCUpdate: branch taken to 0x%x "
-                "(was 0x%x, expected next 0x%x)\n",
-                pcAfter, pcBefore, expectedNext);
-    } else {
-        DPRINTF(LegoCPUFunc, "PCUpdate: sequential 0x%x -> 0x%x\n",
-                pcBefore, pcAfter);
-    }
 
     redirectOut.write(redir);
 }
