@@ -267,7 +267,7 @@ FetchMemRequest::compute()
             addr.seqNum, addr.pc, addr.paddr, addr.size);
 
     // Don't re-request the same instruction
-    if (addr.seqNum == lastRequestedSeqNum)
+    if (addr.seqNum <= lastRequestedSeqNum)
         return;
 
     lastRequestedSeqNum = addr.seqNum;

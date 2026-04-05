@@ -79,7 +79,6 @@ InstructionDecode::compute()
         DPRINTF(LegoCPUFunc, "InstructionDecode: DISCARD\n");
         localFetchLineValid = false;
         localFetchLine = {};
-        lastDecodedSeqNum = 0;
         fetchLineIn.unblockSource();
         DecodedInst dd;
         dd.discard = true;
@@ -116,7 +115,7 @@ InstructionDecode::compute()
 
     const FetchLine &line = localFetchLine;
 
-    if (line.seqNum == lastDecodedSeqNum)
+    if (line.seqNum <= lastDecodedSeqNum)
         return;
 
     lastDecodedSeqNum = line.seqNum;
@@ -224,7 +223,6 @@ ALUExecute::compute()
         DPRINTF(LegoCPUFunc, "ALUExecute: DISCARD (signal)\n");
         localDecodedInstValid = false;
         localDecodedInst = {};
-        lastExecutedSeqNum = 0;
         decodedInstIn.unblockSource();
         ExecResult de;
         de.discard = true;
@@ -251,7 +249,7 @@ ALUExecute::compute()
 
     const DecodedInst &inst = localDecodedInst;
 
-    if (inst.seqNum == lastExecutedSeqNum)
+    if (inst.seqNum <= lastExecutedSeqNum)
         return;
 
     if (!inst.staticInst)
@@ -360,7 +358,7 @@ PCUpdate::compute()
     Addr target = 0;
 
     if (localExecResultValid &&
-        localExecResult.seqNum != lastUpdatedSeqNum) {
+        localExecResult.seqNum > lastUpdatedSeqNum) {
         // New instruction executed — advance PC using actual
         // instruction and condition flags from execute
         const ExecResult &result = localExecResult;
