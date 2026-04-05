@@ -226,9 +226,24 @@ ALUExecute::compute()
     if (!inst.staticInst)
         return;
 
+    // Check if this instruction is on the correct path.
+    // TC's PC holds the next expected PC (set by PCUpdate).
+    // If mismatch, this was speculatively fetched on a
+    // wrong path — discard without executing.
+    SimpleThread *thread = _subStage->getThread(0);
+    Addr expectedPC = thread->pcState().instAddr();
+
+    if (inst.pc != expectedPC) {
+        DPRINTF(LegoCPUFunc, "ALUExecute: DISCARD seq=%d pc=0x%x "
+                "(expected 0x%x, wrong path)\n",
+                inst.seqNum, inst.pc, expectedPC);
+        lastExecutedSeqNum = inst.seqNum;
+        localDecodedInstValid = false;
+        return;
+    }
+
     lastExecutedSeqNum = inst.seqNum;
 
-    SimpleThread *thread = _subStage->getThread(0);
     BaseCPU *cpu = _subStage->stage()->cpu();
 
     LegoExecContext xc(*cpu, *thread);
@@ -291,18 +306,16 @@ PCUpdate::latchInputs()
 void
 PCUpdate::compute()
 {
-    if (redirectOut.isBlocked()) {
-        execResultIn.blockSource();
-        return;
-    }
-    execResultIn.unblockSource();
-
-    // Same-stage: update local copy immediately
+    // Always latch ExecResult from same-stage, but only
+    // process and advance PC when redirect output is not blocked.
     if (execResultIn.hasData() &&
         execResultIn.getWriterStageId() == getStageId()) {
         localExecResult = execResultIn.read();
         localExecResultValid = true;
     }
+
+    if (redirectOut.isBlocked())
+        return;
 
     bool branchTaken = false;
     Addr target = 0;
@@ -334,19 +347,30 @@ PCUpdate::compute()
         if (branchTaken) {
             DPRINTF(LegoCPUFunc, "PCUpdate: branch taken to 0x%x "
                     "(from 0x%x)\n", target, result.pc);
+            // After branch, stop speculating — we don't know
+            // what instruction is at the target until it's decoded
+            lastStaticInst = nullptr;
         } else {
             DPRINTF(LegoCPUFunc, "PCUpdate: sequential 0x%x -> "
                     "0x%x\n", result.pc, target);
         }
     } else if (speculativePC && lastStaticInst &&
                redirectOut.getLastWritten() != curTick()) {
-        // No new exec result AND we didn't already produce
-        // a redirect this tick — speculatively advance PC
+        // No new exec result — speculatively advance PC.
+        // Guard: only once per tick (prevent double-advance
+        // from same-stage notify calling compute twice).
         lastStaticInst->advancePC(*speculativePC);
         target = speculativePC->instAddr();
 
         DPRINTF(LegoCPUFunc, "PCUpdate: speculative to 0x%x\n",
                 target);
+    } else if (speculativePC && !lastStaticInst &&
+               redirectOut.getLastWritten() != curTick()) {
+        // After branch: re-send current PC until real exec
+        target = speculativePC->instAddr();
+
+        DPRINTF(LegoCPUFunc, "PCUpdate: holding at 0x%x "
+                "(post-branch, waiting for exec)\n", target);
     } else {
         return;
     }

@@ -79,18 +79,11 @@ FetchAddressGen::compute()
             "waitingForTranslation=%d outBlocked=%d\n",
             waitingForTranslation, fetchAddrOut.isBlocked());
 
-    if (waitingForTranslation) {
-        redirectIn.blockSource();
+    if (waitingForTranslation)
         return;
-    }
 
-    if (fetchAddrOut.isBlocked()) {
-        redirectIn.blockSource();
+    if (fetchAddrOut.isBlocked())
         return;
-    }
-
-    // We can accept input — unblock upstream
-    redirectIn.unblockSource();
 
     // Same-stage redirect: update local copy immediately
     if (redirectIn.hasData() &&
