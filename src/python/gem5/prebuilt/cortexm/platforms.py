@@ -303,7 +303,7 @@ class STM32G474REPlatform(ArmMPlatform):
             flash_addr_latency = "0ns"
             flash_read_buf = [0, 0]
         else:
-            flash_addr_latency = "1ns"
+            flash_addr_latency = "500ps"
             flash_read_buf = [8, 8]
 
         return [
@@ -313,7 +313,7 @@ class STM32G474REPlatform(ArmMPlatform):
             # DCode has priority over ICode [RM0440 §3.3.4]
             PipelinedSimpleMemory(
                 range=AddrRange(0x08000000, size="256KiB"),
-                latency="29412ps",
+                latency="23000ps",
                 address_phase_latency=flash_addr_latency,
                 port_priority=[0, 1],
                 port_read_buffer_size=flash_read_buf,
@@ -321,7 +321,7 @@ class STM32G474REPlatform(ArmMPlatform):
             # Flash Bank 2: same config as Bank 1.
             PipelinedSimpleMemory(
                 range=AddrRange(0x08040000, size="256KiB"),
-                latency="29412ps",
+                latency="23000ps",
                 address_phase_latency=flash_addr_latency,
                 port_priority=[0, 1],
                 port_read_buffer_size=flash_read_buf,
