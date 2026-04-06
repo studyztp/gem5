@@ -217,7 +217,7 @@ Input<T>::notify(unsigned writer_stage_id, Tick written_at)
 }
 
 // --- Input::notifyDiscard() implementation ---
-// Discard always triggers compute immediately, ignoring stageId.
+// Discard calls flush() which clears state and propagates.
 template<typename T>
 void
 Input<T>::notifyDiscard(unsigned writer_stage_id, Tick written_at)
@@ -228,8 +228,8 @@ Input<T>::notifyDiscard(unsigned writer_stage_id, Tick written_at)
     lastWriterStageId = writer_stage_id;
     lastWrittenTick = written_at;
 
-    // Always immediate — discard bypasses stage boundaries
-    ownerFunc->compute();
+    // Flush clears local state and propagates discard to output
+    ownerFunc->flush();
 }
 
 } // namespace gem5

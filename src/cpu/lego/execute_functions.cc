@@ -73,20 +73,6 @@ InstructionDecode::latchInputs()
 void
 InstructionDecode::compute()
 {
-    // Check for discard signal
-    if ((fetchLineIn.hasData() && fetchLineIn.read().discard) ||
-        (localFetchLineValid && localFetchLine.discard)) {
-        DPRINTF(LegoCPUFunc, "InstructionDecode: DISCARD\n");
-        localFetchLineValid = false;
-        localFetchLine = {};
-        fetchLineIn.unblockSource();
-        DecodedInst dd;
-        dd.discard = true;
-        decodedInstOut.write(dd);
-        decodedInstOut.clear();
-        return;
-    }
-
     if (decodedInstOut.isBlocked()) {
         fetchLineIn.blockSource();
         return;
@@ -172,7 +158,15 @@ InstructionDecode::compute()
 void
 InstructionDecode::flush()
 {
-    lastDecodedSeqNum = 0;
+    DPRINTF(LegoCPUFunc, "InstructionDecode: flush()\n");
+    localFetchLineValid = false;
+    localFetchLine = {};
+    fetchLineIn.unblockSource();
+
+    // Propagate discard downstream
+    DecodedInst dd;
+    dd.discard = true;
+    decodedInstOut.write(dd);
     decodedInstOut.clear();
 }
 
@@ -217,20 +211,6 @@ ALUExecute::latchInputs()
 void
 ALUExecute::compute()
 {
-    // Check for discard signal
-    if ((decodedInstIn.hasData() && decodedInstIn.read().discard) ||
-        (localDecodedInstValid && localDecodedInst.discard)) {
-        DPRINTF(LegoCPUFunc, "ALUExecute: DISCARD (signal)\n");
-        localDecodedInstValid = false;
-        localDecodedInst = {};
-        decodedInstIn.unblockSource();
-        ExecResult de;
-        de.discard = true;
-        execResultOut.write(de);
-        execResultOut.clear();
-        return;
-    }
-
     if (execResultOut.isBlocked()) {
         decodedInstIn.blockSource();
         return;
@@ -280,7 +260,15 @@ ALUExecute::compute()
 void
 ALUExecute::flush()
 {
-    lastExecutedSeqNum = 0;
+    DPRINTF(LegoCPUFunc, "ALUExecute: flush()\n");
+    localDecodedInstValid = false;
+    localDecodedInst = {};
+    decodedInstIn.unblockSource();
+
+    // Propagate discard downstream
+    ExecResult de;
+    de.discard = true;
+    execResultOut.write(de);
     execResultOut.clear();
 }
 
@@ -320,29 +308,6 @@ PCUpdate::latchInputs()
 void
 PCUpdate::compute()
 {
-    // Check for discard signal on input. If we originated it
-    // (redirectOut has discard=true from this tick), ignore —
-    // it's our own signal looping back.
-    if ((execResultIn.hasData() && execResultIn.read().discard) ||
-        (localExecResultValid && localExecResult.discard)) {
-        if (redirectOut.hasData() && redirectOut.read().discard) {
-            // Our own discard came back — stop propagation
-            DPRINTF(LegoCPUFunc, "PCUpdate: own discard returned, "
-                    "ignoring\n");
-        } else {
-            // Discard from elsewhere — propagate
-            DPRINTF(LegoCPUFunc, "PCUpdate: external discard, "
-                    "propagating\n");
-            Redirect dr;
-            dr.discard = true;
-            redirectOut.write(dr);
-            redirectOut.clear();
-        }
-        localExecResultValid = false;
-        localExecResult = {};
-        return;
-    }
-
     // Always latch ExecResult from same-stage
     if (execResultIn.hasData() &&
         execResultIn.getWriterStageId() == getStageId() &&
@@ -433,7 +398,25 @@ PCUpdate::compute()
 void
 PCUpdate::flush()
 {
-    lastUpdatedSeqNum = 0;
+    // Check if this discard originated from us
+    if (redirectOut.hasData() && redirectOut.read().discard) {
+        DPRINTF(LegoCPUFunc, "PCUpdate: flush() — own discard, "
+                "stopping propagation\n");
+        localExecResultValid = false;
+        localExecResult = {};
+        return;
+    }
+
+    DPRINTF(LegoCPUFunc, "PCUpdate: flush()\n");
+    localExecResultValid = false;
+    localExecResult = {};
+    speculativePC = nullptr;
+    lastStaticInst = nullptr;
+
+    // Propagate discard
+    Redirect dr;
+    dr.discard = true;
+    redirectOut.write(dr);
     redirectOut.clear();
 }
 

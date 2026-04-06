@@ -75,25 +75,6 @@ FetchAddressGen::latchInputs()
 void
 FetchAddressGen::compute()
 {
-    // Check for discard signal — clear state and propagate
-    if (redirectIn.hasData() && redirectIn.read().discard) {
-        DPRINTF(LegoCPUFunc, "FetchAddressGen: DISCARD, restarting "
-                "from 0x%x\n", redirectIn.read().target);
-        waitingForTranslation = false;
-        translationReq = nullptr;
-        // Set the redirect target as new local input so
-        // the normal compute path picks it up immediately
-        localRedirect = redirectIn.read();
-        localRedirect.discard = false;
-        localRedirectValid = true;
-        // Propagate discard downstream then clear output
-        FetchAddr da;
-        da.discard = true;
-        fetchAddrOut.write(da);
-        fetchAddrOut.clear();
-        // Fall through to normal compute with localRedirect
-    }
-
     DPRINTF(LegoCPUFunc, "FetchAddressGen::compute() called, "
             "waitingForTranslation=%d outBlocked=%d\n",
             waitingForTranslation, fetchAddrOut.isBlocked());
@@ -177,8 +158,24 @@ FetchAddressGen::translationComplete(const Fault &fault,
 void
 FetchAddressGen::flush()
 {
+    DPRINTF(LegoCPUFunc, "FetchAddressGen: flush()\n");
     waitingForTranslation = false;
     translationReq = nullptr;
+    localRedirectValid = false;
+
+    // Read redirect target before clearing — we need it for restart
+    if (redirectIn.hasData() && redirectIn.read().discard) {
+        pendingPC = redirectIn.read().target;
+        // Set local redirect so compute() picks it up
+        localRedirect = redirectIn.read();
+        localRedirect.discard = false;
+        localRedirectValid = true;
+    }
+
+    // Propagate discard downstream
+    FetchAddr da;
+    da.discard = true;
+    fetchAddrOut.write(da);
     fetchAddrOut.clear();
 }
 
@@ -221,23 +218,6 @@ FetchMemRequest::latchInputs()
 void
 FetchMemRequest::compute()
 {
-    // Check for discard signal — abandon current work
-    if ((fetchAddrIn.hasData() && fetchAddrIn.read().discard) ||
-        (localFetchAddrValid && localFetchAddr.discard)) {
-        DPRINTF(LegoCPUFunc, "FetchMemRequest: DISCARD, abandoning "
-                "icache wait\n");
-        waitingForCache = false;
-        localFetchAddrValid = false;
-        localFetchAddr = {};
-        fetchAddrIn.unblockSource();
-        // Propagate discard downstream then clear output
-        FetchLine dl;
-        dl.discard = true;
-        fetchLineOut.write(dl);
-        fetchLineOut.clear();
-        return;
-    }
-
     if (fetchLineOut.isBlocked() || waitingForCache) {
         fetchAddrIn.blockSource();
     } else {
@@ -345,8 +325,16 @@ FetchMemRequest::recvTimingResp(PacketPtr pkt)
 void
 FetchMemRequest::flush()
 {
+    DPRINTF(LegoCPUFunc, "FetchMemRequest: flush()\n");
     waitingForCache = false;
-    lastRequestedSeqNum = 0;
+    localFetchAddrValid = false;
+    localFetchAddr = {};
+    fetchAddrIn.unblockSource();
+
+    // Propagate discard downstream
+    FetchLine dl;
+    dl.discard = true;
+    fetchLineOut.write(dl);
     fetchLineOut.clear();
 }
 
