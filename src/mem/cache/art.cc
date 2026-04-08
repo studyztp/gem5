@@ -251,10 +251,12 @@ ART::serveFromBuffer(PacketPtr pkt, ARTPrefetchBuffer &buf)
 {
     pkt->setData(buf.getData(pkt->getAddr(), pkt->getSize()));
     pkt->makeTimingResponse();
-    // Use max of bufferHitLatency and next clock edge to ensure
+    // Use max of bufferHitLatency+1 and next clock edge to ensure
     // the response arrives at a cycle boundary where MinorCPU's
-    // SingleStageFetch pipeline state is consistent.
-    Tick readyTick = std::max(curTick() + bufferHitLatency,
+    // SingleStageFetch pipeline state is consistent.  The +1
+    // prevents same-tick scheduling which triggers PacketQueue
+    // retry assertions on long runs.
+    Tick readyTick = std::max(curTick() + bufferHitLatency + 1,
                               clockEdge(Cycles(0)));
     pushToOutputBuffer(pkt, readyTick);
 }
@@ -807,7 +809,7 @@ ART::recvTimingResp(PacketPtr pkt)
                     getSubBlockData(pkt, entry->cpuPtr));
                 entry->cpuPtr->makeTimingResponse();
                 Tick readyTick = std::max(
-                    curTick() + bufferHitLatency,
+                    curTick() + bufferHitLatency + 1,
                     clockEdge(Cycles(0)));
                 pushToOutputBuffer(entry->cpuPtr, readyTick);
                 entry->clearCPUWaiting();
