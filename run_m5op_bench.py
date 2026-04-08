@@ -236,18 +236,18 @@ try:
             symbol = m_obj.group(2)
             instr = m_obj.group(3).strip()
 
-            # Kernel start: first @main instruction in ROI
+            # Kernel start: first non-overhead instruction in ROI
+            # (skip m5op semihosting calls and EntoBench harness)
             if (
                 precise_start_tick is None
-                and "main" in symbol
                 and "m5_semi_call" not in symbol
-                and "_ZN9EntoBench" not in symbol
                 and "_ZL12m5_semi" not in symbol
             ):
                 precise_start_tick = tick
 
             # Kernel end: "movs r0, #91" = M5OP_WORK_END arg setup.
-            # The last @main instruction before this is the kernel end.
+            # The last non-overhead instruction before this is the
+            # kernel end.
             if (
                 precise_start_tick is not None
                 and "movs" in instr
@@ -256,12 +256,8 @@ try:
                 precise_end_tick = prev_main_tick
                 break
 
-            # Track last @main instruction tick
-            if (
-                "main" in symbol
-                and "m5_semi_call" not in symbol
-                and "_ZN9EntoBench" not in symbol
-            ):
+            # Track last non-m5op instruction tick
+            if "m5_semi_call" not in symbol and "_ZL12m5_semi" not in symbol:
                 prev_main_tick = tick
 
 except OSError:

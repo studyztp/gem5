@@ -1,0 +1,277 @@
+Global frequency set at 1000000000000 ticks per second
+Redirecting stdout to /tmp/entobench-rerun/noart/m5out_madgwick/simout.txt
+Redirecting stderr to /tmp/entobench-rerun/noart/m5out_madgwick/simerr.txt
+gem5 Simulator System.  https://www.gem5.org
+gem5 is copyrighted software; use the --copyright option for details.
+
+gem5 version DEVELOP-FOR-25.1
+gem5 compiled Apr  8 2026 03:04:06
+gem5 started Apr  8 2026 03:19:34
+gem5 executing on cascade, pid 2900859
+command line: /scr/studyztp/gem5-binary/roboarch/build/ARM/gem5.opt -re --outdir=/tmp/entobench-rerun/noart/m5out_madgwick /home/studyztp/test_ground/gem5-fix-cache-line-size/gem5/run_m5op_bench.py --no-art --inner-reps 1 --firmware /scr/studyztp/benchmarks/stm32-board-microbenchmarks/build/bin/bench-madgwick-float-imu.elf
+
+info: Standard input is not a terminal, disabling listeners.
+Starting simulation (ROI flags: none)...
+
+*** ROI BEGIN at tick 614480776 ***
+=== Benchmark Configuration ===
+REPS: zu
+INNER_REPS: zu
+VERBOSITY: 1
+MAX_PROBLEMS: zu
+DO_WARMUP: false
+ENABLE_CACHES: true
+ENABLE_PREFETCH: false
+ENABLE_VECTORIZATION: false
+H7_PERFORMANCE_MULTIPLIER: zu
+===============================
+File path: /scr/studyztp/benchmarks/stm32-board-microbenchmarks/datasets/state-est/tuned_icm42688_1khz_imu_dataset.txt
+Rep 0: Cycles = 0
+614551360: system.cpu: T0 : 0x800e458 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+111    : vldr s16, [r8, #+64]       : FloatMemRead :  D=0x0000000000000000 A=0x2001fce0
+614563124: system.cpu: T0 : 0x800e45c @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+115    : vldr s17, [r8, #+120]      : FloatMemRead :  D=0x000000003a83126f A=0x2001fd18
+614580770: system.cpu: T0 : 0x800e460 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+119    :   ldr.w   fp, [sp, #8]     : MemRead :  D=0x000000002001fcc0 A=0x2001f930
+614592534: system.cpu: T0 : 0x800e464 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+123    :   ldr   r5, [sp, #4]       : MemRead :  D=0x000000002001fcb4 A=0x2001f92c
+614604298: system.cpu: T0 : 0x800e466 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+125    :   ldr   r4, [sp, #12]      : MemRead :  D=0x000000002001fcf0 A=0x2001f934
+614604298: system.cpu: T0 : 0x800e468 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+127    : vmov.f32 s0, s16           : SimdFloatMisc :  D=0
+614616062: system.cpu: T0 : 0x800e46c @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+131    : vmov.f32 s1, s17           : SimdFloatMisc :  D=981668463
+614633708: system.cpu: T0 : 0x800e470 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+135    :   mov   r3, fp             : IntAlu :  D=0x000000002001fcc0
+614639590: system.cpu: T0 : 0x800e472 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+137    :   mov   r2, r5             : IntAlu :  D=0x000000002001fcb4
+614645472: system.cpu: T0 : 0x800e474 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+139    :   mov   r1, r4             : IntAlu :  D=0x000000002001fcf0
+614651354: system.cpu: T0 : 0x800e476 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+141    :   mov   r0, r6             : IntAlu :  D=0x000000002001f950
+614663118: system.cpu: T0 : 0x800e478 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+143    :   bl.w   <_ZN8EntoUtil12ExperimentIO9read_nextIN12EntoAttitude15AttitudeProblemIfNS2_14FilterMadgwickIfLb0EEELb0ELb1EEEEEbRT_+111> : IntAlu :  D=0x000000000800e47d
+614698410: system.cpu: T0 : 0x800e168 @_ZN8EntoUtil12ExperimentIO9read_nextIN12EntoAttitude15AttitudeProblemIfNS2_14FilterMadgwickIfLb0EEELb0ELb1EEEEEbRT_+115    : vldr s12, [r2, #+8]        : FloatMemRead :  D=0x0000000080000000 A=0x2001fcbc
+614710174: system.cpu: T0 : 0x800e16c @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+3    : vldr s13, [r2, #+4]        : FloatMemRead :  D=0x0000000080000000 A=0x2001fcb8
+614727820: system.cpu: T0 : 0x800e170 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+7    : vldr s14, [r2, #+0]        : FloatMemRead :  D=0x0000000000000000 A=0x2001fcb4
+614774876: system.cpu: T0 : 0x800e174 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+11    : vldr s11, [r15, #+620]     : FloatMemRead :  D=0x00000000e7e01a02 A=0x800e3e0
+614774876: system.cpu: T0 : 0x800e178 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+15    : vmul.f32 s15, s12, s12     : SimdFloatMult :  D=0
+614780758: system.cpu: T0 : 0x800e17c @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+19    :   mov   r12, r0            : IntAlu :  D=0x000000002001f950
+614786640: system.cpu: T0 : 0x800e17e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+21    : vfma.f32 s15, s13, s13     : SimdFloatMultAcc :  D=0
+614804286: system.cpu: T0 : 0x800e182 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+25    : vfma.f32 s15, s14, s14     : SimdFloatMultAcc :  D=0
+614816050: system.cpu: T0 : 0x800e186 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+29    : vadd.f32 s15, s15, s11     : SimdFloatAdd :  D=3890223618
+614904280: system.cpu: T0 : 0x800e18a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+33    : vsqrt.f32 s10, s15         : SimdFloatSqrt :  D=2143289344
+614904280: system.cpu: T0 : 0x800e18e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+37    : vcmp.f32 s10, s11          : SimdFloatCmp :
+614910162: system.cpu: T0 : 0x800e192 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+41    : vmrs APSR_nzcv, fpscr      : SimdFloatMisc :  D=0x0000000030000001
+614916044: system.cpu: T0 : 0x800e196 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+45    :   b   <_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+53> : IntAlu :
+614974864: system.cpu: T0 : 0x800e1a2 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+57    : vldr s3, [r3, #+8]         : FloatMemRead :  D=0x0000000000000000 A=0x2001fcc8
+614998392: system.cpu: T0 : 0x800e1a6 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+61    : vldr s8, [r1, #+0]         : FloatMemRead :  D=0x000000007fc00000 A=0x2001fcf0
+615010156: system.cpu: T0 : 0x800e1aa @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+65    : vldr s2, [r3, #+4]         : FloatMemRead :  D=0x0000000000000000 A=0x2001fcc4
+615027802: system.cpu: T0 : 0x800e1ae @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+69    : vldr s15, [r1, #+12]       : FloatMemRead :  D=0x000000007fc00000 A=0x2001fcfc
+615039566: system.cpu: T0 : 0x800e1b2 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+73    : vldr s9, [r1, #+4]         : FloatMemRead :  D=0x000000007fc00000 A=0x2001fcf4
+615057212: system.cpu: T0 : 0x800e1b6 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+77    : vldr s10, [r1, #+8]        : FloatMemRead :  D=0x000000007fc00000 A=0x2001fcf8
+615063094: system.cpu: T0 : 0x800e1ba @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+81    : vmul.f32 s5, s3, s3        : SimdFloatMult :  D=0
+615080740: system.cpu: T0 : 0x800e1be @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+85    : vmul.f32 s6, s8, s11       : SimdFloatMult :  D=2143289344
+615104268: system.cpu: T0 : 0x800e1c2 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+89    : vfma.f32 s5, s2, s2        : SimdFloatMultAcc :  D=0
+615121914: system.cpu: T0 : 0x800e1c6 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+93    : vfma.f32 s6, s14, s15      : SimdFloatMultAcc :  D=2143289344
+615121914: system.cpu: T0 : 0x800e1ca @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+97    : vstm       (M-profile VFP multi-reg mem op)
+615121914: system.cpu: T0 : 0x800e1ca @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+97. 0 : vstr d8, [r13, #-24]       : FloatMemWrite :  D=0x3a83126f00000000 A=0x2001f910
+615127796: system.cpu: T0 : 0x800e1ca @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+97. 1 : vstr d9, [r13, #-16]       : FloatMemWrite :  D=0x0000000000000000 A=0x2001f918
+615133678: system.cpu: T0 : 0x800e1ca @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+97. 2 : vstr d10, [r13, #-8]       : FloatMemWrite :  D=0x0000000000000000 A=0x2001f920
+615133678: system.cpu: T0 : 0x800e1ca @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+97. 3 : vfp_wb r13, #-24           : IntAlu :
+615163088: system.cpu: T0 : 0x800e1ce @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+101    : vldr s16, [r3, #+0]        : FloatMemRead :  D=0x0000000080000000 A=0x2001fcc0
+615163088: system.cpu: T0 : 0x800e1d2 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+105    : vfma.f32 s5, s16, s16      : SimdFloatMultAcc :  D=0
+615180734: system.cpu: T0 : 0x800e1d6 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+109    : vfma.f32 s6, s12, s9       : SimdFloatMultAcc :  D=2143289344
+615180734: system.cpu: T0 : 0x800e1da @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+113    : vadd.f32 s5, s5, s11       : SimdFloatAdd :  D=3890223618
+615210144: system.cpu: T0 : 0x800e1de @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+117    : vfms.f32 s6, s13, s10      : SimdFloatMultAcc :  D=2143289344
+615286610: system.cpu: T0 : 0x800e1e2 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+121    : vsqrt.f32 s17, s5          : SimdFloatSqrt :  D=2143289344
+615286610: system.cpu: T0 : 0x800e1e6 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+125    : vnmul.f32 s7, s8, s14      : SimdFloatMult :  D=2143289344
+615292492: system.cpu: T0 : 0x800e1ea @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+129    : vmul.f32 s5, s9, s11       : SimdFloatMult :  D=2143289344
+615310138: system.cpu: T0 : 0x800e1ee @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+133    : vfma.f32 s7, s15, s11      : SimdFloatMultAcc :  D=2143289344
+615327784: system.cpu: T0 : 0x800e1f2 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+137    : vfma.f32 s5, s13, s15      : SimdFloatMultAcc :  D=2143289344
+615327784: system.cpu: T0 : 0x800e1f6 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+141    : vmov.f32 s4, s6            : SimdFloatMisc :  D=2143289344
+615333666: system.cpu: T0 : 0x800e1fa @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+145    : vmul.f32 s6, s10, s11      : SimdFloatMult :  D=2143289344
+615351312: system.cpu: T0 : 0x800e1fe @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+149    : vfms.f32 s7, s13, s9       : SimdFloatMultAcc :  D=2143289344
+615368958: system.cpu: T0 : 0x800e202 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+153    : vfma.f32 s5, s14, s10      : SimdFloatMultAcc :  D=2143289344
+615386604: system.cpu: T0 : 0x800e206 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+157    : vfma.f32 s6, s12, s15      : SimdFloatMultAcc :  D=2143289344
+615404250: system.cpu: T0 : 0x800e20a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+161    : vfms.f32 s7, s12, s10      : SimdFloatMultAcc :  D=2143289344
+615421896: system.cpu: T0 : 0x800e20e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+165    : vfms.f32 s5, s12, s8       : SimdFloatMultAcc :  D=2143289344
+615421896: system.cpu: T0 : 0x800e212 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+169    : vmov.f32 s12, s6           : SimdFloatMisc :  D=2143289344
+615439542: system.cpu: T0 : 0x800e216 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+173    : vfma.f32 s12, s13, s8      : SimdFloatMultAcc :  D=2143289344
+615439542: system.cpu: T0 : 0x800e21a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+177    : vcmpe.f32 s17, #0.0        : SimdFloatCmp :
+615457188: system.cpu: T0 : 0x800e21e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+181    : vfms.f32 s12, s14, s9      : SimdFloatMultAcc :  D=2143289344
+615457188: system.cpu: T0 : 0x800e222 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+185    : vmov.f32 s13, #0.5         : SimdFloatMisc :  D=1056964608
+615463070: system.cpu: T0 : 0x800e226 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+189    : vmrs APSR_nzcv, fpscr      : SimdFloatMisc :  D=0x0000000030000001
+615468952: system.cpu: T0 : 0x800e22a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+193    : vmul.f32 s6, s4, s13       : SimdFloatMult :  D=2143289344
+615486598: system.cpu: T0 : 0x800e22e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+197    : vmul.f32 s14, s5, s13      : SimdFloatMult :  D=2143289344
+615498362: system.cpu: T0 : 0x800e232 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+201    : vmul.f32 s12, s12, s13     : SimdFloatMult :  D=2143289344
+615516008: system.cpu: T0 : 0x800e236 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+205    : vmul.f32 s13, s7, s13      : SimdFloatMult :  D=2143289344
+615521890: system.cpu: T0 : 0x800e23a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+209    :   b   <_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+295> : IntAlu : Predicated False
+615539536: system.cpu: T0 : 0x800e23c @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+211    : vfma.f32 s10, s12, s0      : SimdFloatMultAcc :  D=2143289344
+615551300: system.cpu: T0 : 0x800e240 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+215    :   mov   r0, r12            : IntAlu :  D=0x000000002001f950
+615568946: system.cpu: T0 : 0x800e242 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+217    : vldm       (M-profile VFP multi-reg mem op)
+615568946: system.cpu: T0 : 0x800e242 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+217. 0 : vldr d8, [r13, #+0]        : FloatMemRead :  D=0x3a83126f00000000 A=0x2001f910
+615586592: system.cpu: T0 : 0x800e242 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+217. 1 : vldr d9, [r13, #+8]        : FloatMemRead :  D=0x0000000000000000 A=0x2001f918
+615604238: system.cpu: T0 : 0x800e242 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+217. 2 : vldr d10, [r13, #+16]      : FloatMemRead :  D=0x0000000000000000 A=0x2001f920
+615604238: system.cpu: T0 : 0x800e242 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+217. 3 : vfp_wb r13, #24            : IntAlu :
+615610120: system.cpu: T0 : 0x800e246 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+221    : vfma.f32 s8, s6, s0        : SimdFloatMultAcc :  D=2143289344
+615627766: system.cpu: T0 : 0x800e24a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+225    : vfma.f32 s15, s13, s0      : SimdFloatMultAcc :  D=2143289344
+615645412: system.cpu: T0 : 0x800e24e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+229    : vfma.f32 s9, s14, s0       : SimdFloatMultAcc :  D=2143289344
+615645412: system.cpu: T0 : 0x800e252 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+233    : vmul.f32 s13, s10, s10     : SimdFloatMult :  D=2143289344
+615651294: system.cpu: T0 : 0x800e256 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+237    : vmul.f32 s14, s8, s8       : SimdFloatMult :  D=2143289344
+615674822: system.cpu: T0 : 0x800e25a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+241    : vfma.f32 s13, s9, s9       : SimdFloatMultAcc :  D=2143289344
+615692468: system.cpu: T0 : 0x800e25e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+245    : vfma.f32 s14, s15, s15     : SimdFloatMultAcc :  D=2143289344
+615698350: system.cpu: T0 : 0x800e262 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+249    : vldr s12, [r15, #+384]     : FloatMemRead :  D=0x00000000e7e01a02 A=0x800e3e0
+615710114: system.cpu: T0 : 0x800e266 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+253    : vadd.f32 s14, s14, s13     : SimdFloatAdd :  D=2143289344
+615721878: system.cpu: T0 : 0x800e26a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+257    : vadd.f32 s14, s14, s12     : SimdFloatAdd :  D=2143289344
+615815990: system.cpu: T0 : 0x800e26e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+261    : vsqrt.f32 s13, s14         : SimdFloatSqrt :  D=2143289344
+615898338: system.cpu: T0 : 0x800e272 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+265    : vdiv.f32 s7, s8, s13       : SimdFloatDiv :  D=2143289344
+615980686: system.cpu: T0 : 0x800e276 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+269    : vdiv.f32 s11, s9, s13      : SimdFloatDiv :  D=2143289344
+616063034: system.cpu: T0 : 0x800e27a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+273    : vdiv.f32 s12, s10, s13     : SimdFloatDiv :  D=2143289344
+616145382: system.cpu: T0 : 0x800e27e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+277    : vdiv.f32 s14, s15, s13     : SimdFloatDiv :  D=2143289344
+616145382: system.cpu: T0 : 0x800e282 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+281    : vstr s7, [r12, #+0]        : FloatMemWrite :  D=0x000000007fc00000 A=0x2001f950
+616151264: system.cpu: T0 : 0x800e286 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+285    : vstr s11, [r12, #+4]       : FloatMemWrite :  D=0x000000007fc00000 A=0x2001f954
+616157146: system.cpu: T0 : 0x800e28a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+289    : vstr s12, [r12, #+8]       : FloatMemWrite :  D=0x000000007fc00000 A=0x2001f958
+616163028: system.cpu: T0 : 0x800e28e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+293    : vstr s14, [r12, #+12]      : FloatMemWrite :  D=0x000000007fc00000 A=0x2001f95c
+616163028: system.cpu: T0 : 0x800e292 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+297    :   bx    lr                 : IntAlu :
+616215966: system.cpu: T0 : 0x800e47c @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+147    : ldmstm
+616215966: system.cpu: T0 : 0x800e47c @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+147. 0 :   ldr2_uop.w   r0,r1, [r6, #0] : MemRead :  D=0x000000007fc00000 A=0x2001f950
+616233612: system.cpu: T0 : 0x800e47c @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+147. 1 :   ldr2_uop.w   r2,r3, [r6, #8] : MemRead :  D=0x000000007fc00000 A=0x2001f958
+616239494: system.cpu: T0 : 0x800e480 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+151    : ldmstm
+616239494: system.cpu: T0 : 0x800e480 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+151. 0 :   str_uop.w   r0, [r10, #0] : MemWrite :  D=0x000000007fc00000 A=0x2001fd00
+616245376: system.cpu: T0 : 0x800e480 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+151. 1 :   str_uop.w   r1, [r10, #4] : MemWrite :  D=0x000000007fc00000 A=0x2001fd04
+616251258: system.cpu: T0 : 0x800e480 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+151. 2 :   str_uop.w   r2, [r10, #8] : MemWrite :  D=0x000000007fc00000 A=0x2001fd08
+616257140: system.cpu: T0 : 0x800e480 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+151. 3 :   str_uop.w   r3, [r10, #12] : MemWrite :  D=0x000000007fc00000 A=0x2001fd0c
+616274786: system.cpu: T0 : 0x800e484 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+155    :   ldr.w   r3, [r8, #96]    : MemRead :  D=0x000000007fc00000 A=0x2001fd00
+616280668: system.cpu: T0 : 0x800e488 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+159    :   str.w   r3, [r8, #80]    : MemWrite :  D=0x000000007fc00000 A=0x2001fcf0
+616286550: system.cpu: T0 : 0x800e48c @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+163    :   ldr.w   r3, [r8, #100]   : MemRead :  D=0x000000007fc00000 A=0x2001fd04
+616292432: system.cpu: T0 : 0x800e490 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+167    :   str.w   r3, [r8, #84]    : MemWrite :  D=0x000000007fc00000 A=0x2001fcf4
+616315960: system.cpu: T0 : 0x800e494 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+171    :   ldr.w   r3, [r8, #104]   : MemRead :  D=0x000000007fc00000 A=0x2001fd08
+616321842: system.cpu: T0 : 0x800e498 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+175    :   str.w   r3, [r8, #88]    : MemWrite :  D=0x000000007fc00000 A=0x2001fcf8
+616345370: system.cpu: T0 : 0x800e49c @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+179    :   ldr.w   r3, [r8, #108]   : MemRead :  D=0x000000007fc00000 A=0x2001fd0c
+616351252: system.cpu: T0 : 0x800e4a0 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+183    :   str.w   r3, [r8, #92]    : MemWrite :  D=0x000000007fc00000 A=0x2001fcfc
+616357134: system.cpu: T0 : 0x800e4a4 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+187    :   mov   r2, r5             : IntAlu :  D=0x000000002001fcb4
+616363016: system.cpu: T0 : 0x800e4a6 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+189    :   mov   r3, fp             : IntAlu :  D=0x000000002001fcc0
+616374780: system.cpu: T0 : 0x800e4a8 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+191    :   mov   r1, r4             : IntAlu :  D=0x000000002001fcf0
+616380662: system.cpu: T0 : 0x800e4aa @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+193    :   mov   r0, r6             : IntAlu :  D=0x000000002001f950
+616386544: system.cpu: T0 : 0x800e4ac @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+195    : vmov.f32 s1, s17           : SimdFloatMisc :  D=981668463
+616404190: system.cpu: T0 : 0x800e4b0 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+199    : vmov.f32 s0, s16           : SimdFloatMisc :  D=0
+616415954: system.cpu: T0 : 0x800e4b4 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+203    :   bl.w   <_ZN8EntoUtil12ExperimentIO9read_nextIN12EntoAttitude15AttitudeProblemIfNS2_14FilterMadgwickIfLb0EEELb0ELb1EEEEEbRT_+111> : IntAlu :  D=0x000000000800e4b9
+616457128: system.cpu: T0 : 0x800e168 @_ZN8EntoUtil12ExperimentIO9read_nextIN12EntoAttitude15AttitudeProblemIfNS2_14FilterMadgwickIfLb0EEELb0ELb1EEEEEbRT_+115    : vldr s12, [r2, #+8]        : FloatMemRead :  D=0x0000000080000000 A=0x2001fcbc
+616468892: system.cpu: T0 : 0x800e16c @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+3    : vldr s13, [r2, #+4]        : FloatMemRead :  D=0x0000000080000000 A=0x2001fcb8
+616480656: system.cpu: T0 : 0x800e170 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+7    : vldr s14, [r2, #+0]        : FloatMemRead :  D=0x0000000000000000 A=0x2001fcb4
+616492420: system.cpu: T0 : 0x800e174 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+11    : vldr s11, [r15, #+620]     : FloatMemRead :  D=0x00000000e7e01a02 A=0x800e3e0
+616504184: system.cpu: T0 : 0x800e178 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+15    : vmul.f32 s15, s12, s12     : SimdFloatMult :  D=0
+616515948: system.cpu: T0 : 0x800e17c @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+19    :   mov   r12, r0            : IntAlu :  D=0x000000002001f950
+616545358: system.cpu: T0 : 0x800e17e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+21    : vfma.f32 s15, s13, s13     : SimdFloatMultAcc :  D=0
+616563004: system.cpu: T0 : 0x800e182 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+25    : vfma.f32 s15, s14, s14     : SimdFloatMultAcc :  D=0
+616563004: system.cpu: T0 : 0x800e186 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+29    : vadd.f32 s15, s15, s11     : SimdFloatAdd :  D=3890223618
+616651234: system.cpu: T0 : 0x800e18a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+33    : vsqrt.f32 s10, s15         : SimdFloatSqrt :  D=2143289344
+616651234: system.cpu: T0 : 0x800e18e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+37    : vcmp.f32 s10, s11          : SimdFloatCmp :
+616657116: system.cpu: T0 : 0x800e192 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+41    : vmrs APSR_nzcv, fpscr      : SimdFloatMisc :  D=0x0000000030000001
+616662998: system.cpu: T0 : 0x800e196 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+45    :   b   <_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+53> : IntAlu :
+616721818: system.cpu: T0 : 0x800e1a2 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+57    : vldr s3, [r3, #+8]         : FloatMemRead :  D=0x0000000000000000 A=0x2001fcc8
+616745346: system.cpu: T0 : 0x800e1a6 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+61    : vldr s8, [r1, #+0]         : FloatMemRead :  D=0x000000007fc00000 A=0x2001fcf0
+616757110: system.cpu: T0 : 0x800e1aa @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+65    : vldr s2, [r3, #+4]         : FloatMemRead :  D=0x0000000000000000 A=0x2001fcc4
+616774756: system.cpu: T0 : 0x800e1ae @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+69    : vldr s15, [r1, #+12]       : FloatMemRead :  D=0x000000007fc00000 A=0x2001fcfc
+616786520: system.cpu: T0 : 0x800e1b2 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+73    : vldr s9, [r1, #+4]         : FloatMemRead :  D=0x000000007fc00000 A=0x2001fcf4
+616804166: system.cpu: T0 : 0x800e1b6 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+77    : vldr s10, [r1, #+8]        : FloatMemRead :  D=0x000000007fc00000 A=0x2001fcf8
+616810048: system.cpu: T0 : 0x800e1ba @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+81    : vmul.f32 s5, s3, s3        : SimdFloatMult :  D=0
+616827694: system.cpu: T0 : 0x800e1be @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+85    : vmul.f32 s6, s8, s11       : SimdFloatMult :  D=2143289344
+616851222: system.cpu: T0 : 0x800e1c2 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+89    : vfma.f32 s5, s2, s2        : SimdFloatMultAcc :  D=0
+616868868: system.cpu: T0 : 0x800e1c6 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+93    : vfma.f32 s6, s14, s15      : SimdFloatMultAcc :  D=2143289344
+616868868: system.cpu: T0 : 0x800e1ca @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+97    : vstm       (M-profile VFP multi-reg mem op)
+616868868: system.cpu: T0 : 0x800e1ca @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+97. 0 : vstr d8, [r13, #-24]       : FloatMemWrite :  D=0x3a83126f00000000 A=0x2001f910
+616874750: system.cpu: T0 : 0x800e1ca @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+97. 1 : vstr d9, [r13, #-16]       : FloatMemWrite :  D=0x0000000000000000 A=0x2001f918
+616886514: system.cpu: T0 : 0x800e1ca @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+97. 2 : vstr d10, [r13, #-8]       : FloatMemWrite :  D=0x0000000000000000 A=0x2001f920
+616886514: system.cpu: T0 : 0x800e1ca @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+97. 3 : vfp_wb r13, #-24           : IntAlu :
+616921806: system.cpu: T0 : 0x800e1ce @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+101    : vldr s16, [r3, #+0]        : FloatMemRead :  D=0x0000000080000000 A=0x2001fcc0
+616921806: system.cpu: T0 : 0x800e1d2 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+105    : vfma.f32 s5, s16, s16      : SimdFloatMultAcc :  D=0
+616939452: system.cpu: T0 : 0x800e1d6 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+109    : vfma.f32 s6, s12, s9       : SimdFloatMultAcc :  D=2143289344
+616939452: system.cpu: T0 : 0x800e1da @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+113    : vadd.f32 s5, s5, s11       : SimdFloatAdd :  D=3890223618
+616962980: system.cpu: T0 : 0x800e1de @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+117    : vfms.f32 s6, s13, s10      : SimdFloatMultAcc :  D=2143289344
+617039446: system.cpu: T0 : 0x800e1e2 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+121    : vsqrt.f32 s17, s5          : SimdFloatSqrt :  D=2143289344
+617039446: system.cpu: T0 : 0x800e1e6 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+125    : vnmul.f32 s7, s8, s14      : SimdFloatMult :  D=2143289344
+617045328: system.cpu: T0 : 0x800e1ea @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+129    : vmul.f32 s5, s9, s11       : SimdFloatMult :  D=2143289344
+617062974: system.cpu: T0 : 0x800e1ee @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+133    : vfma.f32 s7, s15, s11      : SimdFloatMultAcc :  D=2143289344
+617080620: system.cpu: T0 : 0x800e1f2 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+137    : vfma.f32 s5, s13, s15      : SimdFloatMultAcc :  D=2143289344
+617080620: system.cpu: T0 : 0x800e1f6 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+141    : vmov.f32 s4, s6            : SimdFloatMisc :  D=2143289344
+617086502: system.cpu: T0 : 0x800e1fa @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+145    : vmul.f32 s6, s10, s11      : SimdFloatMult :  D=2143289344
+617104148: system.cpu: T0 : 0x800e1fe @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+149    : vfms.f32 s7, s13, s9       : SimdFloatMultAcc :  D=2143289344
+617121794: system.cpu: T0 : 0x800e202 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+153    : vfma.f32 s5, s14, s10      : SimdFloatMultAcc :  D=2143289344
+617139440: system.cpu: T0 : 0x800e206 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+157    : vfma.f32 s6, s12, s15      : SimdFloatMultAcc :  D=2143289344
+617157086: system.cpu: T0 : 0x800e20a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+161    : vfms.f32 s7, s12, s10      : SimdFloatMultAcc :  D=2143289344
+617174732: system.cpu: T0 : 0x800e20e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+165    : vfms.f32 s5, s12, s8       : SimdFloatMultAcc :  D=2143289344
+617174732: system.cpu: T0 : 0x800e212 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+169    : vmov.f32 s12, s6           : SimdFloatMisc :  D=2143289344
+617192378: system.cpu: T0 : 0x800e216 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+173    : vfma.f32 s12, s13, s8      : SimdFloatMultAcc :  D=2143289344
+617192378: system.cpu: T0 : 0x800e21a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+177    : vcmpe.f32 s17, #0.0        : SimdFloatCmp :
+617210024: system.cpu: T0 : 0x800e21e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+181    : vfms.f32 s12, s14, s9      : SimdFloatMultAcc :  D=2143289344
+617210024: system.cpu: T0 : 0x800e222 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+185    : vmov.f32 s13, #0.5         : SimdFloatMisc :  D=1056964608
+617215906: system.cpu: T0 : 0x800e226 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+189    : vmrs APSR_nzcv, fpscr      : SimdFloatMisc :  D=0x0000000030000001
+617221788: system.cpu: T0 : 0x800e22a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+193    : vmul.f32 s6, s4, s13       : SimdFloatMult :  D=2143289344
+617239434: system.cpu: T0 : 0x800e22e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+197    : vmul.f32 s14, s5, s13      : SimdFloatMult :  D=2143289344
+617251198: system.cpu: T0 : 0x800e232 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+201    : vmul.f32 s12, s12, s13     : SimdFloatMult :  D=2143289344
+617262962: system.cpu: T0 : 0x800e236 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+205    : vmul.f32 s13, s7, s13      : SimdFloatMult :  D=2143289344
+617268844: system.cpu: T0 : 0x800e23a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+209    :   b   <_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+295> : IntAlu : Predicated False
+617286490: system.cpu: T0 : 0x800e23c @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+211    : vfma.f32 s10, s12, s0      : SimdFloatMultAcc :  D=2143289344
+617292372: system.cpu: T0 : 0x800e240 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+215    :   mov   r0, r12            : IntAlu :  D=0x000000002001f950
+617310018: system.cpu: T0 : 0x800e242 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+217    : vldm       (M-profile VFP multi-reg mem op)
+617310018: system.cpu: T0 : 0x800e242 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+217. 0 : vldr d8, [r13, #+0]        : FloatMemRead :  D=0x3a83126f00000000 A=0x2001f910
+617327664: system.cpu: T0 : 0x800e242 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+217. 1 : vldr d9, [r13, #+8]        : FloatMemRead :  D=0x0000000000000000 A=0x2001f918
+617345310: system.cpu: T0 : 0x800e242 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+217. 2 : vldr d10, [r13, #+16]      : FloatMemRead :  D=0x0000000000000000 A=0x2001f920
+617345310: system.cpu: T0 : 0x800e242 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+217. 3 : vfp_wb r13, #24            : IntAlu :
+617351192: system.cpu: T0 : 0x800e246 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+221    : vfma.f32 s8, s6, s0        : SimdFloatMultAcc :  D=2143289344
+617368838: system.cpu: T0 : 0x800e24a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+225    : vfma.f32 s15, s13, s0      : SimdFloatMultAcc :  D=2143289344
+617386484: system.cpu: T0 : 0x800e24e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+229    : vfma.f32 s9, s14, s0       : SimdFloatMultAcc :  D=2143289344
+617386484: system.cpu: T0 : 0x800e252 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+233    : vmul.f32 s13, s10, s10     : SimdFloatMult :  D=2143289344
+617392366: system.cpu: T0 : 0x800e256 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+237    : vmul.f32 s14, s8, s8       : SimdFloatMult :  D=2143289344
+617415894: system.cpu: T0 : 0x800e25a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+241    : vfma.f32 s13, s9, s9       : SimdFloatMultAcc :  D=2143289344
+617433540: system.cpu: T0 : 0x800e25e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+245    : vfma.f32 s14, s15, s15     : SimdFloatMultAcc :  D=2143289344
+617439422: system.cpu: T0 : 0x800e262 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+249    : vldr s12, [r15, #+384]     : FloatMemRead :  D=0x00000000e7e01a02 A=0x800e3e0
+617451186: system.cpu: T0 : 0x800e266 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+253    : vadd.f32 s14, s14, s13     : SimdFloatAdd :  D=2143289344
+617462950: system.cpu: T0 : 0x800e26a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+257    : vadd.f32 s14, s14, s12     : SimdFloatAdd :  D=2143289344
+617557062: system.cpu: T0 : 0x800e26e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+261    : vsqrt.f32 s13, s14         : SimdFloatSqrt :  D=2143289344
+617639410: system.cpu: T0 : 0x800e272 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+265    : vdiv.f32 s7, s8, s13       : SimdFloatDiv :  D=2143289344
+617721758: system.cpu: T0 : 0x800e276 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+269    : vdiv.f32 s11, s9, s13      : SimdFloatDiv :  D=2143289344
+617804106: system.cpu: T0 : 0x800e27a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+273    : vdiv.f32 s12, s10, s13     : SimdFloatDiv :  D=2143289344
+617886454: system.cpu: T0 : 0x800e27e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+277    : vdiv.f32 s14, s15, s13     : SimdFloatDiv :  D=2143289344
+617886454: system.cpu: T0 : 0x800e282 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+281    : vstr s7, [r12, #+0]        : FloatMemWrite :  D=0x000000007fc00000 A=0x2001f950
+617892336: system.cpu: T0 : 0x800e286 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+285    : vstr s11, [r12, #+4]       : FloatMemWrite :  D=0x000000007fc00000 A=0x2001f954
+617898218: system.cpu: T0 : 0x800e28a @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+289    : vstr s12, [r12, #+8]       : FloatMemWrite :  D=0x000000007fc00000 A=0x2001f958
+617904100: system.cpu: T0 : 0x800e28e @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+293    : vstr s14, [r12, #+12]      : FloatMemWrite :  D=0x000000007fc00000 A=0x2001f95c
+617904100: system.cpu: T0 : 0x800e292 @_ZN12EntoAttitude19madgwick_update_imuIfEEN5Eigen10QuaternionIT_Li0EEERKS4_RKNS1_6MatrixIS3_Li3ELi1ELi0ELi3ELi1EEESA_S3_S3_+297    :   bx    lr                 : IntAlu :
+617957038: system.cpu: T0 : 0x800e4b8 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+207    : ldmstm
+617957038: system.cpu: T0 : 0x800e4b8 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+207. 0 :   ldr2_uop.w   r0,r1, [r6, #0] : MemRead :  D=0x000000007fc00000 A=0x2001f950
+617974684: system.cpu: T0 : 0x800e4b8 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+207. 1 :   ldr2_uop.w   r2,r3, [r6, #8] : MemRead :  D=0x000000007fc00000 A=0x2001f958
+617980566: system.cpu: T0 : 0x800e4bc @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+211    : ldmstm
+617980566: system.cpu: T0 : 0x800e4bc @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+211. 0 :   str_uop.w   r0, [r10, #0] : MemWrite :  D=0x000000007fc00000 A=0x2001fd00
+617986448: system.cpu: T0 : 0x800e4bc @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+211. 1 :   str_uop.w   r1, [r10, #4] : MemWrite :  D=0x000000007fc00000 A=0x2001fd04
+617992330: system.cpu: T0 : 0x800e4bc @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+211. 2 :   str_uop.w   r2, [r10, #8] : MemWrite :  D=0x000000007fc00000 A=0x2001fd08
+617998212: system.cpu: T0 : 0x800e4bc @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+211. 3 :   str_uop.w   r3, [r10, #12] : MemWrite :  D=0x000000007fc00000 A=0x2001fd0c
+618015858: system.cpu: T0 : 0x800e4c0 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+215    :   ldr.w   r3, [r8, #96]    : MemRead :  D=0x000000007fc00000 A=0x2001fd00
+618021740: system.cpu: T0 : 0x800e4c4 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+219    :   str.w   r3, [r8, #80]    : MemWrite :  D=0x000000007fc00000 A=0x2001fcf0
+618027622: system.cpu: T0 : 0x800e4c8 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+223    :   ldr.w   r3, [r8, #100]   : MemRead :  D=0x000000007fc00000 A=0x2001fd04
+618033504: system.cpu: T0 : 0x800e4cc @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+227    :   str.w   r3, [r8, #84]    : MemWrite :  D=0x000000007fc00000 A=0x2001fcf4
+618057032: system.cpu: T0 : 0x800e4d0 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+231    :   ldr.w   r3, [r8, #104]   : MemRead :  D=0x000000007fc00000 A=0x2001fd08
+618062914: system.cpu: T0 : 0x800e4d4 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+235    :   str.w   r3, [r8, #88]    : MemWrite :  D=0x000000007fc00000 A=0x2001fcf8
+618086442: system.cpu: T0 : 0x800e4d8 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+239    :   ldr.w   r3, [r8, #108]   : MemRead :  D=0x000000007fc00000 A=0x2001fd0c
+618092324: system.cpu: T0 : 0x800e4dc @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+243    :   str.w   r3, [r8, #92]    : MemWrite :  D=0x000000007fc00000 A=0x2001fcfc
+618104088: system.cpu: T0 : 0x800e4e0 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+247    :   movs   r0, #91           : IntAlu :  D=0x0000000000000000
+618115852: system.cpu: T0 : 0x800e4e2 @_ZN9EntoBench7HarnessIN12EntoAttitude15AttitudeProblemIfNS1_14FilterMadgwickIfLb0EEELb0ELb1EEELb0ELj30ELj2ELj0ELi1EE3runEv+249    :   bl.w   <_kill+23>        : IntAlu :  D=0x000000000800e4e7
+618180554: system.cpu: T0 : 0x800dcf4 @_kill+27    :   ldr   r1, [pc, #16]      : MemRead :  D=0x0000000020000a98 A=0x800dd08
+618180554: system.cpu: T0 : 0x800dcf6 @_ZL12m5_semi_callhmm.constprop.0.isra.0+1    :   movs   r3, #0            : IntAlu :  D=0x0000000000000001
+618186436: system.cpu: T0 : 0x800dcf8 @_ZL12m5_semi_callhmm.constprop.0.isra.0+3    :   movs   r0, r0, LSL #8    : IntAlu :  D=0x0000000000000000
+618192318: system.cpu: T0 : 0x800dcfa @_ZL12m5_semi_callhmm.constprop.0.isra.0+5    :   str   r0, [r1, #0]       : MemWrite :  D=0x0000000000005b00 A=0x20000a98
+618198200: system.cpu: T0 : 0x800dcfc @_ZL12m5_semi_callhmm.constprop.0.isra.0+7    :   str   r3, [r1, #4]       : MemWrite :  D=0x0000000000000000 A=0x20000a9c
+618221728: system.cpu: T0 : 0x800dcfe @_ZL12m5_semi_callhmm.constprop.0.isra.0+9    :   mov.w   r0, #256         : IntAlu :  D=0x0000000000000100
+618227610: system.cpu: T0 : 0x800dd02 @_ZL12m5_semi_callhmm.constprop.0.isra.0+13    :   str   r3, [r1, #8]       : MemWrite :  D=0x0000000000000000 A=0x20000aa0
+618233492: system.cpu: T0 : 0x800dd04 @_ZL12m5_semi_callhmm.constprop.0.isra.0+15    :   bkpt  #0xab  ; semihosting : IntAlu :
+
+*** ROI END at tick 618233492 ***
+  ROI ticks : 3752716
+  ROI cycles: 638.0  (at 170 MHz)
+
+Exiting after first ROI.
+
+============================================================
+Benchmark : bench-madgwick-float-imu
+ROI Start : 614480776
+ROI End   : 618233492
+Delta     : 3752716 ticks
+Cycles (total)    : 638.0  (at 170 MHz)
+  [debug] precise_start=614551360, precise_end=618092324
+
+Precise (kernel only, excluding m5op overhead):
+  First kernel inst : 614551360
+  Last kernel inst  : 618092324
+  Delta             : 3540964 ticks
+  Cycles (total)    : 602.0
+============================================================

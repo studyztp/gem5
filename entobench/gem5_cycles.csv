@@ -1,0 +1,6 @@
+benchmark,art_total_cycles,noart_total_cycles
+5pt-float,82131.0,115516.0
+fastbrief-small,1700945.0,2809689.0
+madgwick-float-imu,513.0,602.0
+robofly-lqr,318.0,390.0
+robofly-tinympc,3362513.0,5338639.0
