@@ -93,11 +93,15 @@ if debug_from_start:
         if flag_name in m5_debug.flags:
             m5_debug.flags[flag_name].enable()
 
+roi_counter = 1
+
 while True:
     exit_event = m5.simulate(args.tick_limit - m5.curTick())
     cause = exit_event.getCause()
 
     if cause == "workbegin":
+        if roi_counter != 0:
+            continue
         roi_start_tick = m5.curTick()
         print(f"\n*** ROI BEGIN at tick {roi_start_tick} ***")
         stats_reset()
@@ -111,25 +115,28 @@ while True:
                 print(f"  WARNING: Unknown debug flag '{flag_name}'")
 
     elif cause == "workend":
-        roi_end_tick = m5.curTick()
-        print(f"\n*** ROI END at tick {roi_end_tick} ***")
-        m5_debug.flags["Exec"].disable()
-        for flag_name in roi_flags:
-            if flag_name in m5_debug.flags:
-                m5_debug.flags[flag_name].disable()
-        stats_dump()
+        if roi_counter != 0:
+            roi_counter -= 1
+        else:
+            roi_end_tick = m5.curTick()
+            print(f"\n*** ROI END at tick {roi_end_tick} ***")
+            m5_debug.flags["Exec"].disable()
+            for flag_name in roi_flags:
+                if flag_name in m5_debug.flags:
+                    m5_debug.flags[flag_name].disable()
+            stats_dump()
 
-        if roi_start_tick is not None:
-            delta = roi_end_tick - roi_start_tick
-            ticks_per_cycle = TICK_PER_SEC // CLK_FREQ_HZ
-            cycles = delta / ticks_per_cycle
-            print(f"  ROI ticks : {delta}")
-            print(
-                f"  ROI cycles: {cycles:.1f}  (at {CLK_FREQ_HZ / 1e6:.0f} MHz)"
-            )
+            if roi_start_tick is not None:
+                delta = roi_end_tick - roi_start_tick
+                ticks_per_cycle = TICK_PER_SEC // CLK_FREQ_HZ
+                cycles = delta / ticks_per_cycle
+                print(f"  ROI ticks : {delta}")
+                print(
+                    f"  ROI cycles: {cycles:.1f}  (at {CLK_FREQ_HZ / 1e6:.0f} MHz)"
+                )
 
-        print(f"\nExiting after first ROI.")
-        break
+            print(f"\nExiting after first ROI.")
+            break
 
     elif "Stopped" in cause or "exit" in cause.lower():
         print(f"\nExiting @ tick {m5.curTick()} because {cause}")
