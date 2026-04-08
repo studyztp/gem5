@@ -26,6 +26,7 @@
 #define __MEM_CACHE_ART_HH__
 
 #include <deque>
+#include <list>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -77,27 +78,91 @@ class ART : public NoncoherentCache
     /** Requestor ID registered for ART prefetch traffic. */
     RequestorID artRequestorId;
 
-    /** Cycles to serve a request from the ART prefetch/current buffer. */
-    const Cycles bufferHitLatency;
-
-    /** Earliest tick at which the ART can accept the next request.
-     *  Models the 1-cycle AHB address phase [RM0440 Figure 3]. */
-    Tick nextAcceptTick = 0;
-
-    /** True when upstream needs retry after address phase busy. */
-    bool addrPhaseBusy = false;
-
-    /** Event to send retry after address phase frees. */
-    EventFunctionWrapper addrRetryEvent;
-
-    /** Send retry to upstream when address phase becomes free. */
-    void processAddrRetry();
+    /** Latency (in ticks) for serving from the ART prefetch/current buffer. */
+    const Tick bufferHitLatency;
 
     /** Start of the flash memory region (prefetch bounds check). */
     const Addr flashStartAddr;
 
     /** End of the flash memory region, inclusive (prefetch bounds). */
     const Addr flashEndAddr;
+
+    // ---------------------------------------------------------------
+    //  Pipeline: arriveBuffer → outputBuffer
+    // ---------------------------------------------------------------
+
+    /** A packet queued in the arrive or output buffer. */
+    struct DeferredPacket
+    {
+        PacketPtr pkt;
+        Tick tick;
+        DeferredPacket(PacketPtr _pkt, Tick _tick)
+            : pkt(_pkt), tick(_tick) {}
+    };
+
+    /** Incoming requests waiting for address-phase processing. */
+    std::deque<DeferredPacket> arriveBuffer;
+
+    /** Max entries in arriveBuffer (0 = unlimited). */
+    size_t arriveBufferSizeLimit;
+
+    /** Responses ready to be sent to upstream. */
+    std::list<DeferredPacket> outputBuffer;
+
+    /**
+     * Strictly one request in flight at a time.
+     * Set true when popArriveBuffer processes a request.
+     * Cleared when popOutputBuffer sends the response.
+     */
+    bool processingInFlight = false;
+
+    /** AHB address phase duration (in ticks). */
+    const Tick addressPhaseLatency;
+
+    /** Last stream ID seen (for AHB transfer retraction). */
+    uint32_t lastStreamId;
+
+    /** Stale packets to return as BadAddress on stream change. */
+    std::list<PacketPtr> staleReturnQueue;
+
+    /** Bit 3 of BaseCache::blocked bitmask for arriveBuffer full. */
+    static constexpr uint8_t BLOCKED_ARRIVE_FULL = (1 << 3);
+
+    /** Pop one entry from arriveBuffer and process it. */
+    void popArriveBuffer();
+    EventFunctionWrapper popArriveBufferEvent;
+
+    /** Drain outputBuffer: send responses to upstream. */
+    void popOutputBuffer();
+    EventFunctionWrapper popOutputBufferEvent;
+
+    /** Queue a response for sending from the output stage. */
+    void pushToOutputBuffer(PacketPtr pkt, Tick readyTick);
+
+    /** Schedule popOutputBufferEvent if outputBuffer has entries. */
+    void scheduleOutputDrain();
+
+    /**
+     * Schedule next popArriveBuffer if arriveBuffer is non-empty,
+     * processingInFlight is false, and event not already scheduled.
+     */
+    void scheduleNextArriveBuffer();
+
+    /** Unblock the port if arriveBuffer is below capacity. */
+    void maybeUnblockArriveBuffer();
+
+    /** Block the port because arriveBuffer is full. */
+    void blockForArriveBuffer();
+
+    /** Unblock the port (arriveBuffer drained below capacity). */
+    void unblockForArriveBuffer();
+
+    /** Check if port is blocked due to arriveBuffer full. */
+    bool isBlockedForArriveBuffer() const;
+
+    /** Retry sending stale (bad-address) packets from stream change. */
+    void retryStaleReturn();
+    EventFunctionWrapper staleReturnEvent;
 
   protected:
     QueueEntry* getNextQueueEntry() override;
@@ -117,6 +182,27 @@ class ART : public NoncoherentCache
      * @return true if the block is valid in the cache.
      */
     bool isDataInCache(PacketPtr pkt);
+
+    /**
+     * Insert prefetch response data into the I-Cache tag store.
+     *
+     * Per [RM0440 Section 3.3.4]: "Each time a miss occurs (requested
+     * data not present in the currently used instruction line, in the
+     * prefetched instruction line or in the instruction cache memory),
+     * the line read is copied into the instruction cache memory."
+     *
+     * This is called when a prefetch response arrives and the CPU was
+     * waiting for it (i.e., the CPU missed all three: curBuf, pfBuf,
+     * and I-Cache).  The data is written into the NoncoherentCache tag
+     * store so that future accesses to the same address can hit the
+     * I-Cache directly.
+     *
+     * @param pkt  The prefetch response packet (block-aligned, blkSize
+     *             bytes, with valid data).  Must NOT be deleted before
+     *             this call.
+     * @return true if the data was successfully inserted into the cache.
+     */
+    bool fillCacheWithPrefetchData(PacketPtr pkt);
 
   public:
 
@@ -586,6 +672,8 @@ class ART : public NoncoherentCache
         statistics::Scalar prefetchesAllocated;
         statistics::Scalar prefetchesIssued;
         statistics::Scalar prefetchesCompleted;
+        statistics::Scalar prefetchCacheFills;
+        statistics::Scalar prefetchCacheFillSkips;
     } stats;
 };
 

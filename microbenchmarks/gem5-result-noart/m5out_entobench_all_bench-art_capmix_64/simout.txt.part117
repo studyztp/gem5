@@ -1,0 +1,125 @@
+                 : IntAlu :
+1855371024: system.cpu: T0 : 0x8007360 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+143    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855382788: system.cpu: T0 : 0x8007364 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+147    :   nop                      : IntAlu :
+1855400434: system.cpu: T0 : 0x8007366 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+149    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855406316: system.cpu: T0 : 0x800736a @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+153    :   nop                      : IntAlu :
+1855412198: system.cpu: T0 : 0x800736c @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+155    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855423962: system.cpu: T0 : 0x8007370 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+159    :   nop                      : IntAlu :
+1855435726: system.cpu: T0 : 0x8007372 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+161    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855441608: system.cpu: T0 : 0x8007376 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+165    :   nop                      : IntAlu :
+1855453372: system.cpu: T0 : 0x8007378 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+167    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855465136: system.cpu: T0 : 0x800737c @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+171    :   nop                      : IntAlu :
+1855482782: system.cpu: T0 : 0x800737e @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+173    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855488664: system.cpu: T0 : 0x8007382 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+177    :   nop                      : IntAlu :
+1855494546: system.cpu: T0 : 0x8007384 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+179    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855512192: system.cpu: T0 : 0x8007388 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+183    :   nop                      : IntAlu :
+1855523956: system.cpu: T0 : 0x800738a @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+185    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855529838: system.cpu: T0 : 0x800738e @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+189    :   nop                      : IntAlu :
+1855541602: system.cpu: T0 : 0x8007390 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+191    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855553366: system.cpu: T0 : 0x8007394 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+195    :   nop                      : IntAlu :
+1855571012: system.cpu: T0 : 0x8007396 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+197    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855576894: system.cpu: T0 : 0x800739a @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+201    :   nop                      : IntAlu :
+1855582776: system.cpu: T0 : 0x800739c @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+203    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855600422: system.cpu: T0 : 0x80073a0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+207    :   nop                      : IntAlu :
+1855612186: system.cpu: T0 : 0x80073a2 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+209    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855618068: system.cpu: T0 : 0x80073a6 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+213    :   nop                      : IntAlu :
+1855629832: system.cpu: T0 : 0x80073a8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+215    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855641596: system.cpu: T0 : 0x80073ac @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+219    :   nop                      : IntAlu :
+1855659242: system.cpu: T0 : 0x80073ae @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+221    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855665124: system.cpu: T0 : 0x80073b2 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+225    :   nop                      : IntAlu :
+1855671006: system.cpu: T0 : 0x80073b4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+227    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855682770: system.cpu: T0 : 0x80073b8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+231    :   nop                      : IntAlu :
+1855694534: system.cpu: T0 : 0x80073ba @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+233    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855700416: system.cpu: T0 : 0x80073be @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+237    :   nop                      : IntAlu :
+1855712180: system.cpu: T0 : 0x80073c0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+239    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855723944: system.cpu: T0 : 0x80073c4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+243    :   nop                      : IntAlu :
+1855741590: system.cpu: T0 : 0x80073c6 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+245    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855747472: system.cpu: T0 : 0x80073ca @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+249    :   nop                      : IntAlu :
+1855753354: system.cpu: T0 : 0x80073cc @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+251    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855771000: system.cpu: T0 : 0x80073d0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+255    :   nop                      : IntAlu :
+1855782764: system.cpu: T0 : 0x80073d2 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+257    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855788646: system.cpu: T0 : 0x80073d6 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+261    :   nop                      : IntAlu :
+1855800410: system.cpu: T0 : 0x80073d8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+263    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855812174: system.cpu: T0 : 0x80073dc @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+267    :   nop                      : IntAlu :
+1855829820: system.cpu: T0 : 0x80073de @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+269    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855835702: system.cpu: T0 : 0x80073e2 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+273    :   nop                      : IntAlu :
+1855841584: system.cpu: T0 : 0x80073e4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+275    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855859230: system.cpu: T0 : 0x80073e8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+279    :   nop                      : IntAlu :
+1855870994: system.cpu: T0 : 0x80073ea @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+281    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855876876: system.cpu: T0 : 0x80073ee @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+285    :   nop                      : IntAlu :
+1855888640: system.cpu: T0 : 0x80073f0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+287    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855900404: system.cpu: T0 : 0x80073f4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+291    :   nop                      : IntAlu :
+1855912168: system.cpu: T0 : 0x80073f6 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+293    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855918050: system.cpu: T0 : 0x80073fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+297    :   nop                      : IntAlu :
+1855923932: system.cpu: T0 : 0x80073fc @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+299    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855941578: system.cpu: T0 : 0x8007400 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+303    :   nop                      : IntAlu :
+1855953342: system.cpu: T0 : 0x8007402 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+305    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855959224: system.cpu: T0 : 0x8007406 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+309    :   nop                      : IntAlu :
+1855970988: system.cpu: T0 : 0x8007408 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+311    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1855982752: system.cpu: T0 : 0x800740c @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+315    :   nop                      : IntAlu :
+1856000398: system.cpu: T0 : 0x800740e @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+317    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1856006280: system.cpu: T0 : 0x8007412 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+321    :   nop                      : IntAlu :
+1856012162: system.cpu: T0 : 0x8007414 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+323    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1856029808: system.cpu: T0 : 0x8007418 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+327    :   nop                      : IntAlu :
+1856041572: system.cpu: T0 : 0x800741a @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+329    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1856047454: system.cpu: T0 : 0x800741e @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+333    :   nop                      : IntAlu :
+1856059218: system.cpu: T0 : 0x8007420 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+335    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1856070982: system.cpu: T0 : 0x8007424 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+339    :   nop                      : IntAlu :
+1856088628: system.cpu: T0 : 0x8007426 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+341    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1856094510: system.cpu: T0 : 0x800742a @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+345    :   nop                      : IntAlu :
+1856100392: system.cpu: T0 : 0x800742c @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+347    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1856118038: system.cpu: T0 : 0x8007430 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+351    :   nop                      : IntAlu :
+1856129802: system.cpu: T0 : 0x8007432 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+353    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1856135684: system.cpu: T0 : 0x8007436 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+357    :   nop                      : IntAlu :
+1856141566: system.cpu: T0 : 0x8007438 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+359    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1856153330: system.cpu: T0 : 0x800743c @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+363    :   nop                      : IntAlu :
+1856170976: system.cpu: T0 : 0x800743e @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+365    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1856176858: system.cpu: T0 : 0x8007442 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+369    :   nop                      : IntAlu :
+1856182740: system.cpu: T0 : 0x8007444 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+371    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1856200386: system.cpu: T0 : 0x8007448 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+375    :   nop                      : IntAlu :
+1856212150: system.cpu: T0 : 0x800744a @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+377    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1856218032: system.cpu: T0 : 0x800744e @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+381    :   nop                      : IntAlu :
+1856229796: system.cpu: T0 : 0x8007450 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+383    :   add.w   r1, r1, #0       : IntAlu :  D=0x0000000020000a9c
+1856241560: system.cpu: T0 : 0x8007454 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+387    :   subs   r0, r0, #1        : IntAlu :  D=0x0000000000000001
+1856259206: system.cpu: T0 : 0x8007456 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+389    :   b.w   <_ZL7end_roiv+27>  : IntAlu : Predicated False
+1856265088: system.cpu: T0 : 0x800745a @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+393    :   bx    lr                 : IntAlu :
+1856323908: system.cpu: T0 : 0x8007546 @main+233    :   subs   r4, r4, #1        : IntAlu :  D=0x0000000000000001
+1856341554: system.cpu: T0 : 0x8007548 @main+235    :   b   <main+225>           : IntAlu : Predicated False
+1856353318: system.cpu: T0 : 0x800754a @main+237    :   bl.w   <_ZL9start_roiv+11> : IntAlu :  D=0x000000000800754f
+1856388610: system.cpu: T0 : 0x80072b4 @_ZL9start_roiv+15    : push
+1856388610: system.cpu: T0 : 0x80072b4 @_ZL9start_roiv+15. 0 :   str_uop   r3, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fdf8
+1856394492: system.cpu: T0 : 0x80072b4 @_ZL9start_roiv+15. 1 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x000000000800754f A=0x2001fdfc
+1856400374: system.cpu: T0 : 0x80072b4 @_ZL9start_roiv+15. 2 :   subi_uop   sp, sp, #8    : IntAlu :  D=0x000000002001fdf8
+1856406256: system.cpu: T0 : 0x80072b6 @_ZL7end_roiv+1    :   movs   r0, #91           : IntAlu :  D=0x0000000000000000
+1856412138: system.cpu: T0 : 0x80072b8 @_ZL7end_roiv+3    :   bl.w   <_ZN9EntoBench7HarnessINS_12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EEELb1ELj1ELj10ELj0ELi1EE16update_aggregateERK10ROIMetrics+99> : IntAlu :  D=0x00000000080072bd
+1856465076: system.cpu: T0 : 0x800728c @_ZN9EntoBench7HarnessINS_12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EEELb1ELj1ELj10ELj0ELi1EE16update_aggregateERK10ROIMetrics+103    :   ldr   r1, [pc, #16]      : MemRead :  D=0x0000000020000a9c A=0x80072a0
+1856465076: system.cpu: T0 : 0x800728e @_ZL12m5_semi_callhmm.constprop.0.isra.0+1    :   movs   r3, #0            : IntAlu :  D=0x0000000000000001
+1856470958: system.cpu: T0 : 0x8007290 @_ZL12m5_semi_callhmm.constprop.0.isra.0+3    :   movs   r0, r0, LSL #8    : IntAlu :  D=0x0000000000000000
+1856476840: system.cpu: T0 : 0x8007292 @_ZL12m5_semi_callhmm.constprop.0.isra.0+5    :   str   r0, [r1, #0]       : MemWrite :  D=0x0000000000005b00 A=0x20000a9c
+1856482722: system.cpu: T0 : 0x8007294 @_ZL12m5_semi_callhmm.constprop.0.isra.0+7    :   str   r3, [r1, #4]       : MemWrite :  D=0x0000000000000000 A=0x20000aa0
+1856506250: system.cpu: T0 : 0x8007296 @_ZL12m5_semi_callhmm.constprop.0.isra.0+9    :   mov.w   r0, #256         : IntAlu :  D=0x0000000000000100
+1856512132: system.cpu: T0 : 0x800729a @_ZL12m5_semi_callhmm.constprop.0.isra.0+13    :   str   r3, [r1, #8]       : MemWrite :  D=0x0000000000000000 A=0x20000aa4
+1856518014: system.cpu: T0 : 0x800729c @_ZL12m5_semi_callhmm.constprop.0.isra.0+15    :   bkpt  #0xab  ; semihosting : IntAlu :
+
+*** ROI END at tick 1856518014 ***
+  ROI ticks : 1465559120
+  ROI cycles: 249160.0  (at 170 MHz)
+
+Exiting after first ROI.
+
+============================================================
+Benchmark : bench-art_capmix_64
+ROI Start : 390958894
+ROI End   : 1856518014
+Delta     : 1465559120 ticks
+Cycles (total)    : 249160.0  (at 170 MHz)
+Cycles (per call) : 24916.0  (total / 10 inner_reps)
+  [debug] precise_start=391100062, precise_end=1856353318
+
+Precise (kernel only, excluding m5op overhead):
+  First kernel inst : 391100062
+  Last kernel inst  : 1856353318
+  Delta             : 1465253256 ticks
+  Cycles (total)    : 249108.0
+  Cycles (per call) : 24910.8  (total / 10 inner_reps)
+============================================================

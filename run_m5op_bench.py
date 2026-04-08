@@ -55,6 +55,13 @@ parser.add_argument(
     "(e.g., MinorExecute,MinorMem)",
 )
 parser.add_argument(
+    "--inner-reps",
+    type=int,
+    default=10,
+    help="Number of inner repetitions in the kernel loop "
+    "(for computing per-call cycles)",
+)
+parser.add_argument(
     "--debug-from-start",
     action="store_true",
     help="If start printing debug info from start",
@@ -235,13 +242,22 @@ print(f"Benchmark : {bench_name}")
 
 ticks_per_cycle = TICK_PER_SEC // CLK_FREQ_HZ
 
+inner_reps = args.inner_reps
+
 if roi_start_tick is not None and roi_end_tick is not None:
     delta = roi_end_tick - roi_start_tick
     cycles = delta / ticks_per_cycle
     print(f"ROI Start : {roi_start_tick}")
     print(f"ROI End   : {roi_end_tick}")
     print(f"Delta     : {delta} ticks")
-    print(f"Cycles    : {cycles:.1f}  (at {CLK_FREQ_HZ / 1e6:.0f} MHz)")
+    print(
+        f"Cycles (total)    : {cycles:.1f}  (at {CLK_FREQ_HZ / 1e6:.0f} MHz)"
+    )
+    if inner_reps > 1:
+        print(
+            f"Cycles (per call) : {cycles / inner_reps:.1f}  "
+            f"(total / {inner_reps} inner_reps)"
+        )
 
     print(
         f"  [debug] precise_start={precise_start_tick}, precise_end={precise_end_tick}"
@@ -254,7 +270,12 @@ if roi_start_tick is not None and roi_end_tick is not None:
         print(f"  First kernel inst : {precise_start_tick}")
         print(f"  Last kernel inst  : {precise_end_tick}")
         print(f"  Delta             : {precise_delta} ticks")
-        print(f"  Cycles            : {precise_cycles:.1f}")
+        print(f"  Cycles (total)    : {precise_cycles:.1f}")
+        if inner_reps > 1:
+            print(
+                f"  Cycles (per call) : {precise_cycles / inner_reps:.1f}  "
+                f"(total / {inner_reps} inner_reps)"
+            )
 else:
     missing = []
     if roi_start_tick is None:

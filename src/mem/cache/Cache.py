@@ -208,11 +208,10 @@ class ARTCache(NoncoherentCache):
         "issue the allocated prefetch instead of waiting for the next request",
     )
 
-    buffer_hit_latency = Param.Cycles(
-        1,
-        "Latency in CPU cycles for serving from the ART prefetch/current "
-        "buffer.  Real STM32 achieves 0 WS; gem5 minimum is 1 due to "
-        "packet queue scheduling (curTick+1 enforcement).",
+    buffer_hit_latency = Param.Latency(
+        "0ns",
+        "Latency for serving from the ART prefetch/current buffer. "
+        "Real STM32 achieves 0 WS.",
     )
 
     flash_start_addr = Param.Addr(
@@ -220,6 +219,11 @@ class ARTCache(NoncoherentCache):
     )
     flash_end_addr = Param.Addr(
         MaxAddr, "End address of the flash memory region for prefetch bounds"
+    )
+
+    address_phase_latency = Param.Latency("0ns", "AHB address phase duration")
+    arrive_buffer_size = Param.Int(
+        1, "Max entries in arrive buffer (0 = unlimited)"
     )
 
     blk_size = Self.cache_blk_size

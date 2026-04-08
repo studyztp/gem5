@@ -273,10 +273,6 @@ class STM32G474RETimingBoard(ArmMSystem):
         self.system_bus = _make_system_bus()
 
         # -- Memories: split flash vs SRAM onto separate buses --
-        # Flash memories connect to BOTH flash_bus (ICode) and
-        # dcode_flash_bus (DCode).  This models the real STM32G4 flash
-        # controller's dual-port interface — one physical flash with
-        # independent ICode/DCode read ports [RM0440 §3.1].
         flash_starts = {int(r.start) for r in platform.code_ranges}
 
         self.mem_ranges = []
@@ -285,9 +281,19 @@ class STM32G474RETimingBoard(ArmMSystem):
             self.mem_ranges.append(mem.range)
             if int(mem.range.start) in flash_starts:
                 mem.port = self.flash_bus.mem_side_ports
-                mem.port = self.dcode_flash_bus.mem_side_ports
+                if not enable_art:
+                    # Without ART: flash is PipelinedSimpleMemory
+                    # (VectorResponsePort).  Also connect to DCode flash
+                    # bus to model the real dual-port interface [RM0440 §3.1].
+                    mem.port = self.dcode_flash_bus.mem_side_ports
             else:
                 mem.port = self.system_bus.mem_side_ports
+
+        if enable_art:
+            # With ART: flash is SimpleMemory (single port) on flash_bus.
+            # Route dcode_flash_bus through flash_bus so DCode ART cache
+            # can reach flash too.
+            self.dcode_flash_bus.mem_side_ports = self.flash_bus.cpu_side_ports
 
         # system_bus routes flash addresses to flash_bus so that
         # gem5's system_port (functional access) can reach all memories.
@@ -311,9 +317,9 @@ class STM32G474RETimingBoard(ArmMSystem):
             self.art_icache = ARTCache(
                 size="1KiB",
                 assoc=4,
-                tag_latency=1,
-                data_latency=1,
-                response_latency=1,
+                tag_latency=0,
+                data_latency=0,
+                response_latency=0,
                 mshrs=2,
                 tgts_per_mshr=2,
                 write_buffers=0,
@@ -325,19 +331,22 @@ class STM32G474RETimingBoard(ArmMSystem):
                 cache_blk_size=8,
                 pf_blk_size=8,
                 enable_prefetch=True,
-                prefetch_on_cache_hit=False,
-                buffer_hit_latency=0,  # real HW = 0 WS
+                prefetch_on_cache_hit=True,
+                buffer_hit_latency="0ns",  # real HW = 0 WS
                 flash_start_addr=flash_ranges[0].start,
                 flash_end_addr=flash_ranges[-1].end,
+                address_phase_latency="500ps",
+                arrive_buffer_size=0,
+                # direct_memory_mode=True
             )
 
             # -- ART D-Cache: 256B, 8 lines x 4x8B sectors, 2-way --
             self.art_dcache = NoncoherentCache(
                 size="256B",
                 assoc=2,
-                tag_latency=1,
-                data_latency=1,
-                response_latency=1,
+                tag_latency=0,
+                data_latency=0,
+                response_latency=0,
                 mshrs=2,
                 tgts_per_mshr=2,
                 write_buffers=0,

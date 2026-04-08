@@ -305,6 +305,7 @@ PipelinedSimpleMemory::MemoryPort::recvTimingReq(PacketPtr pkt)
                     portId, lastStreamId, streamId);
             lastStreamId = streamId;
             while (!arriveBuffer.empty()
+                    && arriveBuffer.front().pkt->req->hasStreamId()
                     && arriveBuffer.front().pkt->req->streamId()!=streamId) {
                 PacketPtr stale = arriveBuffer.front().pkt;
                 DPRINTF(PipelinedMem, "port[%d] returning stale arrival "

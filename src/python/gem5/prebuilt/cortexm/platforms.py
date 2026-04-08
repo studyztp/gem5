@@ -280,52 +280,48 @@ class STM32G474REPlatform(ArmMPlatform):
         firmware places the vector table at 0x08000000.
 
         Args:
-            enable_art: If True, the ART accelerator models the AHB
-                address phase (CPU->ART), so Flash does not need its own
-                address_phase_cycles.  If False, Flash models the AHB
-                address phase directly (CPU->Flash).
+            enable_art: If True, Flash uses SimpleMemory (the ART cache
+                sits between CPU and Flash, handling address phase and
+                buffering).  If False, Flash uses PipelinedSimpleMemory
+                to model AHB address phase directly (CPU->Flash).
         """
         # Flash timing at 170 MHz: 4 wait states [RM0440 Table 19].
-        #
-        # Without ART: CPU accesses Flash via AHB directly.
-        #   address_phase_cycles=1 (default): AHB address phase (1 cy)
-        #   latency="29ns": data phase (ceil(29000/5882) = 5 cy)
-        #   Total: 1 + 5 = 6 cy per Flash access
-        #   read_buffer_size=8: 64-bit Flash read serves 2 ICode fetches
-        #
-        # With ART: ART models the AHB address phase (CPU->ART).
-        #   address_phase_cycles=0: no extra address phase on Flash
-        #   latency="29ns": full Flash access time (5 cy)
-        #   Total: 5 cy from Flash (ART adds 1 cy address on top)
-        #   read_buffer_size=0: ART has its own buffers, Flash read
-        #   buffer is redundant
         if enable_art:
-            flash_addr_latency = "0ns"
-            flash_read_buf = [0, 0]
+            # ART cache sits between CPU and Flash, handling address
+            # phase and buffering.  Flash just needs raw access latency.
+            flash_memories = [
+                SimpleMemory(
+                    range=AddrRange(0x08000000, size="256KiB"),
+                    latency="23000ps",
+                ),
+                SimpleMemory(
+                    range=AddrRange(0x08040000, size="256KiB"),
+                    latency="23000ps",
+                ),
+            ]
         else:
-            flash_addr_latency = "500ps"
-            flash_read_buf = [8, 8]
+            # No ART: CPU accesses Flash via AHB directly.
+            #   address_phase_latency="500ps": AHB address phase
+            #   latency="23000ps": data phase
+            #   read_buffer_size=8: 64-bit Flash read serves 2 fetches
+            flash_memories = [
+                PipelinedSimpleMemory(
+                    range=AddrRange(0x08000000, size="256KiB"),
+                    latency="23000ps",
+                    address_phase_latency="500ps",
+                    port_priority=[0, 1],
+                    port_read_buffer_size=[8, 8],
+                ),
+                PipelinedSimpleMemory(
+                    range=AddrRange(0x08040000, size="256KiB"),
+                    latency="23000ps",
+                    address_phase_latency="500ps",
+                    port_priority=[0, 1],
+                    port_read_buffer_size=[8, 8],
+                ),
+            ]
 
-        return [
-            # Flash Bank 1: 4 WS at 170MHz [RM0440 Table 19].
-            # port[0] = ICode (instruction fetch), priority=0 (low)
-            # port[1] = DCode (literal pool data), priority=1 (high)
-            # DCode has priority over ICode [RM0440 §3.3.4]
-            PipelinedSimpleMemory(
-                range=AddrRange(0x08000000, size="256KiB"),
-                latency="23000ps",
-                address_phase_latency=flash_addr_latency,
-                port_priority=[0, 1],
-                port_read_buffer_size=flash_read_buf,
-            ),
-            # Flash Bank 2: same config as Bank 1.
-            PipelinedSimpleMemory(
-                range=AddrRange(0x08040000, size="256KiB"),
-                latency="23000ps",
-                address_phase_latency=flash_addr_latency,
-                port_priority=[0, 1],
-                port_read_buffer_size=flash_read_buf,
-            ),
+        return flash_memories + [
             # SRAM1: 80KB @ 0x20000000, zero wait state [RM0440 §2].
             SimpleMemory(
                 range=AddrRange(0x20000000, size="80KiB"),

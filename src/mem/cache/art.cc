@@ -20,9 +20,20 @@ ART::ART(const ARTCacheParams &p)
       artPrefetchOrder(0),
       artRequestorId(p.system->getRequestorId(this)),
       bufferHitLatency(p.buffer_hit_latency),
-      addrRetryEvent([this]{ processAddrRetry(); }, name()),
       flashStartAddr(p.flash_start_addr),
       flashEndAddr(p.flash_end_addr),
+      arriveBufferSizeLimit(p.arrive_buffer_size),
+      addressPhaseLatency(p.address_phase_latency),
+      lastStreamId(0),
+      popArriveBufferEvent(
+          [this]{ popArriveBuffer(); },
+          name() + ".popArriveBuffer", false, Event::Default_Pri),
+      popOutputBufferEvent(
+          [this]{ popOutputBuffer(); },
+          name() + ".popOutputBuffer", false, Event::Default_Pri - 1),
+      staleReturnEvent(
+          [this]{ retryStaleReturn(); },
+          name() + ".staleReturn"),
       prefetchBuffer(pfBlkSize),
       currentBuffer(pfBlkSize),
       nextPfAddr(0),
@@ -67,7 +78,11 @@ ART::ARTStats::ARTStats(ART &art)
       ADD_STAT(prefetchesIssued, statistics::units::Count::get(),
                "Total prefetch requests actually sent to memory"),
       ADD_STAT(prefetchesCompleted, statistics::units::Count::get(),
-               "Total prefetch responses received from memory")
+               "Total prefetch responses received from memory"),
+      ADD_STAT(prefetchCacheFills, statistics::units::Count::get(),
+               "Prefetch responses inserted into the I-Cache"),
+      ADD_STAT(prefetchCacheFillSkips, statistics::units::Count::get(),
+               "Prefetch cache fills skipped (already cached or alloc failed)")
 {
 }
 
@@ -145,12 +160,216 @@ ART::isDataInCache(PacketPtr pkt)
     return blk && blk->isValid();
 }
 
+bool
+ART::fillCacheWithPrefetchData(PacketPtr pkt)
+{
+    Addr blkAddr = pkt->getAddr();
+    bool is_secure = pkt->isSecure();
+
+    // Check if already in cache — skip if so
+    CacheBlk *existing = tags->findBlock({blkAddr, is_secure});
+    if (existing && existing->isValid()) {
+        DPRINTF(ARTCache,
+                "fillCacheWithPrefetchData: addr=%s already in cache, "
+                "skipping\n", addrToString(blkAddr));
+        ++stats.prefetchCacheFillSkips;
+        return false;
+    }
+
+    // Sanity checks on the packet
+    if (!pkt->hasData()) {
+        DPRINTF(ARTCache,
+                "fillCacheWithPrefetchData: addr=%s packet has no data, "
+                "skipping\n", addrToString(blkAddr));
+        ++stats.prefetchCacheFillSkips;
+        return false;
+    }
+
+    if (pkt->getSize() != blkSize) {
+        DPRINTF(ARTCache,
+                "fillCacheWithPrefetchData: addr=%s size mismatch "
+                "(pkt=%u, blkSize=%u), skipping\n",
+                addrToString(blkAddr), pkt->getSize(), blkSize);
+        ++stats.prefetchCacheFillSkips;
+        return false;
+    }
+
+    // Check for conflicting MSHR or write buffer entries
+    if (mshrQueue.findMatch(blkAddr, is_secure)) {
+        DPRINTF(ARTCache,
+                "fillCacheWithPrefetchData: addr=%s conflicts with "
+                "MSHR entry, skipping\n", addrToString(blkAddr));
+        ++stats.prefetchCacheFillSkips;
+        return false;
+    }
+    if (writeBuffer.findMatch(blkAddr, is_secure)) {
+        DPRINTF(ARTCache,
+                "fillCacheWithPrefetchData: addr=%s conflicts with "
+                "write buffer entry, skipping\n", addrToString(blkAddr));
+        ++stats.prefetchCacheFillSkips;
+        return false;
+    }
+
+    // Allocate a cache block (find victim, evict if needed, insert tag)
+    PacketList writebacks;
+    CacheBlk *blk = allocateBlock(pkt, writebacks);
+
+    if (!blk) {
+        DPRINTF(ARTCache,
+                "fillCacheWithPrefetchData: addr=%s block allocation "
+                "failed, skipping\n", addrToString(blkAddr));
+        ++stats.prefetchCacheFillSkips;
+        return false;
+    }
+
+    // Copy data from packet into the cache block
+    pkt->writeDataToBlock(blk->data, blkSize);
+
+    // Mark block as readable (noncoherent icache, no coherence needed)
+    blk->setCoherenceBits(CacheBlk::ReadableBit);
+    blk->setCoherenceBits(CacheBlk::WritableBit);
+
+    // Set ready time
+    blk->setWhenReady(clockEdge(fillLatency) +
+                      pkt->headerDelay + pkt->payloadDelay);
+
+    DPRINTF(ARTCache,
+            "fillCacheWithPrefetchData: addr=%s inserted into I-Cache "
+            "(fills=%d)\n",
+            addrToString(blkAddr),
+            stats.prefetchCacheFills.value() + 1);
+    ++stats.prefetchCacheFills;
+
+    // Handle any writebacks caused by eviction
+    doWritebacks(writebacks, clockEdge(fillLatency));
+
+    return true;
+}
+
 void
 ART::serveFromBuffer(PacketPtr pkt, ARTPrefetchBuffer &buf)
 {
     pkt->setData(buf.getData(pkt->getAddr(), pkt->getSize()));
     pkt->makeTimingResponse();
-    cpuSidePort.schedTimingResp(pkt, clockEdge(bufferHitLatency));
+    // +1 tick avoids same-tick response which can crash MinorCPU's
+    // SingleStageFetch pipeline (response must not arrive in the
+    // same event processing round as the request).
+    pushToOutputBuffer(pkt, curTick() + bufferHitLatency + 1);
+}
+
+// -------------------------------------------------------------------
+//  Pipeline: arrive buffer blocking helpers
+// -------------------------------------------------------------------
+
+void
+ART::blockForArriveBuffer()
+{
+    DPRINTF(ARTCache, "blockForArriveBuffer: blocking port "
+            "(arriveBuffer at capacity %d)\n", arriveBuffer.size());
+    if (blocked == 0)
+        cpuSidePort.setBlocked();
+    blocked |= BLOCKED_ARRIVE_FULL;
+}
+
+void
+ART::unblockForArriveBuffer()
+{
+    DPRINTF(ARTCache, "unblockForArriveBuffer: unblocking port\n");
+    blocked &= ~BLOCKED_ARRIVE_FULL;
+    if (blocked == 0)
+        cpuSidePort.clearBlocked();
+}
+
+bool
+ART::isBlockedForArriveBuffer() const
+{
+    return (blocked & BLOCKED_ARRIVE_FULL) != 0;
+}
+
+void
+ART::maybeUnblockArriveBuffer()
+{
+    if (isBlockedForArriveBuffer() &&
+        (arriveBufferSizeLimit == 0 ||
+         arriveBuffer.size() < arriveBufferSizeLimit)) {
+        unblockForArriveBuffer();
+    }
+}
+
+void
+ART::scheduleNextArriveBuffer()
+{
+    if (!arriveBuffer.empty() && !processingInFlight &&
+        !popArriveBufferEvent.scheduled()) {
+        DPRINTF(ARTCache, "scheduleNextArriveBuffer: scheduling at "
+                "tick %d\n", curTick());
+        schedule(popArriveBufferEvent, curTick());
+    }
+}
+
+// -------------------------------------------------------------------
+//  Pipeline: output buffer methods
+// -------------------------------------------------------------------
+
+void
+ART::pushToOutputBuffer(PacketPtr pkt, Tick readyTick)
+{
+    DPRINTF(ARTCache, "pushToOutputBuffer: addr=%s readyTick=%d\n",
+            addrToString(pkt->getAddr()), readyTick);
+    outputBuffer.emplace_back(pkt, readyTick);
+    scheduleOutputDrain();
+}
+
+void
+ART::scheduleOutputDrain()
+{
+    if (!outputBuffer.empty() && !popOutputBufferEvent.scheduled()) {
+        Tick outTick = std::max(outputBuffer.front().tick, curTick());
+        DPRINTF(ARTCache, "scheduleOutputDrain: scheduling at tick %d\n",
+                outTick);
+        schedule(popOutputBufferEvent, outTick);
+    }
+}
+
+void
+ART::popOutputBuffer()
+{
+    if (outputBuffer.empty())
+        return;
+
+    DeferredPacket &dp = outputBuffer.front();
+    DPRINTF(ARTCache, "popOutputBuffer: sending response addr=%s\n",
+            addrToString(dp.pkt->getAddr()));
+    cpuSidePort.schedTimingResp(dp.pkt, curTick());
+    outputBuffer.pop_front();
+
+    processingInFlight = false;
+    DPRINTF(ARTCache, "popOutputBuffer: processingInFlight cleared\n");
+
+    // Advance the pipeline: process next arriveBuffer entry.
+    scheduleNextArriveBuffer();
+
+    // If more responses queued, schedule for the next one.
+    if (!outputBuffer.empty() && !popOutputBufferEvent.scheduled()) {
+        Tick outTick = std::max(outputBuffer.front().tick, curTick());
+        reschedule(popOutputBufferEvent, outTick, true);
+    }
+}
+
+void
+ART::retryStaleReturn()
+{
+    while (!staleReturnQueue.empty()) {
+        PacketPtr stale = staleReturnQueue.front();
+        DPRINTF(ARTCache, "retryStaleReturn: sending stale response "
+                "addr=%s\n", addrToString(stale->getAddr()));
+        if (!cpuSidePort.sendTimingResp(stale)) {
+            DPRINTF(ARTCache, "retryStaleReturn: send failed, "
+                    "waiting for recvRespRetry\n");
+            return;
+        }
+        staleReturnQueue.pop_front();
+    }
 }
 
 // -------------------------------------------------------------------
@@ -158,31 +377,105 @@ ART::serveFromBuffer(PacketPtr pkt, ARTPrefetchBuffer &buf)
 // -------------------------------------------------------------------
 
 void
-ART::processAddrRetry()
-{
-    DPRINTF(ARTCache, "processAddrRetry: sending retry to upstream\n");
-    addrPhaseBusy = false;
-    cpuSidePort.sendRetryReq();
-}
-
-void
 ART::recvTimingReq(PacketPtr pkt)
 {
     panic_if(!pkt->isRead(), "ART only supports read requests.");
 
-    // AHB address phase: 1-cycle occupancy [RM0440 Figure 3].
-    if (curTick() < nextAcceptTick) {
-        DPRINTF(ARTCache, "recvTimingReq: address phase busy until "
-                "tick %d (curTick=%d), rejecting\n",
-                nextAcceptTick, curTick());
-        addrPhaseBusy = true;
-        if (!addrRetryEvent.scheduled())
-            schedule(addrRetryEvent, nextAcceptTick);
+    DPRINTF(ARTCache, "recvTimingReq: addr=%s arriveBuffer=%d "
+            "processingInFlight=%d\n",
+            addrToString(pkt->getAddr()), arriveBuffer.size(),
+            processingInFlight);
+
+    // --- Stream ID: flush stale requests on stream change ---
+    if (pkt->req->hasStreamId()) {
+        uint32_t streamId = pkt->req->streamId();
+        if (lastStreamId != streamId) {
+            DPRINTF(ARTCache, "recvTimingReq: stream change %d -> %d, "
+                    "flushing stale arrivals\n", lastStreamId, streamId);
+            lastStreamId = streamId;
+            while (!arriveBuffer.empty()
+                   && arriveBuffer.front().pkt->req->hasStreamId()
+                   && arriveBuffer.front().pkt->req->streamId()
+                      != streamId) {
+                PacketPtr stale = arriveBuffer.front().pkt;
+                DPRINTF(ARTCache, "recvTimingReq: returning stale pkt "
+                        "addr=%s streamId=%d\n",
+                        addrToString(stale->getAddr()),
+                        stale->req->streamId());
+                stale->makeResponse();
+                stale->setBadAddress();
+                arriveBuffer.pop_front();
+                staleReturnQueue.push_back(stale);
+            }
+            if (!staleReturnQueue.empty() &&
+                !staleReturnEvent.scheduled())
+                schedule(staleReturnEvent, curTick() + 1);
+        }
+    }
+
+    // --- Admit into arriveBuffer ---
+    arriveBuffer.emplace_back(pkt, curTick());
+
+    // Schedule popArriveBuffer after address phase latency
+    // (only if pipeline is idle and event not already scheduled)
+    if (!processingInFlight && !popArriveBufferEvent.scheduled()) {
+        Tick addrPhaseDone = curTick() + addressPhaseLatency;
+        DPRINTF(ARTCache, "recvTimingReq: scheduling popArriveBuffer "
+                "at tick %d\n", addrPhaseDone);
+        schedule(popArriveBufferEvent,
+                 std::max(addrPhaseDone, curTick()));
+    }
+
+    // Block if arriveBuffer is now at capacity
+    if (arriveBufferSizeLimit != 0 &&
+        arriveBuffer.size() >= arriveBufferSizeLimit) {
+        blockForArriveBuffer();
+    }
+}
+
+// -------------------------------------------------------------------
+//  Pipeline: popArriveBuffer (address phase processing)
+// -------------------------------------------------------------------
+
+void
+ART::popArriveBuffer()
+{
+    // Strictly serialized: only process when previous request is done.
+    if (processingInFlight) {
+        DPRINTF(ARTCache, "popArriveBuffer: processingInFlight, "
+                "deferring\n");
         return;
     }
-    nextAcceptTick = clockEdge(Cycles(1));
 
-    DPRINTF(ARTCache, "recvTimingReq: addr=%s\n",
+    // Flush stale stream packets from front
+    while (!arriveBuffer.empty()
+           && arriveBuffer.front().pkt->req->hasStreamId()
+           && arriveBuffer.front().pkt->req->streamId()
+              != lastStreamId) {
+        PacketPtr stale = arriveBuffer.front().pkt;
+        DPRINTF(ARTCache, "popArriveBuffer: flushing stale pkt "
+                "addr=%s\n", addrToString(stale->getAddr()));
+        stale->makeResponse();
+        stale->setBadAddress();
+        arriveBuffer.pop_front();
+        staleReturnQueue.push_back(stale);
+    }
+    if (!staleReturnQueue.empty() && !staleReturnEvent.scheduled())
+        schedule(staleReturnEvent, curTick() + 1);
+
+    if (arriveBuffer.empty()) {
+        maybeUnblockArriveBuffer();
+        return;
+    }
+
+    // Pop front entry and mark pipeline busy
+    PacketPtr pkt = arriveBuffer.front().pkt;
+    arriveBuffer.pop_front();
+    processingInFlight = true;
+
+    maybeUnblockArriveBuffer();
+
+    DPRINTF(ARTCache, "popArriveBuffer: processing addr=%s\n",
             addrToString(pkt->getAddr()));
 
     {
@@ -201,7 +494,7 @@ ART::recvTimingReq(PacketPtr pkt)
                 ? "ALLOC@" + addrToString(artPfEntry.blkAddr)
                 : "EMPTY";
         DPRINTF(ARTCache,
-                "recvTimingReq: state curBuf=(%s) pfBuf=(%s) "
+                "popArriveBuffer: state curBuf=(%s) pfBuf=(%s) "
                 "pfEntry=%s\n",
                 curBufStr, pfBufStr, pfEntryStr);
     }
@@ -211,12 +504,12 @@ ART::recvTimingReq(PacketPtr pkt)
     if (enablePrefetch && !pkt->isSecure()) {
         // --- Try to serve from the current buffer ---
         if (currentBuffer.isHit(pkt->getAddr())) {
-            DPRINTF(ARTCache, "recvTimingReq: current buffer hit\n");
+            DPRINTF(ARTCache, "popArriveBuffer: current buffer hit\n");
             serveFromBuffer(pkt, currentBuffer);
             prefetchHit = true;
             ++stats.currentBufferHits;
             DPRINTF(ARTCache,
-                    "recvTimingReq: stats hits=%d pfHits=%d "
+                    "popArriveBuffer: stats hits=%d pfHits=%d "
                     "misses=%d alloc=%d issued=%d completed=%d\n",
                     stats.currentBufferHits.value(),
                     stats.prefetchBufferHits.value(),
@@ -226,12 +519,12 @@ ART::recvTimingReq(PacketPtr pkt)
                     stats.prefetchesCompleted.value());
 
         } else if (prefetchBuffer.isHit(pkt->getAddr())) {
-            DPRINTF(ARTCache, "recvTimingReq: prefetch buffer hit\n");
+            DPRINTF(ARTCache, "popArriveBuffer: prefetch buffer hit\n");
             serveFromBuffer(pkt, prefetchBuffer);
             prefetchHit = true;
             ++stats.prefetchBufferHits;
             DPRINTF(ARTCache,
-                    "recvTimingReq: stats hits=%d pfHits=%d "
+                    "popArriveBuffer: stats hits=%d pfHits=%d "
                     "misses=%d alloc=%d issued=%d completed=%d\n",
                     stats.currentBufferHits.value(),
                     stats.prefetchBufferHits.value(),
@@ -240,44 +533,37 @@ ART::recvTimingReq(PacketPtr pkt)
                     stats.prefetchesIssued.value(),
                     stats.prefetchesCompleted.value());
 
-            // in here promote prefetchBuffer to currentBuffer for future
-            // accesses
+            // promote prefetchBuffer to currentBuffer
             currentBuffer.invalidate();
             currentBuffer.copyFrom(prefetchBuffer);
             prefetchBuffer.invalidate();
             DPRINTF(ARTCache,
-                "recvTimingReq: promote prefetchBuffer to currentBuffer\n");
+                "popArriveBuffer: promote prefetchBuffer to "
+                "currentBuffer\n");
+        } else {
+            currentBuffer.invalidate();
+            prefetchBuffer.invalidate();
+            DPRINTF(ARTCache,
+                "popArriveBuffer: Invalidate both buffers "
+                "because both not hit\n");
         }
 
-        // If the request missed both buffers and cache/memory is busy,
-        // queue it now — before modifying prefetch state (nextPfAddr,
-        // prefetch allocation).  Buffer hits already returned above.
         // Compute the candidate next-prefetch address.
         nextPfAddr = convertAddrToPfBlockAddr(pkt->getAddr());
         nextPfAddr = getNextSequentialAddr(nextPfAddr);
         DPRINTF(ARTCache,
-            "recvTimingReq: initial next prefetch address: %s\n",
+            "popArriveBuffer: initial next prefetch address: %s\n",
             addrToString(nextPfAddr));
-
-        // We will only issue new prefetch under 2 cases
-        // 1) the current cpu request missed in both currentBuffer and
-        // prefetchBuffer
-        // 2) the current prefetchBuffer is empty (invalid)
 
         if (!prefetchHit) {
             DPRINTF(ARTCache,
-                "recvTimingReq: CPU request misses both currentBuffer and "
-                "prefetchBuffer\n"
+                "popArriveBuffer: CPU request misses both currentBuffer "
+                "and prefetchBuffer\n"
             );
 
-            // There are 4 cases
-            // 1) cache hits
-            // 2) artPfEntry is currently prefetching the next line
-            // 3) artPfEntry is currently prefetching a random address
-            // 4) artPfEntry is not inService
             if (isDataInCache(pkt)) {
                 DPRINTF(ARTCache,
-                    "recvTimingReq: data already in cache, "
+                    "popArriveBuffer: data already in cache, "
                     "will fetch from cache later\n");
             } else if (artPfEntry.ifInService()) {
                 currentBuffer.invalidate();
@@ -286,15 +572,15 @@ ART::recvTimingReq(PacketPtr pkt)
                     assert(artPfEntry.setCPUWaiting(pkt));
                     panic_if(!artPfEntry.ifCPUWaiting(),
                             "Failed to set CPU waiting flag.");
-                    // Don't need to reschedule
                     prefetchHit = true;
                     ++stats.cpuWaitEvents;
                     DPRINTF(ARTCache,
-                        "recvTimingReq: CPU waiting for "
-                        "in-flight prefetch \n");
+                        "popArriveBuffer: CPU waiting for "
+                        "in-flight prefetch\n");
                 } else {
                     DPRINTF(ARTCache,
-                        "recvTimingReq: currently prefetching a wrong line\n");
+                        "popArriveBuffer: currently prefetching "
+                        "a wrong line\n");
                 }
             } else {
                 currentBuffer.invalidate();
@@ -304,11 +590,10 @@ ART::recvTimingReq(PacketPtr pkt)
 
         // Check if need to schedule next fetch
         if (!prefetchHit || !prefetchBuffer.isValid()) {
-            // need to schedule next prefetch
             if (!artPfEntry.ifInService()) {
                 if (artPfEntry.ifHasTarget()) {
                     DPRINTF(ARTCache,
-                            "recvTimingReq: discarding stale prefetch "
+                            "popArriveBuffer: discarding stale prefetch "
                             "target addr=%s\n",
                             addrToString(
                                 artPfEntry.getTarget()->pkt->getAddr()));
@@ -325,27 +610,27 @@ ART::recvTimingReq(PacketPtr pkt)
                         makeARTPrefetchPacket(req, &artPfEntry);
                     panic_if(!pfPkt,
                              "Failed to create prefetch packet in "
-                             "recvTimingReq.");
+                             "popArriveBuffer.");
 
                     artPfEntry.allocate(nextPfAddr, pfPkt,
                                         clockEdge(Cycles(1)),
                                         artPrefetchOrder++);
                     ++stats.prefetchesAllocated;
                     DPRINTF(ARTCache,
-                            "recvTimingReq: allocated prefetch "
+                            "popArriveBuffer: allocated prefetch "
                             "for addr=%s (allocated=%d)\n",
                             addrToString(nextPfAddr),
                             stats.prefetchesAllocated.value());
 
                     if (prefetchHit) {
                         DPRINTF(ARTCache,
-                                "recvTimingReq: scheduling prefetch for "
-                                "%s immediately\n",
+                                "popArriveBuffer: scheduling prefetch "
+                                "for %s immediately\n",
                                 addrToString(nextPfAddr));
                         schedMemSideSendEvent(clockEdge());
                     } else {
                         DPRINTF(ARTCache,
-                                "recvTimingReq: prefetch will be "
+                                "popArriveBuffer: prefetch will be "
                                 "scheduled after cache event\n");
                     }
 
@@ -353,51 +638,62 @@ ART::recvTimingReq(PacketPtr pkt)
                              "Prefetch entry not ready after allocation.");
                 } else {
                     DPRINTF(ARTCache,
-                            "recvTimingReq: next prefetch addr=%s outside "
-                            "flash range, skipping\n",
+                            "popArriveBuffer: next prefetch addr=%s "
+                            "outside flash range, skipping\n",
                             addrToString(nextPfAddr));
                 }
-
             }
         }
     }
 
     if (prefetchHit) {
         DPRINTF(ARTCache,
-                "recvTimingReq: served by prefetch mechanism, "
+                "popArriveBuffer: served by prefetch mechanism, "
                 "skipping cache access\n");
+        // processingInFlight stays true; popOutputBuffer will clear it
         return;
     }
 
     if (enablePrefetch) {
         ++stats.prefetchMisses;
         DPRINTF(ARTCache,
-                "recvTimingReq: prefetch miss "
-                "(misses=%d)\n",
+                "popArriveBuffer: prefetch miss (misses=%d)\n",
                 stats.prefetchMisses.value());
     }
 
     if (directMemoryMode) {
         DPRINTF(ARTCache,
-                "recvTimingReq: direct memory bypass for addr=%s\n",
-                addrToString(pkt->getAddr()));
+                "popArriveBuffer: direct memory bypass for addr=%s "
+                "(pktSize=%u, pfBlkSize=%u)\n",
+                addrToString(pkt->getAddr()), pkt->getSize(), pfBlkSize);
         panic_if(!bypassCacheEntry.ifTargetOpen(),
                  "Bypass target slot is not empty.");
 
+        // Translate to pfBlkSize-aligned request (same as cache path)
+        // so MinorCPU gets a full-width line back.
+        assert(cachePktEntry == nullptr);
+        cachePktEntry = new ARTTranslateState(pkt);
+        RequestPtr bypassReq = std::make_shared<Request>(
+            convertAddrToPfBlockAddr(pkt->getAddr()),
+            pfBlkSize, 0, pkt->req->requestorId());
+        PacketPtr bypassPkt =
+            makeARTPrefetchPacket(bypassReq, cachePktEntry);
+
         bypassCacheEntry.allocate(
-            pkt, clockEdge(Cycles(1)), artPrefetchOrder++);
+            bypassPkt, clockEdge(Cycles(1)), artPrefetchOrder++);
         panic_if(!bypassCacheEntry.ready(),
                  "Bypass entry not ready after allocation.");
 
         ++stats.bypassAccesses;
-        DPRINTF(ARTCache, "recvTimingReq: bypass (bypass=%d)\n",
+        DPRINTF(ARTCache, "popArriveBuffer: bypass (bypass=%d)\n",
                 stats.bypassAccesses.value());
         schedMemSideSendEvent(clockEdge());
+        // processingInFlight stays true; popOutputBuffer will clear it
         return;
     }
 
     DPRINTF(ARTCache,
-            "recvTimingReq: forwarding to NoncoherentCache\n");
+            "popArriveBuffer: forwarding to NoncoherentCache\n");
 
     assert(cachePktEntry == nullptr);
     cachePktEntry = new ARTTranslateState(pkt);
@@ -408,16 +704,17 @@ ART::recvTimingReq(PacketPtr pkt)
         makeARTPrefetchPacket(cacheReq, cachePktEntry);
     panic_if(!cachePkt,
             "Failed to create prefetch packet in "
-            "recvTimingReq.");
+            "popArriveBuffer.");
 
     NoncoherentCache::recvTimingReq(cachePkt);
 
     if (prefetchOnCacheHit && artPfEntry.ready()) {
         DPRINTF(ARTCache,
-                "recvTimingReq: prefetch entry still ready after "
+                "popArriveBuffer: prefetch entry still ready after "
                 "cache access, scheduling send (prefetchOnCacheHit)\n");
         schedMemSideSendEvent(clockEdge(Cycles(1)));
     }
+    // processingInFlight stays true; popOutputBuffer will clear it
 }
 
 // -------------------------------------------------------------------
@@ -446,7 +743,32 @@ ART::recvTimingResp(PacketPtr pkt)
             panic_if(popped != entry,
                      "Bypass entry pop mismatch in recvTimingResp.");
 
-            cpuSidePort.schedTimingResp(pkt, clockEdge(Cycles(1)));
+            // Extract original CPU packet from ARTTranslateState
+            // (bypass uses same 4→8 byte translation as cache path)
+            ARTTranslateState *state =
+                dynamic_cast<ARTTranslateState *>(
+                    pkt->popSenderState());
+            if (state) {
+                PacketPtr cpuPkt = state->cpuPkt;
+                cpuPkt->setData(getSubBlockData(pkt, cpuPkt));
+                cpuPkt->makeTimingResponse();
+                cpuPkt->headerDelay = cpuPkt->payloadDelay = 0;
+                DPRINTF(ARTCache,
+                        "recvTimingResp: bypass translated %u-byte "
+                        "response back to %u-byte CPU packet "
+                        "addr=%s\n",
+                        pkt->getSize(), cpuPkt->getSize(),
+                        addrToString(cpuPkt->getAddr()));
+                pushToOutputBuffer(cpuPkt, clockEdge(Cycles(1)));
+                state->cpuPkt = nullptr;
+                delete state;
+                cachePktEntry = nullptr;
+                delete pkt;
+            } else {
+                // No translate state — send response as-is
+                pushToOutputBuffer(pkt, clockEdge(Cycles(1)));
+            }
+
             entry->deallocate();
             return;
         }
@@ -482,9 +804,21 @@ ART::recvTimingResp(PacketPtr pkt)
                 entry->cpuPtr->setData(
                     getSubBlockData(pkt, entry->cpuPtr));
                 entry->cpuPtr->makeTimingResponse();
-                cpuSidePort.schedTimingResp(
-                    entry->cpuPtr, clockEdge(bufferHitLatency));
+                pushToOutputBuffer(
+                    entry->cpuPtr, curTick() + bufferHitLatency + 1);
                 entry->clearCPUWaiting();
+
+                // Per RM0440 Section 3.3.4: on a miss (CPU missed
+                // curBuf, pfBuf, and I-Cache), the line read is copied
+                // into the instruction cache memory.
+                // Skip in direct memory mode — cache is bypassed.
+                if (!directMemoryMode) {
+                    DPRINTF(ARTCache,
+                            "recvTimingResp: filling I-Cache with prefetch "
+                            "data for addr=%s\n",
+                            addrToString(entry->blkAddr));
+                    fillCacheWithPrefetchData(pkt);
+                }
             }
 
             delete pkt;
@@ -578,7 +912,7 @@ ART::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time)
     cpuPkt->makeTimingResponse();
 
     cpuPkt->headerDelay = cpuPkt->payloadDelay = 0;
-    cpuSidePort.schedTimingResp(cpuPkt, request_time);
+    pushToOutputBuffer(cpuPkt, request_time);
 
     state->cpuPkt = nullptr;
     delete state;
@@ -663,7 +997,7 @@ ART::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                 tgt_pkt->copyError(pkt);
 
             tgt_pkt->headerDelay = tgt_pkt->payloadDelay = 0;
-            cpuSidePort.schedTimingResp(tgt_pkt, completion_time);
+            pushToOutputBuffer(tgt_pkt, completion_time);
 
             if (cachePktToDelete)
                 delete cachePktToDelete;

@@ -1,0 +1,688 @@
+gem5 Simulator System.  https://www.gem5.org
+gem5 is copyrighted software; use the --copyright option for details.
+
+gem5 version DEVELOP-FOR-25.1
+gem5 compiled Apr  7 2026 19:51:13
+gem5 started Apr  7 2026 20:08:22
+gem5 executing on cascade, pid 2700821
+command line: /scr/studyztp/gem5-binary/roboarch/build/ARM/gem5.opt -re --outdir=/home/studyztp/test_ground/gem5-fix-cache-line-size/gem5/microbenchmarks/gem5-result-noart/m5out_entobench_all_bench-pushpop_v2 gem5/run_m5op_bench.py --no-art --firmware /scr/studyztp/benchmarks/gem5-build/bin/bench-pushpop_v2.elf
+
+Global frequency set at 1000000000000 ticks per second
+Starting simulation (ROI flags: none)...
+
+*** ROI BEGIN at tick 244773548 ***
+=== Benchmark Configuration ===
+REPS: zu
+INNER_REPS: zu
+VERBOSITY: 1
+MAX_PROBLEMS: zu
+DO_WARMUP: true
+ENABLE_CACHES: true
+ENABLE_PREFETCH: true
+ENABLE_VECTORIZATION: false
+H7_PERFORMANCE_MULTIPLIER: zu
+===============================
+244844132: system.cpu: T0 : 0x80072b2 @_ZL9start_roiv+13    : pop
+244844132: system.cpu: T0 : 0x80072b2 @_ZL9start_roiv+13. 0 :   ldr_uop   r3, [sp, #0]   : MemRead :  D=0x0000000000000000 A=0x2001fdf8
+244855896: system.cpu: T0 : 0x80072b2 @_ZL9start_roiv+13. 1 :   ldr_uop   r36, [sp, #4]  : MemRead :  D=0x00000000080073e9 A=0x2001fdfc
+244855896: system.cpu: T0 : 0x80072b2 @_ZL9start_roiv+13. 2 :   addi_uop   sp, sp, #8    : IntAlu :  D=0x000000002001fe00
+244861778: system.cpu: T0 : 0x80072b2 @_ZL9start_roiv+13. 3 :   uopReg_uop   pc, r36     : IntAlu :  D=0x00000000080073e9
+244914716: system.cpu: T0 : 0x80073e8 @main+227    :   movs   r4, #10           : IntAlu :  D=0x0000000000000000
+244926480: system.cpu: T0 : 0x80073ea @main+229    :   bl.w   <_ZL7end_roiv+23> : IntAlu :  D=0x00000000080073ef
+244961772: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27    : push
+244961772: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 0 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x000000000000000a A=0x2001fdec
+244967654: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 1 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000008007588 A=0x2001fdf0
+244973536: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 2 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fdf4
+244979418: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 3 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fdf8
+244985300: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 4 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fdfc
+244991182: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 5 :   subi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fdec
+244997064: system.cpu: T0 : 0x80072d2 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+1    :   nop                      : IntAlu :
+245002946: system.cpu: T0 : 0x80072d4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+3    :   nop.w                    : IntAlu :
+245008828: system.cpu: T0 : 0x80072d8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+7    :   nop.w                    : IntAlu :
+245014710: system.cpu: T0 : 0x80072dc @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+11    :   nop.w                    : IntAlu :
+245026474: system.cpu: T0 : 0x80072e0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+15    :   mov.w   r0, #0           : IntAlu :  D=0x0000000000000000
+245038238: system.cpu: T0 : 0x80072e4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+19    :   mov.w   r1, #1           : IntAlu :  D=0x0000000000000001
+245055884: system.cpu: T0 : 0x80072e8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+23    :   mov.w   r2, #2           : IntAlu :  D=0x0000000000000002
+245067648: system.cpu: T0 : 0x80072ec @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+27    :   mov.w   r3, #3           : IntAlu :  D=0x0000000000000003
+245085294: system.cpu: T0 : 0x80072f0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+31    :   mov.w   r4, #4           : IntAlu :  D=0x0000000000000004
+245097058: system.cpu: T0 : 0x80072f4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+35    :   mov.w   r5, #5           : IntAlu :  D=0x0000000000000005
+245114704: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39    : push
+245114704: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 0 :   str_uop   r0, [sp, #36]  : MemWrite :  D=0x0000000000000000 A=0x2001fdc8
+245120586: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 1 :   str_uop   r1, [sp, #32]  : MemWrite :  D=0x0000000000000001 A=0x2001fdcc
+245126468: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 2 :   str_uop   r2, [sp, #28]  : MemWrite :  D=0x0000000000000002 A=0x2001fdd0
+245132350: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 3 :   str_uop   r3, [sp, #24]  : MemWrite :  D=0x0000000000000003 A=0x2001fdd4
+245138232: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 4 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000004 A=0x2001fdd8
+245144114: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 5 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000000000005 A=0x2001fddc
+245149996: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 6 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fde0
+245155878: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 7 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fde4
+245161760: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 8 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fde8
+245167642: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 9 :   subi_uop   sp, sp, #36   : IntAlu :  D=0x000000002001fdc8
+245185288: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41    : pop.w
+245185288: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 0 :   ldr_uop.w   r0, [sp, #0] : MemRead :  D=0x0000000000000000 A=0x2001fdc8
+245191170: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 1 :   ldr_uop.w   r1, [sp, #4] : MemRead :  D=0x0000000000000001 A=0x2001fdcc
+245197052: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 2 :   ldr_uop.w   r2, [sp, #8] : MemRead :  D=0x0000000000000002 A=0x2001fdd0
+245202934: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 3 :   ldr_uop.w   r3, [sp, #12] : MemRead :  D=0x0000000000000003 A=0x2001fdd4
+245208816: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 4 :   ldr_uop.w   r4, [sp, #16] : MemRead :  D=0x0000000000000004 A=0x2001fdd8
+245214698: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 5 :   ldr_uop.w   r5, [sp, #20] : MemRead :  D=0x0000000000000005 A=0x2001fddc
+245220580: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 6 :   ldr_uop.w   r6, [sp, #24] : MemRead :  D=0x0000000000000000 A=0x2001fde0
+245226462: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 7 :   ldr_uop.w   r7, [sp, #28] : MemRead :  D=0x0000000000000000 A=0x2001fde4
+245232344: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 8 :   ldr_uop.w   lr, [sp, #32] : MemRead :  D=0x00000000080073ef A=0x2001fde8
+245232344: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 9 :   addi_uop.w   sp, sp, #36 : IntAlu :  D=0x000000002001fdec
+245238226: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45    : push
+245238226: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 0 :   str_uop   r0, [sp, #16]  : MemWrite :  D=0x0000000000000000 A=0x2001fddc
+245244108: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 1 :   str_uop   r1, [sp, #12]  : MemWrite :  D=0x0000000000000001 A=0x2001fde0
+245249990: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 2 :   str_uop   r2, [sp, #8]   : MemWrite :  D=0x0000000000000002 A=0x2001fde4
+245255872: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 3 :   str_uop   r3, [sp, #4]   : MemWrite :  D=0x0000000000000003 A=0x2001fde8
+245261754: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 4 :   subi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fddc
+245279400: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47    : pop
+245279400: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 0 :   ldr_uop   r0, [sp, #0]   : MemRead :  D=0x0000000000000000 A=0x2001fddc
+245285282: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 1 :   ldr_uop   r1, [sp, #4]   : MemRead :  D=0x0000000000000001 A=0x2001fde0
+245291164: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 2 :   ldr_uop   r2, [sp, #8]   : MemRead :  D=0x0000000000000002 A=0x2001fde4
+245297046: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 3 :   ldr_uop   r3, [sp, #12]  : MemRead :  D=0x0000000000000003 A=0x2001fde8
+245297046: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 4 :   addi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fdec
+245308810: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49    : pop
+245308810: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 0 :   ldr_uop   r4, [sp, #0]   : MemRead :  D=0x000000000000000a A=0x2001fdec
+245320574: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 1 :   ldr_uop   r5, [sp, #4]   : MemRead :  D=0x0000000008007588 A=0x2001fdf0
+245326456: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 2 :   ldr_uop   r6, [sp, #8]   : MemRead :  D=0x0000000000000000 A=0x2001fdf4
+245332338: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 3 :   ldr_uop   r7, [sp, #12]  : MemRead :  D=0x0000000000000000 A=0x2001fdf8
+245338220: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 4 :   ldr_uop   r36, [sp, #16] : MemRead :  D=0x00000000080073ef A=0x2001fdfc
+245338220: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 5 :   addi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fe00
+245344102: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 6 :   uopReg_uop   pc, r36     : IntAlu :  D=0x00000000080073ef
+245349984: system.cpu: T0 : 0x80073ee @main+233    :   subs   r4, r4, #1        : IntAlu :  D=0x0000000000000001
+245355866: system.cpu: T0 : 0x80073f0 @main+235    :   b   <main+225>           : IntAlu :
+245414686: system.cpu: T0 : 0x80073ea @main+229    :   bl.w   <_ZL7end_roiv+23> : IntAlu :  D=0x00000000080073ef
+245449978: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27    : push
+245449978: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 0 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000009 A=0x2001fdec
+245455860: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 1 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000008007588 A=0x2001fdf0
+245461742: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 2 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fdf4
+245467624: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 3 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fdf8
+245473506: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 4 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fdfc
+245479388: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 5 :   subi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fdec
+245485270: system.cpu: T0 : 0x80072d2 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+1    :   nop                      : IntAlu :
+245491152: system.cpu: T0 : 0x80072d4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+3    :   nop.w                    : IntAlu :
+245497034: system.cpu: T0 : 0x80072d8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+7    :   nop.w                    : IntAlu :
+245502916: system.cpu: T0 : 0x80072dc @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+11    :   nop.w                    : IntAlu :
+245520562: system.cpu: T0 : 0x80072e0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+15    :   mov.w   r0, #0           : IntAlu :  D=0x0000000000000000
+245532326: system.cpu: T0 : 0x80072e4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+19    :   mov.w   r1, #1           : IntAlu :  D=0x0000000000000001
+245549972: system.cpu: T0 : 0x80072e8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+23    :   mov.w   r2, #2           : IntAlu :  D=0x0000000000000002
+245561736: system.cpu: T0 : 0x80072ec @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+27    :   mov.w   r3, #3           : IntAlu :  D=0x0000000000000003
+245579382: system.cpu: T0 : 0x80072f0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+31    :   mov.w   r4, #4           : IntAlu :  D=0x0000000000000004
+245591146: system.cpu: T0 : 0x80072f4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+35    :   mov.w   r5, #5           : IntAlu :  D=0x0000000000000005
+245608792: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39    : push
+245608792: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 0 :   str_uop   r0, [sp, #36]  : MemWrite :  D=0x0000000000000000 A=0x2001fdc8
+245614674: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 1 :   str_uop   r1, [sp, #32]  : MemWrite :  D=0x0000000000000001 A=0x2001fdcc
+245620556: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 2 :   str_uop   r2, [sp, #28]  : MemWrite :  D=0x0000000000000002 A=0x2001fdd0
+245626438: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 3 :   str_uop   r3, [sp, #24]  : MemWrite :  D=0x0000000000000003 A=0x2001fdd4
+245632320: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 4 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000004 A=0x2001fdd8
+245638202: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 5 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000000000005 A=0x2001fddc
+245644084: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 6 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fde0
+245649966: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 7 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fde4
+245655848: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 8 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fde8
+245661730: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 9 :   subi_uop   sp, sp, #36   : IntAlu :  D=0x000000002001fdc8
+245679376: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41    : pop.w
+245679376: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 0 :   ldr_uop.w   r0, [sp, #0] : MemRead :  D=0x0000000000000000 A=0x2001fdc8
+245685258: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 1 :   ldr_uop.w   r1, [sp, #4] : MemRead :  D=0x0000000000000001 A=0x2001fdcc
+245691140: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 2 :   ldr_uop.w   r2, [sp, #8] : MemRead :  D=0x0000000000000002 A=0x2001fdd0
+245697022: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 3 :   ldr_uop.w   r3, [sp, #12] : MemRead :  D=0x0000000000000003 A=0x2001fdd4
+245702904: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 4 :   ldr_uop.w   r4, [sp, #16] : MemRead :  D=0x0000000000000004 A=0x2001fdd8
+245708786: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 5 :   ldr_uop.w   r5, [sp, #20] : MemRead :  D=0x0000000000000005 A=0x2001fddc
+245714668: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 6 :   ldr_uop.w   r6, [sp, #24] : MemRead :  D=0x0000000000000000 A=0x2001fde0
+245720550: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 7 :   ldr_uop.w   r7, [sp, #28] : MemRead :  D=0x0000000000000000 A=0x2001fde4
+245726432: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 8 :   ldr_uop.w   lr, [sp, #32] : MemRead :  D=0x00000000080073ef A=0x2001fde8
+245726432: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 9 :   addi_uop.w   sp, sp, #36 : IntAlu :  D=0x000000002001fdec
+245732314: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45    : push
+245732314: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 0 :   str_uop   r0, [sp, #16]  : MemWrite :  D=0x0000000000000000 A=0x2001fddc
+245738196: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 1 :   str_uop   r1, [sp, #12]  : MemWrite :  D=0x0000000000000001 A=0x2001fde0
+245744078: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 2 :   str_uop   r2, [sp, #8]   : MemWrite :  D=0x0000000000000002 A=0x2001fde4
+245749960: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 3 :   str_uop   r3, [sp, #4]   : MemWrite :  D=0x0000000000000003 A=0x2001fde8
+245755842: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 4 :   subi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fddc
+245773488: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47    : pop
+245773488: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 0 :   ldr_uop   r0, [sp, #0]   : MemRead :  D=0x0000000000000000 A=0x2001fddc
+245779370: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 1 :   ldr_uop   r1, [sp, #4]   : MemRead :  D=0x0000000000000001 A=0x2001fde0
+245785252: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 2 :   ldr_uop   r2, [sp, #8]   : MemRead :  D=0x0000000000000002 A=0x2001fde4
+245791134: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 3 :   ldr_uop   r3, [sp, #12]  : MemRead :  D=0x0000000000000003 A=0x2001fde8
+245791134: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 4 :   addi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fdec
+245802898: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49    : pop
+245802898: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 0 :   ldr_uop   r4, [sp, #0]   : MemRead :  D=0x0000000000000009 A=0x2001fdec
+245814662: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 1 :   ldr_uop   r5, [sp, #4]   : MemRead :  D=0x0000000008007588 A=0x2001fdf0
+245820544: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 2 :   ldr_uop   r6, [sp, #8]   : MemRead :  D=0x0000000000000000 A=0x2001fdf4
+245826426: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 3 :   ldr_uop   r7, [sp, #12]  : MemRead :  D=0x0000000000000000 A=0x2001fdf8
+245832308: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 4 :   ldr_uop   r36, [sp, #16] : MemRead :  D=0x00000000080073ef A=0x2001fdfc
+245832308: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 5 :   addi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fe00
+245838190: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 6 :   uopReg_uop   pc, r36     : IntAlu :  D=0x00000000080073ef
+245844072: system.cpu: T0 : 0x80073ee @main+233    :   subs   r4, r4, #1        : IntAlu :  D=0x0000000000000001
+245855836: system.cpu: T0 : 0x80073f0 @main+235    :   b   <main+225>           : IntAlu :
+245914656: system.cpu: T0 : 0x80073ea @main+229    :   bl.w   <_ZL7end_roiv+23> : IntAlu :  D=0x00000000080073ef
+245949948: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27    : push
+245949948: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 0 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000008 A=0x2001fdec
+245955830: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 1 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000008007588 A=0x2001fdf0
+245961712: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 2 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fdf4
+245967594: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 3 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fdf8
+245973476: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 4 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fdfc
+245979358: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 5 :   subi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fdec
+245985240: system.cpu: T0 : 0x80072d2 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+1    :   nop                      : IntAlu :
+245991122: system.cpu: T0 : 0x80072d4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+3    :   nop.w                    : IntAlu :
+245997004: system.cpu: T0 : 0x80072d8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+7    :   nop.w                    : IntAlu :
+246002886: system.cpu: T0 : 0x80072dc @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+11    :   nop.w                    : IntAlu :
+246020532: system.cpu: T0 : 0x80072e0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+15    :   mov.w   r0, #0           : IntAlu :  D=0x0000000000000000
+246032296: system.cpu: T0 : 0x80072e4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+19    :   mov.w   r1, #1           : IntAlu :  D=0x0000000000000001
+246049942: system.cpu: T0 : 0x80072e8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+23    :   mov.w   r2, #2           : IntAlu :  D=0x0000000000000002
+246055824: system.cpu: T0 : 0x80072ec @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+27    :   mov.w   r3, #3           : IntAlu :  D=0x0000000000000003
+246073470: system.cpu: T0 : 0x80072f0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+31    :   mov.w   r4, #4           : IntAlu :  D=0x0000000000000004
+246085234: system.cpu: T0 : 0x80072f4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+35    :   mov.w   r5, #5           : IntAlu :  D=0x0000000000000005
+246102880: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39    : push
+246102880: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 0 :   str_uop   r0, [sp, #36]  : MemWrite :  D=0x0000000000000000 A=0x2001fdc8
+246108762: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 1 :   str_uop   r1, [sp, #32]  : MemWrite :  D=0x0000000000000001 A=0x2001fdcc
+246114644: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 2 :   str_uop   r2, [sp, #28]  : MemWrite :  D=0x0000000000000002 A=0x2001fdd0
+246120526: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 3 :   str_uop   r3, [sp, #24]  : MemWrite :  D=0x0000000000000003 A=0x2001fdd4
+246126408: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 4 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000004 A=0x2001fdd8
+246132290: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 5 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000000000005 A=0x2001fddc
+246138172: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 6 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fde0
+246144054: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 7 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fde4
+246149936: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 8 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fde8
+246155818: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 9 :   subi_uop   sp, sp, #36   : IntAlu :  D=0x000000002001fdc8
+246173464: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41    : pop.w
+246173464: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 0 :   ldr_uop.w   r0, [sp, #0] : MemRead :  D=0x0000000000000000 A=0x2001fdc8
+246179346: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 1 :   ldr_uop.w   r1, [sp, #4] : MemRead :  D=0x0000000000000001 A=0x2001fdcc
+246185228: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 2 :   ldr_uop.w   r2, [sp, #8] : MemRead :  D=0x0000000000000002 A=0x2001fdd0
+246191110: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 3 :   ldr_uop.w   r3, [sp, #12] : MemRead :  D=0x0000000000000003 A=0x2001fdd4
+246196992: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 4 :   ldr_uop.w   r4, [sp, #16] : MemRead :  D=0x0000000000000004 A=0x2001fdd8
+246202874: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 5 :   ldr_uop.w   r5, [sp, #20] : MemRead :  D=0x0000000000000005 A=0x2001fddc
+246208756: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 6 :   ldr_uop.w   r6, [sp, #24] : MemRead :  D=0x0000000000000000 A=0x2001fde0
+246214638: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 7 :   ldr_uop.w   r7, [sp, #28] : MemRead :  D=0x0000000000000000 A=0x2001fde4
+246220520: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 8 :   ldr_uop.w   lr, [sp, #32] : MemRead :  D=0x00000000080073ef A=0x2001fde8
+246220520: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 9 :   addi_uop.w   sp, sp, #36 : IntAlu :  D=0x000000002001fdec
+246226402: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45    : push
+246226402: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 0 :   str_uop   r0, [sp, #16]  : MemWrite :  D=0x0000000000000000 A=0x2001fddc
+246232284: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 1 :   str_uop   r1, [sp, #12]  : MemWrite :  D=0x0000000000000001 A=0x2001fde0
+246238166: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 2 :   str_uop   r2, [sp, #8]   : MemWrite :  D=0x0000000000000002 A=0x2001fde4
+246244048: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 3 :   str_uop   r3, [sp, #4]   : MemWrite :  D=0x0000000000000003 A=0x2001fde8
+246249930: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 4 :   subi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fddc
+246267576: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47    : pop
+246267576: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 0 :   ldr_uop   r0, [sp, #0]   : MemRead :  D=0x0000000000000000 A=0x2001fddc
+246273458: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 1 :   ldr_uop   r1, [sp, #4]   : MemRead :  D=0x0000000000000001 A=0x2001fde0
+246279340: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 2 :   ldr_uop   r2, [sp, #8]   : MemRead :  D=0x0000000000000002 A=0x2001fde4
+246285222: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 3 :   ldr_uop   r3, [sp, #12]  : MemRead :  D=0x0000000000000003 A=0x2001fde8
+246285222: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 4 :   addi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fdec
+246296986: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49    : pop
+246296986: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 0 :   ldr_uop   r4, [sp, #0]   : MemRead :  D=0x0000000000000008 A=0x2001fdec
+246308750: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 1 :   ldr_uop   r5, [sp, #4]   : MemRead :  D=0x0000000008007588 A=0x2001fdf0
+246314632: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 2 :   ldr_uop   r6, [sp, #8]   : MemRead :  D=0x0000000000000000 A=0x2001fdf4
+246320514: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 3 :   ldr_uop   r7, [sp, #12]  : MemRead :  D=0x0000000000000000 A=0x2001fdf8
+246326396: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 4 :   ldr_uop   r36, [sp, #16] : MemRead :  D=0x00000000080073ef A=0x2001fdfc
+246326396: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 5 :   addi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fe00
+246332278: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 6 :   uopReg_uop   pc, r36     : IntAlu :  D=0x00000000080073ef
+246338160: system.cpu: T0 : 0x80073ee @main+233    :   subs   r4, r4, #1        : IntAlu :  D=0x0000000000000001
+246349924: system.cpu: T0 : 0x80073f0 @main+235    :   b   <main+225>           : IntAlu :
+246408744: system.cpu: T0 : 0x80073ea @main+229    :   bl.w   <_ZL7end_roiv+23> : IntAlu :  D=0x00000000080073ef
+246444036: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27    : push
+246444036: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 0 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000007 A=0x2001fdec
+246449918: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 1 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000008007588 A=0x2001fdf0
+246455800: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 2 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fdf4
+246461682: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 3 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fdf8
+246467564: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 4 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fdfc
+246473446: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 5 :   subi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fdec
+246479328: system.cpu: T0 : 0x80072d2 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+1    :   nop                      : IntAlu :
+246485210: system.cpu: T0 : 0x80072d4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+3    :   nop.w                    : IntAlu :
+246491092: system.cpu: T0 : 0x80072d8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+7    :   nop.w                    : IntAlu :
+246496974: system.cpu: T0 : 0x80072dc @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+11    :   nop.w                    : IntAlu :
+246514620: system.cpu: T0 : 0x80072e0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+15    :   mov.w   r0, #0           : IntAlu :  D=0x0000000000000000
+246526384: system.cpu: T0 : 0x80072e4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+19    :   mov.w   r1, #1           : IntAlu :  D=0x0000000000000001
+246544030: system.cpu: T0 : 0x80072e8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+23    :   mov.w   r2, #2           : IntAlu :  D=0x0000000000000002
+246555794: system.cpu: T0 : 0x80072ec @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+27    :   mov.w   r3, #3           : IntAlu :  D=0x0000000000000003
+246573440: system.cpu: T0 : 0x80072f0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+31    :   mov.w   r4, #4           : IntAlu :  D=0x0000000000000004
+246585204: system.cpu: T0 : 0x80072f4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+35    :   mov.w   r5, #5           : IntAlu :  D=0x0000000000000005
+246596968: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39    : push
+246596968: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 0 :   str_uop   r0, [sp, #36]  : MemWrite :  D=0x0000000000000000 A=0x2001fdc8
+246602850: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 1 :   str_uop   r1, [sp, #32]  : MemWrite :  D=0x0000000000000001 A=0x2001fdcc
+246608732: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 2 :   str_uop   r2, [sp, #28]  : MemWrite :  D=0x0000000000000002 A=0x2001fdd0
+246614614: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 3 :   str_uop   r3, [sp, #24]  : MemWrite :  D=0x0000000000000003 A=0x2001fdd4
+246620496: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 4 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000004 A=0x2001fdd8
+246626378: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 5 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000000000005 A=0x2001fddc
+246632260: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 6 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fde0
+246638142: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 7 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fde4
+246644024: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 8 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fde8
+246649906: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 9 :   subi_uop   sp, sp, #36   : IntAlu :  D=0x000000002001fdc8
+246667552: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41    : pop.w
+246667552: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 0 :   ldr_uop.w   r0, [sp, #0] : MemRead :  D=0x0000000000000000 A=0x2001fdc8
+246673434: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 1 :   ldr_uop.w   r1, [sp, #4] : MemRead :  D=0x0000000000000001 A=0x2001fdcc
+246679316: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 2 :   ldr_uop.w   r2, [sp, #8] : MemRead :  D=0x0000000000000002 A=0x2001fdd0
+246685198: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 3 :   ldr_uop.w   r3, [sp, #12] : MemRead :  D=0x0000000000000003 A=0x2001fdd4
+246691080: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 4 :   ldr_uop.w   r4, [sp, #16] : MemRead :  D=0x0000000000000004 A=0x2001fdd8
+246696962: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 5 :   ldr_uop.w   r5, [sp, #20] : MemRead :  D=0x0000000000000005 A=0x2001fddc
+246702844: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 6 :   ldr_uop.w   r6, [sp, #24] : MemRead :  D=0x0000000000000000 A=0x2001fde0
+246708726: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 7 :   ldr_uop.w   r7, [sp, #28] : MemRead :  D=0x0000000000000000 A=0x2001fde4
+246714608: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 8 :   ldr_uop.w   lr, [sp, #32] : MemRead :  D=0x00000000080073ef A=0x2001fde8
+246714608: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 9 :   addi_uop.w   sp, sp, #36 : IntAlu :  D=0x000000002001fdec
+246720490: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45    : push
+246720490: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 0 :   str_uop   r0, [sp, #16]  : MemWrite :  D=0x0000000000000000 A=0x2001fddc
+246726372: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 1 :   str_uop   r1, [sp, #12]  : MemWrite :  D=0x0000000000000001 A=0x2001fde0
+246732254: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 2 :   str_uop   r2, [sp, #8]   : MemWrite :  D=0x0000000000000002 A=0x2001fde4
+246738136: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 3 :   str_uop   r3, [sp, #4]   : MemWrite :  D=0x0000000000000003 A=0x2001fde8
+246744018: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 4 :   subi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fddc
+246761664: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47    : pop
+246761664: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 0 :   ldr_uop   r0, [sp, #0]   : MemRead :  D=0x0000000000000000 A=0x2001fddc
+246767546: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 1 :   ldr_uop   r1, [sp, #4]   : MemRead :  D=0x0000000000000001 A=0x2001fde0
+246773428: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 2 :   ldr_uop   r2, [sp, #8]   : MemRead :  D=0x0000000000000002 A=0x2001fde4
+246779310: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 3 :   ldr_uop   r3, [sp, #12]  : MemRead :  D=0x0000000000000003 A=0x2001fde8
+246779310: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 4 :   addi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fdec
+246791074: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49    : pop
+246791074: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 0 :   ldr_uop   r4, [sp, #0]   : MemRead :  D=0x0000000000000007 A=0x2001fdec
+246802838: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 1 :   ldr_uop   r5, [sp, #4]   : MemRead :  D=0x0000000008007588 A=0x2001fdf0
+246808720: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 2 :   ldr_uop   r6, [sp, #8]   : MemRead :  D=0x0000000000000000 A=0x2001fdf4
+246814602: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 3 :   ldr_uop   r7, [sp, #12]  : MemRead :  D=0x0000000000000000 A=0x2001fdf8
+246820484: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 4 :   ldr_uop   r36, [sp, #16] : MemRead :  D=0x00000000080073ef A=0x2001fdfc
+246820484: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 5 :   addi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fe00
+246826366: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 6 :   uopReg_uop   pc, r36     : IntAlu :  D=0x00000000080073ef
+246832248: system.cpu: T0 : 0x80073ee @main+233    :   subs   r4, r4, #1        : IntAlu :  D=0x0000000000000001
+246844012: system.cpu: T0 : 0x80073f0 @main+235    :   b   <main+225>           : IntAlu :
+246902832: system.cpu: T0 : 0x80073ea @main+229    :   bl.w   <_ZL7end_roiv+23> : IntAlu :  D=0x00000000080073ef
+246938124: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27    : push
+246938124: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 0 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000006 A=0x2001fdec
+246944006: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 1 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000008007588 A=0x2001fdf0
+246949888: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 2 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fdf4
+246955770: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 3 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fdf8
+246961652: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 4 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fdfc
+246967534: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 5 :   subi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fdec
+246973416: system.cpu: T0 : 0x80072d2 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+1    :   nop                      : IntAlu :
+246979298: system.cpu: T0 : 0x80072d4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+3    :   nop.w                    : IntAlu :
+246985180: system.cpu: T0 : 0x80072d8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+7    :   nop.w                    : IntAlu :
+246991062: system.cpu: T0 : 0x80072dc @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+11    :   nop.w                    : IntAlu :
+247008708: system.cpu: T0 : 0x80072e0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+15    :   mov.w   r0, #0           : IntAlu :  D=0x0000000000000000
+247020472: system.cpu: T0 : 0x80072e4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+19    :   mov.w   r1, #1           : IntAlu :  D=0x0000000000000001
+247038118: system.cpu: T0 : 0x80072e8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+23    :   mov.w   r2, #2           : IntAlu :  D=0x0000000000000002
+247049882: system.cpu: T0 : 0x80072ec @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+27    :   mov.w   r3, #3           : IntAlu :  D=0x0000000000000003
+247067528: system.cpu: T0 : 0x80072f0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+31    :   mov.w   r4, #4           : IntAlu :  D=0x0000000000000004
+247079292: system.cpu: T0 : 0x80072f4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+35    :   mov.w   r5, #5           : IntAlu :  D=0x0000000000000005
+247096938: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39    : push
+247096938: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 0 :   str_uop   r0, [sp, #36]  : MemWrite :  D=0x0000000000000000 A=0x2001fdc8
+247102820: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 1 :   str_uop   r1, [sp, #32]  : MemWrite :  D=0x0000000000000001 A=0x2001fdcc
+247108702: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 2 :   str_uop   r2, [sp, #28]  : MemWrite :  D=0x0000000000000002 A=0x2001fdd0
+247114584: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 3 :   str_uop   r3, [sp, #24]  : MemWrite :  D=0x0000000000000003 A=0x2001fdd4
+247120466: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 4 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000004 A=0x2001fdd8
+247126348: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 5 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000000000005 A=0x2001fddc
+247132230: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 6 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fde0
+247138112: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 7 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fde4
+247143994: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 8 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fde8
+247149876: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 9 :   subi_uop   sp, sp, #36   : IntAlu :  D=0x000000002001fdc8
+247167522: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41    : pop.w
+247167522: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 0 :   ldr_uop.w   r0, [sp, #0] : MemRead :  D=0x0000000000000000 A=0x2001fdc8
+247173404: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 1 :   ldr_uop.w   r1, [sp, #4] : MemRead :  D=0x0000000000000001 A=0x2001fdcc
+247179286: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 2 :   ldr_uop.w   r2, [sp, #8] : MemRead :  D=0x0000000000000002 A=0x2001fdd0
+247185168: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 3 :   ldr_uop.w   r3, [sp, #12] : MemRead :  D=0x0000000000000003 A=0x2001fdd4
+247191050: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 4 :   ldr_uop.w   r4, [sp, #16] : MemRead :  D=0x0000000000000004 A=0x2001fdd8
+247196932: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 5 :   ldr_uop.w   r5, [sp, #20] : MemRead :  D=0x0000000000000005 A=0x2001fddc
+247202814: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 6 :   ldr_uop.w   r6, [sp, #24] : MemRead :  D=0x0000000000000000 A=0x2001fde0
+247208696: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 7 :   ldr_uop.w   r7, [sp, #28] : MemRead :  D=0x0000000000000000 A=0x2001fde4
+247214578: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 8 :   ldr_uop.w   lr, [sp, #32] : MemRead :  D=0x00000000080073ef A=0x2001fde8
+247214578: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 9 :   addi_uop.w   sp, sp, #36 : IntAlu :  D=0x000000002001fdec
+247220460: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45    : push
+247220460: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 0 :   str_uop   r0, [sp, #16]  : MemWrite :  D=0x0000000000000000 A=0x2001fddc
+247226342: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 1 :   str_uop   r1, [sp, #12]  : MemWrite :  D=0x0000000000000001 A=0x2001fde0
+247232224: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 2 :   str_uop   r2, [sp, #8]   : MemWrite :  D=0x0000000000000002 A=0x2001fde4
+247238106: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 3 :   str_uop   r3, [sp, #4]   : MemWrite :  D=0x0000000000000003 A=0x2001fde8
+247243988: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 4 :   subi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fddc
+247261634: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47    : pop
+247261634: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 0 :   ldr_uop   r0, [sp, #0]   : MemRead :  D=0x0000000000000000 A=0x2001fddc
+247267516: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 1 :   ldr_uop   r1, [sp, #4]   : MemRead :  D=0x0000000000000001 A=0x2001fde0
+247273398: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 2 :   ldr_uop   r2, [sp, #8]   : MemRead :  D=0x0000000000000002 A=0x2001fde4
+247279280: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 3 :   ldr_uop   r3, [sp, #12]  : MemRead :  D=0x0000000000000003 A=0x2001fde8
+247279280: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 4 :   addi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fdec
+247291044: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49    : pop
+247291044: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 0 :   ldr_uop   r4, [sp, #0]   : MemRead :  D=0x0000000000000006 A=0x2001fdec
+247302808: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 1 :   ldr_uop   r5, [sp, #4]   : MemRead :  D=0x0000000008007588 A=0x2001fdf0
+247308690: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 2 :   ldr_uop   r6, [sp, #8]   : MemRead :  D=0x0000000000000000 A=0x2001fdf4
+247314572: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 3 :   ldr_uop   r7, [sp, #12]  : MemRead :  D=0x0000000000000000 A=0x2001fdf8
+247320454: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 4 :   ldr_uop   r36, [sp, #16] : MemRead :  D=0x00000000080073ef A=0x2001fdfc
+247320454: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 5 :   addi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fe00
+247326336: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 6 :   uopReg_uop   pc, r36     : IntAlu :  D=0x00000000080073ef
+247332218: system.cpu: T0 : 0x80073ee @main+233    :   subs   r4, r4, #1        : IntAlu :  D=0x0000000000000001
+247343982: system.cpu: T0 : 0x80073f0 @main+235    :   b   <main+225>           : IntAlu :
+247402802: system.cpu: T0 : 0x80073ea @main+229    :   bl.w   <_ZL7end_roiv+23> : IntAlu :  D=0x00000000080073ef
+247438094: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27    : push
+247438094: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 0 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000005 A=0x2001fdec
+247443976: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 1 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000008007588 A=0x2001fdf0
+247449858: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 2 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fdf4
+247455740: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 3 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fdf8
+247461622: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 4 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fdfc
+247467504: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 5 :   subi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fdec
+247473386: system.cpu: T0 : 0x80072d2 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+1    :   nop                      : IntAlu :
+247479268: system.cpu: T0 : 0x80072d4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+3    :   nop.w                    : IntAlu :
+247485150: system.cpu: T0 : 0x80072d8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+7    :   nop.w                    : IntAlu :
+247491032: system.cpu: T0 : 0x80072dc @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+11    :   nop.w                    : IntAlu :
+247508678: system.cpu: T0 : 0x80072e0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+15    :   mov.w   r0, #0           : IntAlu :  D=0x0000000000000000
+247520442: system.cpu: T0 : 0x80072e4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+19    :   mov.w   r1, #1           : IntAlu :  D=0x0000000000000001
+247538088: system.cpu: T0 : 0x80072e8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+23    :   mov.w   r2, #2           : IntAlu :  D=0x0000000000000002
+247549852: system.cpu: T0 : 0x80072ec @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+27    :   mov.w   r3, #3           : IntAlu :  D=0x0000000000000003
+247567498: system.cpu: T0 : 0x80072f0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+31    :   mov.w   r4, #4           : IntAlu :  D=0x0000000000000004
+247579262: system.cpu: T0 : 0x80072f4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+35    :   mov.w   r5, #5           : IntAlu :  D=0x0000000000000005
+247596908: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39    : push
+247596908: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 0 :   str_uop   r0, [sp, #36]  : MemWrite :  D=0x0000000000000000 A=0x2001fdc8
+247602790: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 1 :   str_uop   r1, [sp, #32]  : MemWrite :  D=0x0000000000000001 A=0x2001fdcc
+247608672: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 2 :   str_uop   r2, [sp, #28]  : MemWrite :  D=0x0000000000000002 A=0x2001fdd0
+247614554: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 3 :   str_uop   r3, [sp, #24]  : MemWrite :  D=0x0000000000000003 A=0x2001fdd4
+247620436: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 4 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000004 A=0x2001fdd8
+247626318: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 5 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000000000005 A=0x2001fddc
+247632200: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 6 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fde0
+247638082: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 7 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fde4
+247643964: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 8 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fde8
+247649846: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 9 :   subi_uop   sp, sp, #36   : IntAlu :  D=0x000000002001fdc8
+247667492: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41    : pop.w
+247667492: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 0 :   ldr_uop.w   r0, [sp, #0] : MemRead :  D=0x0000000000000000 A=0x2001fdc8
+247673374: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 1 :   ldr_uop.w   r1, [sp, #4] : MemRead :  D=0x0000000000000001 A=0x2001fdcc
+247679256: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 2 :   ldr_uop.w   r2, [sp, #8] : MemRead :  D=0x0000000000000002 A=0x2001fdd0
+247685138: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 3 :   ldr_uop.w   r3, [sp, #12] : MemRead :  D=0x0000000000000003 A=0x2001fdd4
+247691020: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 4 :   ldr_uop.w   r4, [sp, #16] : MemRead :  D=0x0000000000000004 A=0x2001fdd8
+247696902: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 5 :   ldr_uop.w   r5, [sp, #20] : MemRead :  D=0x0000000000000005 A=0x2001fddc
+247702784: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 6 :   ldr_uop.w   r6, [sp, #24] : MemRead :  D=0x0000000000000000 A=0x2001fde0
+247708666: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 7 :   ldr_uop.w   r7, [sp, #28] : MemRead :  D=0x0000000000000000 A=0x2001fde4
+247714548: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 8 :   ldr_uop.w   lr, [sp, #32] : MemRead :  D=0x00000000080073ef A=0x2001fde8
+247714548: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 9 :   addi_uop.w   sp, sp, #36 : IntAlu :  D=0x000000002001fdec
+247720430: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45    : push
+247720430: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 0 :   str_uop   r0, [sp, #16]  : MemWrite :  D=0x0000000000000000 A=0x2001fddc
+247726312: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 1 :   str_uop   r1, [sp, #12]  : MemWrite :  D=0x0000000000000001 A=0x2001fde0
+247732194: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 2 :   str_uop   r2, [sp, #8]   : MemWrite :  D=0x0000000000000002 A=0x2001fde4
+247738076: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 3 :   str_uop   r3, [sp, #4]   : MemWrite :  D=0x0000000000000003 A=0x2001fde8
+247743958: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 4 :   subi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fddc
+247761604: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47    : pop
+247761604: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 0 :   ldr_uop   r0, [sp, #0]   : MemRead :  D=0x0000000000000000 A=0x2001fddc
+247767486: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 1 :   ldr_uop   r1, [sp, #4]   : MemRead :  D=0x0000000000000001 A=0x2001fde0
+247773368: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 2 :   ldr_uop   r2, [sp, #8]   : MemRead :  D=0x0000000000000002 A=0x2001fde4
+247779250: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 3 :   ldr_uop   r3, [sp, #12]  : MemRead :  D=0x0000000000000003 A=0x2001fde8
+247779250: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 4 :   addi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fdec
+247791014: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49    : pop
+247791014: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 0 :   ldr_uop   r4, [sp, #0]   : MemRead :  D=0x0000000000000005 A=0x2001fdec
+247802778: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 1 :   ldr_uop   r5, [sp, #4]   : MemRead :  D=0x0000000008007588 A=0x2001fdf0
+247808660: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 2 :   ldr_uop   r6, [sp, #8]   : MemRead :  D=0x0000000000000000 A=0x2001fdf4
+247814542: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 3 :   ldr_uop   r7, [sp, #12]  : MemRead :  D=0x0000000000000000 A=0x2001fdf8
+247820424: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 4 :   ldr_uop   r36, [sp, #16] : MemRead :  D=0x00000000080073ef A=0x2001fdfc
+247820424: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 5 :   addi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fe00
+247826306: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 6 :   uopReg_uop   pc, r36     : IntAlu :  D=0x00000000080073ef
+247832188: system.cpu: T0 : 0x80073ee @main+233    :   subs   r4, r4, #1        : IntAlu :  D=0x0000000000000001
+247838070: system.cpu: T0 : 0x80073f0 @main+235    :   b   <main+225>           : IntAlu :
+247896890: system.cpu: T0 : 0x80073ea @main+229    :   bl.w   <_ZL7end_roiv+23> : IntAlu :  D=0x00000000080073ef
+247932182: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27    : push
+247932182: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 0 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000004 A=0x2001fdec
+247938064: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 1 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000008007588 A=0x2001fdf0
+247943946: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 2 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fdf4
+247949828: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 3 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fdf8
+247955710: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 4 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fdfc
+247961592: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 5 :   subi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fdec
+247967474: system.cpu: T0 : 0x80072d2 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+1    :   nop                      : IntAlu :
+247973356: system.cpu: T0 : 0x80072d4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+3    :   nop.w                    : IntAlu :
+247979238: system.cpu: T0 : 0x80072d8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+7    :   nop.w                    : IntAlu :
+247985120: system.cpu: T0 : 0x80072dc @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+11    :   nop.w                    : IntAlu :
+248002766: system.cpu: T0 : 0x80072e0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+15    :   mov.w   r0, #0           : IntAlu :  D=0x0000000000000000
+248014530: system.cpu: T0 : 0x80072e4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+19    :   mov.w   r1, #1           : IntAlu :  D=0x0000000000000001
+248032176: system.cpu: T0 : 0x80072e8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+23    :   mov.w   r2, #2           : IntAlu :  D=0x0000000000000002
+248043940: system.cpu: T0 : 0x80072ec @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+27    :   mov.w   r3, #3           : IntAlu :  D=0x0000000000000003
+248061586: system.cpu: T0 : 0x80072f0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+31    :   mov.w   r4, #4           : IntAlu :  D=0x0000000000000004
+248073350: system.cpu: T0 : 0x80072f4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+35    :   mov.w   r5, #5           : IntAlu :  D=0x0000000000000005
+248090996: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39    : push
+248090996: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 0 :   str_uop   r0, [sp, #36]  : MemWrite :  D=0x0000000000000000 A=0x2001fdc8
+248096878: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 1 :   str_uop   r1, [sp, #32]  : MemWrite :  D=0x0000000000000001 A=0x2001fdcc
+248102760: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 2 :   str_uop   r2, [sp, #28]  : MemWrite :  D=0x0000000000000002 A=0x2001fdd0
+248108642: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 3 :   str_uop   r3, [sp, #24]  : MemWrite :  D=0x0000000000000003 A=0x2001fdd4
+248114524: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 4 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000004 A=0x2001fdd8
+248120406: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 5 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000000000005 A=0x2001fddc
+248126288: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 6 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fde0
+248132170: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 7 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fde4
+248138052: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 8 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fde8
+248143934: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 9 :   subi_uop   sp, sp, #36   : IntAlu :  D=0x000000002001fdc8
+248161580: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41    : pop.w
+248161580: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 0 :   ldr_uop.w   r0, [sp, #0] : MemRead :  D=0x0000000000000000 A=0x2001fdc8
+248167462: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 1 :   ldr_uop.w   r1, [sp, #4] : MemRead :  D=0x0000000000000001 A=0x2001fdcc
+248173344: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 2 :   ldr_uop.w   r2, [sp, #8] : MemRead :  D=0x0000000000000002 A=0x2001fdd0
+248179226: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 3 :   ldr_uop.w   r3, [sp, #12] : MemRead :  D=0x0000000000000003 A=0x2001fdd4
+248185108: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 4 :   ldr_uop.w   r4, [sp, #16] : MemRead :  D=0x0000000000000004 A=0x2001fdd8
+248190990: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 5 :   ldr_uop.w   r5, [sp, #20] : MemRead :  D=0x0000000000000005 A=0x2001fddc
+248196872: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 6 :   ldr_uop.w   r6, [sp, #24] : MemRead :  D=0x0000000000000000 A=0x2001fde0
+248202754: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 7 :   ldr_uop.w   r7, [sp, #28] : MemRead :  D=0x0000000000000000 A=0x2001fde4
+248208636: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 8 :   ldr_uop.w   lr, [sp, #32] : MemRead :  D=0x00000000080073ef A=0x2001fde8
+248208636: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 9 :   addi_uop.w   sp, sp, #36 : IntAlu :  D=0x000000002001fdec
+248214518: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45    : push
+248214518: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 0 :   str_uop   r0, [sp, #16]  : MemWrite :  D=0x0000000000000000 A=0x2001fddc
+248220400: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 1 :   str_uop   r1, [sp, #12]  : MemWrite :  D=0x0000000000000001 A=0x2001fde0
+248226282: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 2 :   str_uop   r2, [sp, #8]   : MemWrite :  D=0x0000000000000002 A=0x2001fde4
+248232164: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 3 :   str_uop   r3, [sp, #4]   : MemWrite :  D=0x0000000000000003 A=0x2001fde8
+248238046: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 4 :   subi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fddc
+248255692: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47    : pop
+248255692: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 0 :   ldr_uop   r0, [sp, #0]   : MemRead :  D=0x0000000000000000 A=0x2001fddc
+248261574: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 1 :   ldr_uop   r1, [sp, #4]   : MemRead :  D=0x0000000000000001 A=0x2001fde0
+248267456: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 2 :   ldr_uop   r2, [sp, #8]   : MemRead :  D=0x0000000000000002 A=0x2001fde4
+248273338: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 3 :   ldr_uop   r3, [sp, #12]  : MemRead :  D=0x0000000000000003 A=0x2001fde8
+248273338: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 4 :   addi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fdec
+248285102: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49    : pop
+248285102: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 0 :   ldr_uop   r4, [sp, #0]   : MemRead :  D=0x0000000000000004 A=0x2001fdec
+248296866: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 1 :   ldr_uop   r5, [sp, #4]   : MemRead :  D=0x0000000008007588 A=0x2001fdf0
+248302748: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 2 :   ldr_uop   r6, [sp, #8]   : MemRead :  D=0x0000000000000000 A=0x2001fdf4
+248308630: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 3 :   ldr_uop   r7, [sp, #12]  : MemRead :  D=0x0000000000000000 A=0x2001fdf8
+248314512: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 4 :   ldr_uop   r36, [sp, #16] : MemRead :  D=0x00000000080073ef A=0x2001fdfc
+248314512: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 5 :   addi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fe00
+248320394: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 6 :   uopReg_uop   pc, r36     : IntAlu :  D=0x00000000080073ef
+248326276: system.cpu: T0 : 0x80073ee @main+233    :   subs   r4, r4, #1        : IntAlu :  D=0x0000000000000001
+248338040: system.cpu: T0 : 0x80073f0 @main+235    :   b   <main+225>           : IntAlu :
+248396860: system.cpu: T0 : 0x80073ea @main+229    :   bl.w   <_ZL7end_roiv+23> : IntAlu :  D=0x00000000080073ef
+248432152: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27    : push
+248432152: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 0 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000003 A=0x2001fdec
+248438034: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 1 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000008007588 A=0x2001fdf0
+248443916: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 2 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fdf4
+248449798: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 3 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fdf8
+248455680: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 4 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fdfc
+248461562: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 5 :   subi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fdec
+248467444: system.cpu: T0 : 0x80072d2 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+1    :   nop                      : IntAlu :
+248473326: system.cpu: T0 : 0x80072d4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+3    :   nop.w                    : IntAlu :
+248479208: system.cpu: T0 : 0x80072d8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+7    :   nop.w                    : IntAlu :
+248485090: system.cpu: T0 : 0x80072dc @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+11    :   nop.w                    : IntAlu :
+248502736: system.cpu: T0 : 0x80072e0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+15    :   mov.w   r0, #0           : IntAlu :  D=0x0000000000000000
+248514500: system.cpu: T0 : 0x80072e4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+19    :   mov.w   r1, #1           : IntAlu :  D=0x0000000000000001
+248526264: system.cpu: T0 : 0x80072e8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+23    :   mov.w   r2, #2           : IntAlu :  D=0x0000000000000002
+248538028: system.cpu: T0 : 0x80072ec @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+27    :   mov.w   r3, #3           : IntAlu :  D=0x0000000000000003
+248555674: system.cpu: T0 : 0x80072f0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+31    :   mov.w   r4, #4           : IntAlu :  D=0x0000000000000004
+248567438: system.cpu: T0 : 0x80072f4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+35    :   mov.w   r5, #5           : IntAlu :  D=0x0000000000000005
+248585084: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39    : push
+248585084: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 0 :   str_uop   r0, [sp, #36]  : MemWrite :  D=0x0000000000000000 A=0x2001fdc8
+248590966: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 1 :   str_uop   r1, [sp, #32]  : MemWrite :  D=0x0000000000000001 A=0x2001fdcc
+248596848: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 2 :   str_uop   r2, [sp, #28]  : MemWrite :  D=0x0000000000000002 A=0x2001fdd0
+248602730: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 3 :   str_uop   r3, [sp, #24]  : MemWrite :  D=0x0000000000000003 A=0x2001fdd4
+248608612: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 4 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000004 A=0x2001fdd8
+248614494: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 5 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000000000005 A=0x2001fddc
+248620376: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 6 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fde0
+248626258: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 7 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fde4
+248632140: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 8 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fde8
+248638022: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 9 :   subi_uop   sp, sp, #36   : IntAlu :  D=0x000000002001fdc8
+248655668: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41    : pop.w
+248655668: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 0 :   ldr_uop.w   r0, [sp, #0] : MemRead :  D=0x0000000000000000 A=0x2001fdc8
+248661550: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 1 :   ldr_uop.w   r1, [sp, #4] : MemRead :  D=0x0000000000000001 A=0x2001fdcc
+248667432: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 2 :   ldr_uop.w   r2, [sp, #8] : MemRead :  D=0x0000000000000002 A=0x2001fdd0
+248673314: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 3 :   ldr_uop.w   r3, [sp, #12] : MemRead :  D=0x0000000000000003 A=0x2001fdd4
+248679196: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 4 :   ldr_uop.w   r4, [sp, #16] : MemRead :  D=0x0000000000000004 A=0x2001fdd8
+248685078: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 5 :   ldr_uop.w   r5, [sp, #20] : MemRead :  D=0x0000000000000005 A=0x2001fddc
+248690960: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 6 :   ldr_uop.w   r6, [sp, #24] : MemRead :  D=0x0000000000000000 A=0x2001fde0
+248696842: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 7 :   ldr_uop.w   r7, [sp, #28] : MemRead :  D=0x0000000000000000 A=0x2001fde4
+248702724: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 8 :   ldr_uop.w   lr, [sp, #32] : MemRead :  D=0x00000000080073ef A=0x2001fde8
+248702724: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 9 :   addi_uop.w   sp, sp, #36 : IntAlu :  D=0x000000002001fdec
+248708606: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45    : push
+248708606: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 0 :   str_uop   r0, [sp, #16]  : MemWrite :  D=0x0000000000000000 A=0x2001fddc
+248714488: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 1 :   str_uop   r1, [sp, #12]  : MemWrite :  D=0x0000000000000001 A=0x2001fde0
+248720370: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 2 :   str_uop   r2, [sp, #8]   : MemWrite :  D=0x0000000000000002 A=0x2001fde4
+248726252: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 3 :   str_uop   r3, [sp, #4]   : MemWrite :  D=0x0000000000000003 A=0x2001fde8
+248732134: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 4 :   subi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fddc
+248749780: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47    : pop
+248749780: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 0 :   ldr_uop   r0, [sp, #0]   : MemRead :  D=0x0000000000000000 A=0x2001fddc
+248755662: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 1 :   ldr_uop   r1, [sp, #4]   : MemRead :  D=0x0000000000000001 A=0x2001fde0
+248761544: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 2 :   ldr_uop   r2, [sp, #8]   : MemRead :  D=0x0000000000000002 A=0x2001fde4
+248767426: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 3 :   ldr_uop   r3, [sp, #12]  : MemRead :  D=0x0000000000000003 A=0x2001fde8
+248767426: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 4 :   addi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fdec
+248779190: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49    : pop
+248779190: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 0 :   ldr_uop   r4, [sp, #0]   : MemRead :  D=0x0000000000000003 A=0x2001fdec
+248790954: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 1 :   ldr_uop   r5, [sp, #4]   : MemRead :  D=0x0000000008007588 A=0x2001fdf0
+248796836: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 2 :   ldr_uop   r6, [sp, #8]   : MemRead :  D=0x0000000000000000 A=0x2001fdf4
+248802718: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 3 :   ldr_uop   r7, [sp, #12]  : MemRead :  D=0x0000000000000000 A=0x2001fdf8
+248808600: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 4 :   ldr_uop   r36, [sp, #16] : MemRead :  D=0x00000000080073ef A=0x2001fdfc
+248808600: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 5 :   addi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fe00
+248814482: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 6 :   uopReg_uop   pc, r36     : IntAlu :  D=0x00000000080073ef
+248820364: system.cpu: T0 : 0x80073ee @main+233    :   subs   r4, r4, #1        : IntAlu :  D=0x0000000000000001
+248832128: system.cpu: T0 : 0x80073f0 @main+235    :   b   <main+225>           : IntAlu :
+248890948: system.cpu: T0 : 0x80073ea @main+229    :   bl.w   <_ZL7end_roiv+23> : IntAlu :  D=0x00000000080073ef
+248926240: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27    : push
+248926240: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 0 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000002 A=0x2001fdec
+248932122: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 1 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000008007588 A=0x2001fdf0
+248938004: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 2 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fdf4
+248943886: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 3 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fdf8
+248949768: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 4 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fdfc
+248955650: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 5 :   subi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fdec
+248961532: system.cpu: T0 : 0x80072d2 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+1    :   nop                      : IntAlu :
+248967414: system.cpu: T0 : 0x80072d4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+3    :   nop.w                    : IntAlu :
+248973296: system.cpu: T0 : 0x80072d8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+7    :   nop.w                    : IntAlu :
+248979178: system.cpu: T0 : 0x80072dc @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+11    :   nop.w                    : IntAlu :
+248996824: system.cpu: T0 : 0x80072e0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+15    :   mov.w   r0, #0           : IntAlu :  D=0x0000000000000000
+249008588: system.cpu: T0 : 0x80072e4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+19    :   mov.w   r1, #1           : IntAlu :  D=0x0000000000000001
+249026234: system.cpu: T0 : 0x80072e8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+23    :   mov.w   r2, #2           : IntAlu :  D=0x0000000000000002
+249037998: system.cpu: T0 : 0x80072ec @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+27    :   mov.w   r3, #3           : IntAlu :  D=0x0000000000000003
+249049762: system.cpu: T0 : 0x80072f0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+31    :   mov.w   r4, #4           : IntAlu :  D=0x0000000000000004
+249061526: system.cpu: T0 : 0x80072f4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+35    :   mov.w   r5, #5           : IntAlu :  D=0x0000000000000005
+249079172: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39    : push
+249079172: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 0 :   str_uop   r0, [sp, #36]  : MemWrite :  D=0x0000000000000000 A=0x2001fdc8
+249085054: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 1 :   str_uop   r1, [sp, #32]  : MemWrite :  D=0x0000000000000001 A=0x2001fdcc
+249090936: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 2 :   str_uop   r2, [sp, #28]  : MemWrite :  D=0x0000000000000002 A=0x2001fdd0
+249096818: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 3 :   str_uop   r3, [sp, #24]  : MemWrite :  D=0x0000000000000003 A=0x2001fdd4
+249102700: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 4 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000004 A=0x2001fdd8
+249108582: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 5 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000000000005 A=0x2001fddc
+249114464: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 6 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fde0
+249120346: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 7 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fde4
+249126228: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 8 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fde8
+249132110: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 9 :   subi_uop   sp, sp, #36   : IntAlu :  D=0x000000002001fdc8
+249149756: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41    : pop.w
+249149756: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 0 :   ldr_uop.w   r0, [sp, #0] : MemRead :  D=0x0000000000000000 A=0x2001fdc8
+249155638: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 1 :   ldr_uop.w   r1, [sp, #4] : MemRead :  D=0x0000000000000001 A=0x2001fdcc
+249161520: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 2 :   ldr_uop.w   r2, [sp, #8] : MemRead :  D=0x0000000000000002 A=0x2001fdd0
+249167402: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 3 :   ldr_uop.w   r3, [sp, #12] : MemRead :  D=0x0000000000000003 A=0x2001fdd4
+249173284: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 4 :   ldr_uop.w   r4, [sp, #16] : MemRead :  D=0x0000000000000004 A=0x2001fdd8
+249179166: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 5 :   ldr_uop.w   r5, [sp, #20] : MemRead :  D=0x0000000000000005 A=0x2001fddc
+249185048: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 6 :   ldr_uop.w   r6, [sp, #24] : MemRead :  D=0x0000000000000000 A=0x2001fde0
+249190930: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 7 :   ldr_uop.w   r7, [sp, #28] : MemRead :  D=0x0000000000000000 A=0x2001fde4
+249196812: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 8 :   ldr_uop.w   lr, [sp, #32] : MemRead :  D=0x00000000080073ef A=0x2001fde8
+249196812: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 9 :   addi_uop.w   sp, sp, #36 : IntAlu :  D=0x000000002001fdec
+249202694: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45    : push
+249202694: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 0 :   str_uop   r0, [sp, #16]  : MemWrite :  D=0x0000000000000000 A=0x2001fddc
+249208576: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 1 :   str_uop   r1, [sp, #12]  : MemWrite :  D=0x0000000000000001 A=0x2001fde0
+249214458: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 2 :   str_uop   r2, [sp, #8]   : MemWrite :  D=0x0000000000000002 A=0x2001fde4
+249220340: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 3 :   str_uop   r3, [sp, #4]   : MemWrite :  D=0x0000000000000003 A=0x2001fde8
+249226222: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 4 :   subi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fddc
+249243868: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47    : pop
+249243868: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 0 :   ldr_uop   r0, [sp, #0]   : MemRead :  D=0x0000000000000000 A=0x2001fddc
+249249750: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 1 :   ldr_uop   r1, [sp, #4]   : MemRead :  D=0x0000000000000001 A=0x2001fde0
+249255632: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 2 :   ldr_uop   r2, [sp, #8]   : MemRead :  D=0x0000000000000002 A=0x2001fde4
+249261514: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 3 :   ldr_uop   r3, [sp, #12]  : MemRead :  D=0x0000000000000003 A=0x2001fde8
+249261514: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 4 :   addi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fdec
+249273278: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49    : pop
+249273278: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 0 :   ldr_uop   r4, [sp, #0]   : MemRead :  D=0x0000000000000002 A=0x2001fdec
+249285042: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 1 :   ldr_uop   r5, [sp, #4]   : MemRead :  D=0x0000000008007588 A=0x2001fdf0
+249290924: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 2 :   ldr_uop   r6, [sp, #8]   : MemRead :  D=0x0000000000000000 A=0x2001fdf4
+249296806: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 3 :   ldr_uop   r7, [sp, #12]  : MemRead :  D=0x0000000000000000 A=0x2001fdf8
+249302688: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 4 :   ldr_uop   r36, [sp, #16] : MemRead :  D=0x00000000080073ef A=0x2001fdfc
+249302688: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 5 :   addi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fe00
+249308570: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 6 :   uopReg_uop   pc, r36     : IntAlu :  D=0x00000000080073ef
+249314452: system.cpu: T0 : 0x80073ee @main+233    :   subs   r4, r4, #1        : IntAlu :  D=0x0000000000000001
+249326216: system.cpu: T0 : 0x80073f0 @main+235    :   b   <main+225>           : IntAlu :
+249385036: system.cpu: T0 : 0x80073ea @main+229    :   bl.w   <_ZL7end_roiv+23> : IntAlu :  D=0x00000000080073ef
+249420328: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27    : push
+249420328: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 0 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000001 A=0x2001fdec
+249426210: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 1 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000008007588 A=0x2001fdf0
+249432092: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 2 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fdf4
+249437974: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 3 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fdf8
+249443856: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 4 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fdfc
+249449738: system.cpu: T0 : 0x80072d0 @_ZL7end_roiv+27. 5 :   subi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fdec
+249455620: system.cpu: T0 : 0x80072d2 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+1    :   nop                      : IntAlu :
+249461502: system.cpu: T0 : 0x80072d4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+3    :   nop.w                    : IntAlu :
+249467384: system.cpu: T0 : 0x80072d8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+7    :   nop.w                    : IntAlu :
+249473266: system.cpu: T0 : 0x80072dc @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+11    :   nop.w                    : IntAlu :
+249490912: system.cpu: T0 : 0x80072e0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+15    :   mov.w   r0, #0           : IntAlu :  D=0x0000000000000000
+249502676: system.cpu: T0 : 0x80072e4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+19    :   mov.w   r1, #1           : IntAlu :  D=0x0000000000000001
+249520322: system.cpu: T0 : 0x80072e8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+23    :   mov.w   r2, #2           : IntAlu :  D=0x0000000000000002
+249532086: system.cpu: T0 : 0x80072ec @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+27    :   mov.w   r3, #3           : IntAlu :  D=0x0000000000000003
+249549732: system.cpu: T0 : 0x80072f0 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+31    :   mov.w   r4, #4           : IntAlu :  D=0x0000000000000004
+249561496: system.cpu: T0 : 0x80072f4 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+35    :   mov.w   r5, #5           : IntAlu :  D=0x0000000000000005
+249579142: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39    : push
+249579142: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 0 :   str_uop   r0, [sp, #36]  : MemWrite :  D=0x0000000000000000 A=0x2001fdc8
+249585024: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 1 :   str_uop   r1, [sp, #32]  : MemWrite :  D=0x0000000000000001 A=0x2001fdcc
+249590906: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 2 :   str_uop   r2, [sp, #28]  : MemWrite :  D=0x0000000000000002 A=0x2001fdd0
+249596788: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 3 :   str_uop   r3, [sp, #24]  : MemWrite :  D=0x0000000000000003 A=0x2001fdd4
+249602670: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 4 :   str_uop   r4, [sp, #20]  : MemWrite :  D=0x0000000000000004 A=0x2001fdd8
+249608552: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 5 :   str_uop   r5, [sp, #16]  : MemWrite :  D=0x0000000000000005 A=0x2001fddc
+249614434: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 6 :   str_uop   r6, [sp, #12]  : MemWrite :  D=0x0000000000000000 A=0x2001fde0
+249620316: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 7 :   str_uop   r7, [sp, #8]   : MemWrite :  D=0x0000000000000000 A=0x2001fde4
+249626198: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 8 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073ef A=0x2001fde8
+249632080: system.cpu: T0 : 0x80072f8 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+39. 9 :   subi_uop   sp, sp, #36   : IntAlu :  D=0x000000002001fdc8
+249649726: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41    : pop.w
+249649726: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 0 :   ldr_uop.w   r0, [sp, #0] : MemRead :  D=0x0000000000000000 A=0x2001fdc8
+249655608: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 1 :   ldr_uop.w   r1, [sp, #4] : MemRead :  D=0x0000000000000001 A=0x2001fdcc
+249661490: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 2 :   ldr_uop.w   r2, [sp, #8] : MemRead :  D=0x0000000000000002 A=0x2001fdd0
+249667372: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 3 :   ldr_uop.w   r3, [sp, #12] : MemRead :  D=0x0000000000000003 A=0x2001fdd4
+249673254: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 4 :   ldr_uop.w   r4, [sp, #16] : MemRead :  D=0x0000000000000004 A=0x2001fdd8
+249679136: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 5 :   ldr_uop.w   r5, [sp, #20] : MemRead :  D=0x0000000000000005 A=0x2001fddc
+249685018: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 6 :   ldr_uop.w   r6, [sp, #24] : MemRead :  D=0x0000000000000000 A=0x2001fde0
+249690900: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 7 :   ldr_uop.w   r7, [sp, #28] : MemRead :  D=0x0000000000000000 A=0x2001fde4
+249696782: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 8 :   ldr_uop.w   lr, [sp, #32] : MemRead :  D=0x00000000080073ef A=0x2001fde8
+249696782: system.cpu: T0 : 0x80072fa @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+41. 9 :   addi_uop.w   sp, sp, #36 : IntAlu :  D=0x000000002001fdec
+249702664: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45    : push
+249702664: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 0 :   str_uop   r0, [sp, #16]  : MemWrite :  D=0x0000000000000000 A=0x2001fddc
+249708546: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 1 :   str_uop   r1, [sp, #12]  : MemWrite :  D=0x0000000000000001 A=0x2001fde0
+249714428: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 2 :   str_uop   r2, [sp, #8]   : MemWrite :  D=0x0000000000000002 A=0x2001fde4
+249720310: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 3 :   str_uop   r3, [sp, #4]   : MemWrite :  D=0x0000000000000003 A=0x2001fde8
+249726192: system.cpu: T0 : 0x80072fe @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+45. 4 :   subi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fddc
+249743838: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47    : pop
+249743838: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 0 :   ldr_uop   r0, [sp, #0]   : MemRead :  D=0x0000000000000000 A=0x2001fddc
+249749720: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 1 :   ldr_uop   r1, [sp, #4]   : MemRead :  D=0x0000000000000001 A=0x2001fde0
+249755602: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 2 :   ldr_uop   r2, [sp, #8]   : MemRead :  D=0x0000000000000002 A=0x2001fde4
+249761484: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 3 :   ldr_uop   r3, [sp, #12]  : MemRead :  D=0x0000000000000003 A=0x2001fde8
+249761484: system.cpu: T0 : 0x8007300 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+47. 4 :   addi_uop   sp, sp, #16   : IntAlu :  D=0x000000002001fdec
+249773248: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49    : pop
+249773248: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 0 :   ldr_uop   r4, [sp, #0]   : MemRead :  D=0x0000000000000001 A=0x2001fdec
+249785012: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 1 :   ldr_uop   r5, [sp, #4]   : MemRead :  D=0x0000000008007588 A=0x2001fdf0
+249790894: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 2 :   ldr_uop   r6, [sp, #8]   : MemRead :  D=0x0000000000000000 A=0x2001fdf4
+249796776: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 3 :   ldr_uop   r7, [sp, #12]  : MemRead :  D=0x0000000000000000 A=0x2001fdf8
+249802658: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 4 :   ldr_uop   r36, [sp, #16] : MemRead :  D=0x00000000080073ef A=0x2001fdfc
+249802658: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 5 :   addi_uop   sp, sp, #20   : IntAlu :  D=0x000000002001fe00
+249808540: system.cpu: T0 : 0x8007302 @_ZN9EntoBench12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EE13call_noinlineEv.isra.0+49. 6 :   uopReg_uop   pc, r36     : IntAlu :  D=0x00000000080073ef
+249814422: system.cpu: T0 : 0x80073ee @main+233    :   subs   r4, r4, #1        : IntAlu :  D=0x0000000000000001
+249826186: system.cpu: T0 : 0x80073f0 @main+235    :   b   <main+225>           : IntAlu : Predicated False
+249837950: system.cpu: T0 : 0x80073f2 @main+237    :   bl.w   <_ZL9start_roiv+11> : IntAlu :  D=0x00000000080073f7
+249873242: system.cpu: T0 : 0x80072b4 @_ZL9start_roiv+15    : push
+249873242: system.cpu: T0 : 0x80072b4 @_ZL9start_roiv+15. 0 :   str_uop   r3, [sp, #8]   : MemWrite :  D=0x0000000000000003 A=0x2001fdf8
+249879124: system.cpu: T0 : 0x80072b4 @_ZL9start_roiv+15. 1 :   str_uop   lr, [sp, #4]   : MemWrite :  D=0x00000000080073f7 A=0x2001fdfc
+249885006: system.cpu: T0 : 0x80072b4 @_ZL9start_roiv+15. 2 :   subi_uop   sp, sp, #8    : IntAlu :  D=0x000000002001fdf8
+249890888: system.cpu: T0 : 0x80072b6 @_ZL7end_roiv+1    :   movs   r0, #91           : IntAlu :  D=0x0000000000000000
+249896770: system.cpu: T0 : 0x80072b8 @_ZL7end_roiv+3    :   bl.w   <_ZN9EntoBench7HarnessINS_12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EEELb1ELj1ELj10ELj0ELi1EE16update_aggregateERK10ROIMetrics+99> : IntAlu :  D=0x00000000080072bd
+249932062: system.cpu: T0 : 0x800728c @_ZN9EntoBench7HarnessINS_12BasicProblemIZ4mainEUlvE_LNS_12InlinePolicyE1EEELb1ELj1ELj10ELj0ELi1EE16update_aggregateERK10ROIMetrics+103    :   ldr   r1, [pc, #16]      : MemRead :  D=0x0000000020000a9c A=0x80072a0
+249932062: system.cpu: T0 : 0x800728e @_ZL12m5_semi_callhmm.constprop.0.isra.0+1    :   movs   r3, #0            : IntAlu :  D=0x0000000000000001
+249943826: system.cpu: T0 : 0x8007290 @_ZL12m5_semi_callhmm.constprop.0.isra.0+3    :   movs   r0, r0, LSL #8    : IntAlu :  D=0x0000000000000000
+249949708: system.cpu: T0 : 0x8007292 @_ZL12m5_semi_callhmm.constprop.0.isra.0+5    :   str   r0, [r1, #0]       : MemWrite :  D=0x0000000000005b00 A=0x20000a9c
+249955590: system.cpu: T0 : 0x8007294 @_ZL12m5_semi_callhmm.constprop.0.isra.0+7    :   str   r3, [r1, #4]       : MemWrite :  D=0x0000000000000000 A=0x20000aa0
+249973236: system.cpu: T0 : 0x8007296 @_ZL12m5_semi_callhmm.constprop.0.isra.0+9    :   mov.w   r0, #256         : IntAlu :  D=0x0000000000000100
+249979118: system.cpu: T0 : 0x800729a @_ZL12m5_semi_callhmm.constprop.0.isra.0+13    :   str   r3, [r1, #8]       : MemWrite :  D=0x0000000000000000 A=0x20000aa4
+249985000: system.cpu: T0 : 0x800729c @_ZL12m5_semi_callhmm.constprop.0.isra.0+15    :   bkpt  #0xab  ; semihosting : IntAlu :
+
+*** ROI END at tick 249985000 ***
+  ROI ticks : 5211452
+  ROI cycles: 886.0  (at 170 MHz)
+
+Exiting after first ROI.
+
+============================================================
+Benchmark : bench-pushpop_v2
+ROI Start : 244773548
+ROI End   : 249985000
+Delta     : 5211452 ticks
+Cycles (total)    : 886.0  (at 170 MHz)
+Cycles (per call) : 88.6  (total / 10 inner_reps)
+  [debug] precise_start=244914716, precise_end=249837950
+
+Precise (kernel only, excluding m5op overhead):
+  First kernel inst : 244914716
+  Last kernel inst  : 249837950
+  Delta             : 4923234 ticks
+  Cycles (total)    : 837.0
+  Cycles (per call) : 83.7  (total / 10 inner_reps)
+============================================================
