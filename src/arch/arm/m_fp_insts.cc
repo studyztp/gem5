@@ -746,6 +746,110 @@ MFpMovDToCorePair::generateDisassembly(
 // =====================================================================
 
 Fault
+MFpCvtS::doFpOp(ExecContext *xc, trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    FPSCR fpscr = tc->readMiscRegNoEffect(MISCREG_FPSCR);
+
+    uint32_t srcBits = (uint32_t)tc->getReg(vfpSRegId(op1));
+    uint32_t resultBits;
+
+    if (toFloat) {
+        // Integer → float: use round-to-nearest (ARM spec, not RMode)
+        int savedRound = fegetround();
+        fesetround(FE_TONEAREST);
+        feclearexcept(FE_ALL_EXCEPT);
+
+        float result;
+        if (isSigned) {
+            int32_t intVal;
+            std::memcpy(&intVal, &srcBits, 4);
+            result = (float)intVal;
+        } else {
+            result = (float)srcBits;
+        }
+
+        int excepts = fetestexcept(FE_ALL_EXCEPT);
+        if (excepts & FE_INEXACT) fpscr.ixc = 1;
+
+        fesetround(savedRound);
+        resultBits = floatToBits32(result);
+    } else {
+        // Float → integer: use round-towards-zero (ARM spec)
+        float srcFloat = bitsToFloat32(srcBits);
+
+        // Flush denormal input if FPSCR.FZ
+        if (fpscr.fz && isDenormal(srcFloat)) {
+            srcFloat = std::copysign(0.0f, srcFloat);
+            fpscr.idc = 1;
+        }
+
+        int savedRound = fegetround();
+        fesetround(FE_TOWARDZERO);
+        feclearexcept(FE_ALL_EXCEPT);
+
+        if (isSigned) {
+            int32_t intResult;
+            if (std::isnan(srcFloat)) {
+                intResult = 0;
+                fpscr.ioc = 1;
+            } else if (srcFloat >= 2147483648.0f) {
+                intResult = 2147483647;
+                fpscr.ioc = 1;
+            } else if (srcFloat < -2147483648.0f) {
+                intResult = -2147483648;
+                fpscr.ioc = 1;
+            } else {
+                intResult = (int32_t)srcFloat;
+            }
+            std::memcpy(&resultBits, &intResult, 4);
+        } else {
+            uint32_t uintResult;
+            if (std::isnan(srcFloat) || srcFloat < 0.0f) {
+                uintResult = 0;
+                fpscr.ioc = 1;
+            } else if (srcFloat >= 4294967296.0f) {
+                uintResult = 0xFFFFFFFF;
+                fpscr.ioc = 1;
+            } else {
+                uintResult = (uint32_t)srcFloat;
+            }
+            resultBits = uintResult;
+        }
+
+        int excepts = fetestexcept(FE_ALL_EXCEPT);
+        if (excepts & FE_INEXACT) fpscr.ixc = 1;
+        fesetround(savedRound);
+    }
+
+    tc->setReg(vfpSRegId(dest), (RegVal)resultBits);
+    tc->setMiscRegNoEffect(MISCREG_FPSCR, fpscr);
+
+    if (traceData)
+        traceData->setData(vecElemClass, (RegVal)resultBits);
+
+    return NoFault;
+}
+
+std::string
+MFpCvtS::generateDisassembly(Addr pc,
+    const loader::SymbolTable *symtab) const
+{
+    std::ostringstream ss;
+    if (toFloat) {
+        ss << "vcvt.f32." << (isSigned ? "s32" : "u32");
+    } else {
+        ss << "vcvt." << (isSigned ? "s32" : "u32") << ".f32";
+    }
+    ss << " s" << dest << ", s" << op1;
+    return ss.str();
+}
+
+// =====================================================================
+// MFpCmpS — VCMP.F32 / VCMPE.F32
+// =====================================================================
+
+Fault
 MFpCmpS::doFpOp(ExecContext *xc, trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();

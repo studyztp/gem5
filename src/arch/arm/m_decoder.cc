@@ -29,6 +29,7 @@
 #include "arch/arm/m_decoder.hh"
 
 #include <cmath>
+#include <cstring>
 
 #include "arch/arm/m_fp_insts.hh"
 #include "arch/arm/m_insts.hh"
@@ -840,7 +841,11 @@ MDecoder::decodeMProfileVfp(ExtMachInst mach_inst)
 
     // Group 2: two-register transfer (bit25=0, bit4=1, opc1[3:1]=2)
     // VMOV Dm, Rt, Rt2  /  VMOV Rt, Rt2, Dm
-    if (bit4 && bits(inst, 25) == 0 && bits(opc1, 3, 1) == 0x2) {
+    // Always uses coproc=0xB (double), so single must be false.
+    // Without the !single guard, VLDR single with opc1[3:1]=2
+    // (e.g., vldr s1,[r3,#-124] opc1=0x5) would be misdecoded.
+    if (bit4 && !single && bits(inst, 25) == 0
+        && bits(opc1, 3, 1) == 0x2) {
         const bool L = bits(inst, 20);
         const RegIndex rt = (RegIndex)bits(inst, 15, 12);
         RegIndex dd = (RegIndex)(bits(inst, 5) << 4
@@ -1092,8 +1097,18 @@ MDecoder::decodeMProfileVfp(ExtMachInst mach_inst)
                 return new MFpCmpS(mach_inst, vd(), vm(),
                                    withExc, withZero);
               }
+              case 0x8:
+              case 0xc:
+              case 0xd: {
+                // VCVT integer ↔ float conversions
+                const bool toFloat = (opc2 == 0x8);
+                const bool isSigned = toFloat ? (opc3 & 1)
+                                              : bits(opc2, 0);
+                return new MFpCvtS(mach_inst, vd(), vm(),
+                                   toFloat, isSigned);
+              }
               default:
-                // VCVT and other conversions — fall through for now
+                // Other conversions — fall through
                 return nullptr;
             }
             break;

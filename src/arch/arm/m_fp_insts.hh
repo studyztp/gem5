@@ -534,6 +534,56 @@ class MFpMovDToCorePair : public MFpOp
 // dest: FPSCR
 // =====================================================================
 
+// =====================================================================
+// MFpCvtS — VCVT integer ↔ float single-precision
+// Handles VCVT.F32.U32, VCVT.F32.S32, VCVT.U32.F32, VCVT.S32.F32.
+// Does NOT use mFpUnaryOp because:
+//   - int→float: input is integer bits, NOT a float (denormal flush
+//     would corrupt it); uses round-to-nearest, not FPSCR.RMode
+//   - float→int: uses round-towards-zero, not FPSCR.RMode
+// =====================================================================
+
+class MFpCvtS : public MFpOp
+{
+  private:
+    RegId srcRegIdxArr[2];
+    RegId destRegIdxArr[2];
+
+  protected:
+    RegIndex dest, op1;
+    bool toFloat;   // true: int→float, false: float→int
+    bool isSigned;  // true: S32, false: U32
+
+    Fault doFpOp(ExecContext *xc,
+                 trace::InstRecord *traceData) const override;
+
+  public:
+    MFpCvtS(ExtMachInst mach_inst, RegIndex _dest, RegIndex _op1,
+            bool _toFloat, bool _isSigned)
+        : MFpOp("vcvt", mach_inst, SimdFloatCvtOp),
+          dest(_dest), op1(_op1),
+          toFloat(_toFloat), isSigned(_isSigned)
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setSrcRegIdx(_numSrcRegs++, vfpSRegId(op1));
+        setSrcRegIdx(_numSrcRegs++, miscRegClass[MISCREG_FPSCR]);
+        setDestRegIdx(_numDestRegs++, vfpSRegId(dest));
+        _numTypedDestRegs[vecElemClass.type()]++;
+        setDestRegIdx(_numDestRegs++, miscRegClass[MISCREG_FPSCR]);
+        _numTypedDestRegs[miscRegClass.type()]++;
+    }
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+// =====================================================================
+// MFpCmpS — VCMP.F32, VCMPE.F32
 class MFpCmpS : public MFpOp
 {
   private:
