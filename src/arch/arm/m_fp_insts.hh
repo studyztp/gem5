@@ -54,6 +54,7 @@
 #include <type_traits>
 
 #include "arch/arm/insts/pred_inst.hh"
+#include "arch/arm/pcstate.hh"
 #include "arch/arm/regs/cc.hh"
 #include "arch/arm/regs/int.hh"
 #include "arch/arm/regs/misc.hh"
@@ -132,6 +133,30 @@ class MFpOp : public PredOp
 
     Fault execute(ExecContext *xc,
                   trace::InstRecord *traceData) const override;
+
+    // Micro-op aware PC advancement.  When MFpOp subclasses are used
+    // as micro-ops inside MMacroVFPMemOp, they must step through the
+    // macroop's micro-op sequence rather than advancing the main PC.
+    void
+    advancePC(PCStateBase &pcState) const override
+    {
+        auto &apc = pcState.as<PCState>();
+        if (flags[IsLastMicroop]) {
+            apc.uEnd();
+        } else if (flags[IsMicroop]) {
+            apc.uAdvance();
+        } else {
+            apc.advance();
+        }
+    }
+
+    void
+    advancePC(ThreadContext *tc) const override
+    {
+        PCState pc = tc->pcState().as<PCState>();
+        advancePC(pc);
+        tc->pcState(pc);
+    }
 };
 
 // =====================================================================
@@ -169,6 +194,54 @@ class MFpBinS : public MFpOp
             reinterpret_cast<RegIdArrayPtr>(
                 &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
 
+        setSrcRegIdx(_numSrcRegs++, vfpSRegId(op1));
+        setSrcRegIdx(_numSrcRegs++, vfpSRegId(op2));
+        setSrcRegIdx(_numSrcRegs++, miscRegClass[MISCREG_FPSCR]);
+        setDestRegIdx(_numDestRegs++, vfpSRegId(dest));
+        _numTypedDestRegs[vecElemClass.type()]++;
+        setDestRegIdx(_numDestRegs++, miscRegClass[MISCREG_FPSCR]);
+        _numTypedDestRegs[miscRegClass.type()]++;
+    }
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+// =====================================================================
+// MFpTernaryS — Ternary single-precision (VFMA, VFMS, VFNMA, VFNMS)
+// Computes dest = func(dest, op1, op2), e.g. VFMA: Sd += Sn * Sm
+// src: S[dest], S[op1], S[op2], FPSCR   dest: S[dest], FPSCR
+// =====================================================================
+
+using FpTernaryFunc = float (*)(float, float, float);
+
+class MFpTernaryS : public MFpOp
+{
+  private:
+    RegId srcRegIdxArr[4];
+    RegId destRegIdxArr[2];
+
+  protected:
+    RegIndex dest, op1, op2;
+    FpTernaryFunc func;
+
+    Fault doFpOp(ExecContext *xc,
+                 trace::InstRecord *traceData) const override;
+
+  public:
+    MFpTernaryS(const char *mnem, ExtMachInst mach_inst,
+                OpClass op_class, RegIndex _dest, RegIndex _op1,
+                RegIndex _op2, FpTernaryFunc _func)
+        : MFpOp(mnem, mach_inst, op_class),
+          dest(_dest), op1(_op1), op2(_op2), func(_func)
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setSrcRegIdx(_numSrcRegs++, vfpSRegId(dest));  // accumulator
         setSrcRegIdx(_numSrcRegs++, vfpSRegId(op1));
         setSrcRegIdx(_numSrcRegs++, vfpSRegId(op2));
         setSrcRegIdx(_numSrcRegs++, miscRegClass[MISCREG_FPSCR]);
@@ -368,6 +441,87 @@ class MFpMovSToCore : public MFpOp
         setSrcRegIdx(_numSrcRegs++, vfpSRegId(sn));
         setDestRegIdx(_numDestRegs++, intRegClass[rt]);
         _numTypedDestRegs[intRegClass.type()]++;
+    }
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+// =====================================================================
+// MFpMovCorePairToD — VMOV Dm, Rt, Rt2
+// Two core registers → one D-register (doubleword data transfer).
+// Valid on FPv4-SP [DDI0403 A6.3].
+// =====================================================================
+
+class MFpMovCorePairToD : public MFpOp
+{
+  private:
+    RegId srcRegIdxArr[2];
+    RegId destRegIdxArr[2];
+
+  protected:
+    RegIndex dd, rt, rt2;
+
+    Fault doFpOp(ExecContext *xc,
+                 trace::InstRecord *traceData) const override;
+
+  public:
+    MFpMovCorePairToD(ExtMachInst mach_inst, RegIndex _dd,
+                      RegIndex _rt, RegIndex _rt2)
+        : MFpOp("vmov", mach_inst, SimdFloatMiscOp),
+          dd(_dd), rt(_rt), rt2(_rt2)
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setSrcRegIdx(_numSrcRegs++, intRegClass[rt]);
+        setSrcRegIdx(_numSrcRegs++, intRegClass[rt2]);
+        setDestRegIdx(_numDestRegs++, vfpSRegId(dd * 2));
+        _numTypedDestRegs[vecElemClass.type()]++;
+        setDestRegIdx(_numDestRegs++, vfpSRegId(dd * 2 + 1));
+        _numTypedDestRegs[vecElemClass.type()]++;
+    }
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+// =====================================================================
+// MFpMovDToCorePair — VMOV Rt, Rt2, Dm
+// One D-register → two core registers.
+// =====================================================================
+
+class MFpMovDToCorePair : public MFpOp
+{
+  private:
+    RegId srcRegIdxArr[2];
+    RegId destRegIdxArr[2];
+
+  protected:
+    RegIndex dd, rt, rt2;
+
+    Fault doFpOp(ExecContext *xc,
+                 trace::InstRecord *traceData) const override;
+
+  public:
+    MFpMovDToCorePair(ExtMachInst mach_inst, RegIndex _dd,
+                      RegIndex _rt, RegIndex _rt2)
+        : MFpOp("vmov", mach_inst, SimdFloatMiscOp),
+          dd(_dd), rt(_rt), rt2(_rt2)
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setSrcRegIdx(_numSrcRegs++, vfpSRegId(dd * 2));
+        setSrcRegIdx(_numSrcRegs++, vfpSRegId(dd * 2 + 1));
+        setDestRegIdx(_numDestRegs++, intRegClass[rt]);
+        setDestRegIdx(_numDestRegs++, intRegClass[rt2]);
     }
 
     std::string generateDisassembly(
@@ -701,6 +855,95 @@ class MFpStrD : public MFpOp
                       trace::InstRecord *traceData) const override;
     Fault completeAcc(PacketPtr pkt, ExecContext *xc,
                       trace::InstRecord *traceData) const override;
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+// =====================================================================
+// MFpWritebackUop — simple Rn += imm writeback micro-op
+// Used by MMacroVFPMemOp for VLDM/VSTM writeback.
+// =====================================================================
+
+class MFpWritebackUop : public PredOp
+{
+  private:
+    RegId srcRegIdxArr[1];
+    RegId destRegIdxArr[1];
+
+  protected:
+    RegIndex rn;
+    int32_t imm;
+
+  public:
+    MFpWritebackUop(ExtMachInst mach_inst, RegIndex _rn, int32_t _imm)
+        : PredOp("vfp_wb", mach_inst, IntAluOp),
+          rn(_rn), imm(_imm)
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setSrcRegIdx(_numSrcRegs++, intRegClass[rn]);
+        setDestRegIdx(_numDestRegs++, intRegClass[rn]);
+    }
+
+    Fault execute(ExecContext *xc,
+                  trace::InstRecord *traceData) const override
+    {
+        Addr base = xc->tcBase()->getReg(RegId(intRegClass, rn));
+        xc->setRegOperand(this, 0, (RegVal)(base + imm));
+        return NoFault;
+    }
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override
+    {
+        std::ostringstream ss;
+        ss << "vfp_wb r" << rn << ", #" << imm;
+        return ss.str();
+    }
+
+    void
+    advancePC(PCStateBase &pcState) const override
+    {
+        auto &apc = pcState.as<PCState>();
+        if (flags[IsLastMicroop]) {
+            apc.uEnd();
+        } else if (flags[IsMicroop]) {
+            apc.uAdvance();
+        } else {
+            apc.advance();
+        }
+    }
+
+    void
+    advancePC(ThreadContext *tc) const override
+    {
+        PCState pc = tc->pcState().as<PCState>();
+        advancePC(pc);
+        tc->pcState(pc);
+    }
+};
+
+// =====================================================================
+// MMacroVFPMemOp — M-profile VLDM/VSTM/VPUSH/VPOP
+//
+// Macroop that expands into MFpLdrS/MFpStrS (single) or
+// MFpLdrD/MFpStrD (double) micro-ops with M-profile FP checks.
+// Replaces the A-profile MacroVFPMemOp which uses micro-ops
+// that call checkAdvSIMDOrFPEnabled32 (crashes on M-profile).
+// =====================================================================
+
+class MMacroVFPMemOp : public PredMacroOp
+{
+  public:
+    MMacroVFPMemOp(const char *mnem, ExtMachInst machInst,
+                   OpClass __opClass, RegIndex rn, RegIndex vd,
+                   bool single, bool up, bool writeback,
+                   bool load, uint32_t offset);
 
     std::string generateDisassembly(
         Addr pc, const loader::SymbolTable *symtab) const override;

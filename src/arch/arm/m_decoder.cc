@@ -28,6 +28,8 @@
 
 #include "arch/arm/m_decoder.hh"
 
+#include <cmath>
+
 #include "arch/arm/m_fp_insts.hh"
 #include "arch/arm/m_insts.hh"
 #include "base/bitfield.hh"
@@ -785,28 +787,78 @@ MDecoder::decodeMProfileVfp(ExtMachInst mach_inst)
     const uint32_t opc3 = bits(inst, 7, 6);
     const bool bit4 = bits(inst, 4);
 
-    // ---- VFP register transfer (VMOV core<->single, VMRS, VMSR) ----
-    // Encoding: opc1[3:1]=0b111, bit4=1 → coprocessor register transfer
-    // DDI0403E A7-272: opc1=0b1110, bit4=1 → VMOV (core to/from single)
-    //                  opc1=0b1111, bit4=1 → VMRS/VMSR (FPSCR access)
-    if (bit4 && bits(opc1, 3, 1) == 0x7) {
-        const bool L = bits(inst, 20);  // 0=to VFP, 1=from VFP
+    DPRINTF(Decode, "MDecoder decodeMProfileVfp: inst=%#x "
+            "single=%d opc1=%#x opc2=%#x opc3=%#x bit4=%d\n",
+            inst, single, opc1, opc2, opc3, bit4);
+
+    // ---- VFP register transfer (VMOV core<->single/double, VMRS, VMSR) --
+    // All have bit4=1.  Discriminated by opc1[3:1]:
+    //   opc1[3:1]=0 (0b000x) → VMOV core ↔ single  [A7.7.229]
+    //   opc1[3:1]=2 (0b010x) → VMOV two-core ↔ double  [A7.7.230]
+    //   opc1[3:1]=7 (0b111x) → VMRS / VMSR  [A7.7.228/227]
+    //   L (bit20): 0=to VFP, 1=from VFP
+    // ---- VFP register transfers ----
+    // Two groups, distinguished by bit[25]:
+    //   bit25=1, bit4=1: single-reg xfer (VMOV core↔single, VMRS, VMSR)
+    //   bit25=0, bit4=1, opc1[3:1]=2: two-reg xfer (VMOV core-pair↔double)
+    // bit25=0 with other opc1 values is load/store (VLDR/VSTR/VLDM/VSTM)
+    // where bit4 is part of imm8, NOT an opcode discriminator.
+
+    // Group 1: single-register transfers (bit25=1, bit4=1)
+    if (bit4 && bits(inst, 25) == 1) {
+        const bool L = bits(inst, 20);
         const RegIndex rt = (RegIndex)bits(inst, 15, 12);
 
-        if (bits(opc1, 0) == 0) {
-            // VMOV Sn, Rt  /  VMOV Rt, Sn
+        DPRINTF(Decode, "MDecoder VFP single-reg-xfer: inst=%#x "
+                "opc1=%#x opc1[3:1]=%d L=%d rt=r%d\n",
+                inst, opc1, bits(opc1, 3, 1), L, rt);
+
+        if (bits(opc1, 3, 1) == 0x0) {
+            // VMOV core ↔ single
+            DPRINTF(Decode, "MDecoder: VMOV core<->single "
+                    "L=%d rt=r%d sn=s%d\n", L, rt, vn());
             if (L) {
                 return new MFpMovSToCore(mach_inst, rt, vn());
             } else {
                 return new MFpMovCoreToS(mach_inst, vn(), rt);
             }
-        } else {
-            // VMRS Rt, FPSCR  /  VMSR FPSCR, Rt
+        } else if (bits(opc1, 3, 1) == 0x7) {
+            // VMRS / VMSR
+            DPRINTF(Decode, "MDecoder: VMRS/VMSR L=%d rt=r%d\n",
+                    L, rt);
             if (L) {
                 return new MFpMrs(mach_inst, rt);
             } else {
                 return new MFpMsr(mach_inst, rt);
             }
+        } else {
+            DPRINTF(Decode, "MDecoder: VFP single-reg-xfer "
+                    "unmatched opc1[3:1]=%d, falling through\n",
+                    bits(opc1, 3, 1));
+        }
+    }
+
+    // Group 2: two-register transfer (bit25=0, bit4=1, opc1[3:1]=2)
+    // VMOV Dm, Rt, Rt2  /  VMOV Rt, Rt2, Dm
+    if (bit4 && bits(inst, 25) == 0 && bits(opc1, 3, 1) == 0x2) {
+        const bool L = bits(inst, 20);
+        const RegIndex rt = (RegIndex)bits(inst, 15, 12);
+        RegIndex dd = (RegIndex)(bits(inst, 5) << 4
+                                 | bits(inst, 3, 0));
+        RegIndex rt2 = (RegIndex)bits(inst, 19, 16);
+
+        DPRINTF(Decode, "MDecoder: VMOV core-pair<->double "
+                "L=%d dd=d%d rt=r%d rt2=r%d\n",
+                L, dd, rt, rt2);
+        if (dd > 15)
+            return new MProfileUndefined(mach_inst,
+                "VMOV D16+ not available on ARMv7-M");
+        if (L) {
+            return new MFpMovDToCorePair(mach_inst, dd,
+                                         rt, rt2);
+        } else {
+            return new MFpMovCorePairToD(mach_inst, dd,
+                                         rt, rt2);
         }
     }
 
@@ -817,17 +869,26 @@ MDecoder::decodeMProfileVfp(ExtMachInst mach_inst)
     // DDI0403E A7.7.236 (VLDR), A7.7.255 (VSTR)
     // Valid for both single (sz=0) and double-word (sz=1) on FPv4-SP.
     // "supports doubleword data transfer instructions" [DDI0403 A6.3]
-    if (!bit4 && bits(inst, 24) == 1 && bits(inst, 21) == 0) {
+    // bit4 is part of imm8[4] here, NOT an opcode discriminator.
+    if (bits(inst, 24) == 1 && bits(inst, 21) == 0) {
         const bool isLoad = bits(inst, 20);      // L bit
         const bool U = bits(inst, 23);            // add/sub offset
         const uint32_t imm8 = bits(inst, 7, 0);
         const int32_t offset = imm8 << 2;         // imm8 x 4 bytes
         const RegIndex base = (RegIndex)bits(inst, 19, 16);
 
+        DPRINTF(Decode, "MDecoder VFP VLDR/VSTR: inst=%#x "
+                "isLoad=%d U=%d single=%d base=r%d "
+                "imm8=%d offset=%d\n",
+                inst, isLoad, U, single, base, imm8, offset);
+
         if (single) {
             // VLDR.32 / VSTR.32: Sd = Vd:D
             RegIndex sd = (RegIndex)(bits(inst, 15, 12) << 1
                                      | bits(inst, 22));
+            DPRINTF(Decode, "MDecoder VLDR/VSTR.32: "
+                    "sd=s%d rn=r%d offset=%d add=%d\n",
+                    sd, base, offset, U);
             if (isLoad)
                 return new MFpLdrS(mach_inst, sd, base, offset, U);
             else
@@ -836,6 +897,9 @@ MDecoder::decodeMProfileVfp(ExtMachInst mach_inst)
             // VLDR.64 / VSTR.64: Dd = D:Vd
             RegIndex dd = (RegIndex)(bits(inst, 22) << 4
                                      | bits(inst, 15, 12));
+            DPRINTF(Decode, "MDecoder VLDR/VSTR.64: "
+                    "dd=d%d rn=r%d offset=%d add=%d\n",
+                    dd, base, offset, U);
             if (dd > 15)
                 return new MProfileUndefined(mach_inst,
                     "VLDR/VSTR D16+ not available on ARMv7-M");
@@ -846,21 +910,61 @@ MDecoder::decodeMProfileVfp(ExtMachInst mach_inst)
         }
     }
 
+    // ---- VLDM / VSTM / VPUSH / VPOP (multi-register FP load/store) ----
+    // These are coprocessor load/store multiples (bit[25]=0) that were
+    // NOT caught by the VLDR/VSTR check above (which requires
+    // bit[24]=1, bit[21]=0).
+    // DDI0403E A7.7.234 (VLDM), A7.7.253 (VSTM), A7.7.245 (VPOP/VPUSH)
+    // Encoding: 1110 110P UDwL Rn Vd 101s imm8
+    if (bits(inst, 25) == 0) {
+        const bool P = bits(inst, 24);
+        const bool U = bits(inst, 23);
+        const bool W = bits(inst, 21);
+        const bool L = bits(inst, 20);
+        const RegIndex rn = (RegIndex)bits(inst, 19, 16);
+        const uint32_t imm8 = bits(inst, 7, 0);
+
+        DPRINTF(Decode, "MDecoder VFP VLDM/VSTM check: "
+                "inst=%#x P=%d U=%d W=%d L=%d rn=r%d "
+                "imm8=%d single=%d\n",
+                inst, P, U, W, L, rn, imm8, single);
+
+        // VLDM/VSTM/VPUSH/VPOP have writeback (W=1 or P=0,U=1)
+        // VLDR/VSTR have P=1,W=0 (already caught above)
+        bool is_multi = (W == 1) || (P == 0 && U == 1);
+        if (is_multi && imm8 > 0) {
+            RegIndex vd;
+            if (single) {
+                vd = (RegIndex)(bits(inst, 15, 12) << 1
+                                | bits(inst, 22));
+            } else {
+                vd = (RegIndex)((bits(inst, 22) << 4
+                                 | bits(inst, 15, 12)) * 2);
+            }
+            bool writeback = (W == 1);
+            return new MMacroVFPMemOp(L ? "vldm" : "vstm",
+                mach_inst, L ? FloatMemReadOp : FloatMemWriteOp,
+                rn, vd, single, U, writeback, L, imm8);
+        }
+    }
+
     // ---- VFP data processing ----
     // Encoding: bit4=0, coproc=0xa/0xb
     // DDI0403E A7-242, Table A7-17
     if (!bit4) {
+        DPRINTF(Decode, "MDecoder VFP data-proc: inst=%#x "
+                "opc1=%#x&0xb=%#x opc2=%#x opc3=%#x single=%d\n",
+                inst, opc1, opc1 & 0xb, opc2, opc3, single);
         // Double-precision check:
         // - Load/store (bit25=0): VLDR/VSTR/VLDM/VSTM/VPUSH/VPOP for
         //   d-registers are valid on FPv4-SP [DDI0403 A6.3].
-        //   VLDR/VSTR are intercepted above; others fall through to
-        //   the ISA-generated decoder.
+        //   VLDR/VSTR are intercepted above; VLDM/VSTM intercepted above.
         // - Data-processing (bit25=1): VADD.F64, VMUL.F64, etc. require
         //   M_PROFILE_FPU_DP.
         if (!single) {
             bool is_load_store = (bits(inst, 25) == 0);
             if (is_load_store)
-                return nullptr;  // allow — fall through to ISA decoder
+                return nullptr;  // shouldn't reach here, but safety net
             if (!has(ArmExtension::M_PROFILE_FPU_DP))
                 return new MProfileUndefined(mach_inst,
                     "VFP double-precision arithmetic without FPU_DP");
@@ -870,12 +974,29 @@ MDecoder::decodeMProfileVfp(ExtMachInst mach_inst)
         switch (opc1 & 0xb /* mask to match A-profile table */) {
           case 0x0:
             // VMLA.F32 / VMLS.F32
-            // TODO: implement MFpMacS for multiply-accumulate
-            return nullptr;  // fall through for now
+            if ((opc3 & 0x1) == 0) {
+                return new MFpTernaryS("vmla.f32", mach_inst,
+                    SimdFloatMultAccOp, vd(), vn(), vm(),
+                    [](float a, float n, float m) { return a + n * m; });
+            } else {
+                return new MFpTernaryS("vmls.f32", mach_inst,
+                    SimdFloatMultAccOp, vd(), vn(), vm(),
+                    [](float a, float n, float m) { return a - n * m; });
+            }
 
           case 0x1:
             // VNMLA.F32 / VNMLS.F32
-            return nullptr;
+            if ((opc3 & 0x1) == 0) {
+                return new MFpTernaryS("vnmls.f32", mach_inst,
+                    SimdFloatMultAccOp, vd(), vn(), vm(),
+                    [](float a, float n, float m) { return n * m - a; });
+            } else {
+                return new MFpTernaryS("vnmla.f32", mach_inst,
+                    SimdFloatMultAccOp, vd(), vn(), vm(),
+                    [](float a, float n, float m) {
+                        return -(n * m) - a;
+                    });
+            }
 
           case 0x2:
             // VMUL.F32 / VNMUL.F32
@@ -883,9 +1004,9 @@ MDecoder::decodeMProfileVfp(ExtMachInst mach_inst)
                 return new MFpBinS("vmul.f32", mach_inst,
                     SimdFloatMultOp, vd(), vn(), vm(), mFpMul, "vmul");
             } else {
-                // VNMUL: negate the result of multiply
-                // TODO: implement properly
-                return nullptr;
+                return new MFpBinS("vnmul.f32", mach_inst,
+                    SimdFloatMultOp, vd(), vn(), vm(),
+                    [](float a, float b) { return -(a * b); }, "vnmul");
             }
 
           case 0x3:
@@ -908,11 +1029,29 @@ MDecoder::decodeMProfileVfp(ExtMachInst mach_inst)
 
           case 0x9:
             // VFNMA.F32 / VFNMS.F32
-            return nullptr;
+            if ((opc3 & 0x1) == 0) {
+                return new MFpTernaryS("vfnms.f32", mach_inst,
+                    SimdFloatMultAccOp, vd(), vn(), vm(),
+                    [](float a, float n, float m) { return n * m - a; });
+            } else {
+                return new MFpTernaryS("vfnma.f32", mach_inst,
+                    SimdFloatMultAccOp, vd(), vn(), vm(),
+                    [](float a, float n, float m) {
+                        return -(n * m) - a;
+                    });
+            }
 
           case 0xa:
             // VFMA.F32 / VFMS.F32
-            return nullptr;
+            if ((opc3 & 0x1) == 0) {
+                return new MFpTernaryS("vfma.f32", mach_inst,
+                    SimdFloatMultAccOp, vd(), vn(), vm(),
+                    [](float a, float n, float m) { return a + n * m; });
+            } else {
+                return new MFpTernaryS("vfms.f32", mach_inst,
+                    SimdFloatMultAccOp, vd(), vn(), vm(),
+                    [](float a, float n, float m) { return a - n * m; });
+            }
 
           case 0xb:
             // VMOV imm / VMOV reg / VNEG / VABS / VCMP / VSQRT / VCVT
@@ -931,18 +1070,19 @@ MDecoder::decodeMProfileVfp(ExtMachInst mach_inst)
                     return new MFpMovRegS(mach_inst, vd(), vm());
                 } else {
                     // VABS.F32
-                    // TODO: implement MFpUnaryS with fabsf
-                    return nullptr;
+                    return new MFpUnaryS("vabs.f32", mach_inst,
+                        SimdFloatMiscOp, vd(), vm(), fabsf);
                 }
               case 0x1:
                 if (opc3 == 1) {
                     // VNEG.F32
-                    // TODO: implement MFpUnaryS with negation
-                    return nullptr;
+                    return new MFpUnaryS("vneg.f32", mach_inst,
+                        SimdFloatMiscOp, vd(), vm(),
+                        [](float a) { return -a; });
                 } else {
                     // VSQRT.F32
-                    // TODO: implement — uses SimdFloatSqrtOp
-                    return nullptr;
+                    return new MFpUnaryS("vsqrt.f32", mach_inst,
+                        SimdFloatSqrtOp, vd(), vm(), sqrtf);
                 }
               case 0x4:
               case 0x5: {

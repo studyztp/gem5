@@ -50,21 +50,32 @@ MFsWorkload::initState()
     // Step 1: Load the firmware ELF binary into physical memory.
     KernelWorkload::initState();
 
-    // Step 2: Set VTOR to point to the firmware's vector table.
+    // Step 2: Populate boot alias (mirror flash at 0x0).
     //
-    // On real Cortex-M hardware, VTOR resets to 0x00000000 and
-    // a boot alias mirrors flash there.  In gem5, we don't always
-    // have a boot alias, so we set VTOR to the ELF's entry point
-    // region (the start of the .isr_vector section = start of flash).
-    //
-    // The ELF entry point is the Reset_Handler address, which is
-    // stored at VTOR+4.  The vector table starts at the beginning
-    // of the first loadable segment (typically the flash base).
-    //
-    // KernelWorkload stores the loaded object.  We use its text
-    // base as the vector table address (the .isr_vector section
-    // is the first thing in flash, before .text).
-    // Step 2: Find the vector table address from the ELF image.
+    // On real Cortex-M hardware, address 0x00000000 is a hardware
+    // alias of flash bank 1 (0x08000000).  Firmware and libraries
+    // may read from the 0x0 alias (e.g., Eigen global constructors,
+    // vector table reads).  We copy flash content to the alias range
+    // using the system's shadow_rom_ranges configuration.
+    {
+        auto &phys_mem = system->physProxy;
+        auto shadowRanges = system->getShadowRomRanges();
+        if (!shadowRanges.empty()) {
+            Addr flashBase = kernelObj->buildImage().minAddr();
+            for (const auto &range : shadowRanges) {
+                Addr aliasStart = range.start();
+                Addr aliasSize = range.end() - range.start();
+                // Copy flash content to alias range
+                std::vector<uint8_t> buf(aliasSize, 0);
+                phys_mem.readBlob(flashBase, buf.data(), aliasSize);
+                phys_mem.writeBlob(aliasStart, buf.data(), aliasSize);
+                inform("Boot alias: copied %d bytes from %#x to %#x",
+                       aliasSize, flashBase, aliasStart);
+            }
+        }
+    }
+
+    // Step 3: Find the vector table address from the ELF image.
     //
     // The vector table (.isr_vector) is the first thing in the ELF,
     // placed at the start of flash by the linker script.

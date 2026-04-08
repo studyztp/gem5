@@ -108,6 +108,7 @@ from m5.objects import (
     ArmMSystem,
     BadAddr,
     NoncoherentXBar,
+    SimpleMemory,
     SrcClockDomain,
     VoltageDomain,
 )
@@ -240,6 +241,11 @@ class STM32G474RETimingBoard(ArmMSystem):
 
         self.cache_line_size = 8
 
+        # Boot alias: STM32 maps 0x00000000 as a mirror of flash bank 1
+        # (0x08000000) at reset [RM0440 §2.3.1].  Some firmware reads
+        # from the 0x0 alias (e.g., global constructors via Eigen).
+        self.shadow_rom_ranges = platform.boot_alias_ranges
+
         self.cpuid = platform.cpuid()
 
         self.voltage_domain = VoltageDomain(voltage="1.0V")
@@ -288,6 +294,20 @@ class STM32G474RETimingBoard(ArmMSystem):
                     mem.port = self.dcode_flash_bus.mem_side_ports
             else:
                 mem.port = self.system_bus.mem_side_ports
+
+        # Boot alias memory: maps 0x00000000 as mirror of flash bank 1.
+        # shadow_rom_ranges tells the loader to copy the flash image here;
+        # this SimpleMemory provides the actual backing store for reads.
+        if platform.boot_alias_ranges:
+            alias_range = platform.boot_alias_ranges[0]
+            alias_idx = len(memories)
+            self.boot_alias_mem = SimpleMemory(
+                range=alias_range,
+                latency="0ns",
+            )
+            setattr(self, f"mem_{alias_idx}", self.boot_alias_mem)
+            self.mem_ranges.append(alias_range)
+            self.boot_alias_mem.port = self.system_bus.mem_side_ports
 
         if enable_art:
             # With ART: flash is SimpleMemory (single port) on flash_bus.

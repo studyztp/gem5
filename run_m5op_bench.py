@@ -66,13 +66,23 @@ parser.add_argument(
     action="store_true",
     help="If start printing debug info from start",
 )
+parser.add_argument(
+    "--progress-interval",
+    type=int,
+    default=0,
+    help="Print progress every N ticks (0 = disabled). "
+    "E.g., 1000000000 for every 1M ticks (~170 cycles).",
+)
 args = parser.parse_args()
 
 debug_from_start = args.debug_from_start
 
 # --- Board setup ---
 board = STM32G474RETimingBoard(enable_art=not args.no_art)
-board.semihosting = ArmSemihosting()
+board.semihosting = ArmSemihosting(
+    mem_reserve="0B",  # Don't reserve memory — firmware manages its own heap
+    stack_size="0B",  # Don't reserve stack — firmware sets SP from vector table
+)
 board.set_workload(args.firmware)
 
 root = Root(full_system=True, system=board)
@@ -101,10 +111,32 @@ if debug_from_start:
             m5_debug.flags[flag_name].enable()
 
 roi_counter = 1
+progress_interval = args.progress_interval
 
 while True:
-    exit_event = m5.simulate(args.tick_limit - m5.curTick())
+    if progress_interval > 0:
+        remaining = args.tick_limit - m5.curTick()
+        sim_ticks = min(progress_interval, remaining)
+    else:
+        sim_ticks = args.tick_limit - m5.curTick()
+
+    exit_event = m5.simulate(sim_ticks)
     cause = exit_event.getCause()
+
+    if cause == "simulate() limit reached":
+        if progress_interval > 0 and m5.curTick() < args.tick_limit:
+            ticks_per_cycle = TICK_PER_SEC // CLK_FREQ_HZ
+            cycles = m5.curTick() / ticks_per_cycle
+            print(
+                f"  [progress] tick={m5.curTick():,}  "
+                f"cycle={cycles:.0f}  "
+                f"({m5.curTick() * 100 / args.tick_limit:.1f}%)",
+                flush=True,
+            )
+            continue
+        else:
+            print(f"\nTick limit reached at {m5.curTick()}")
+            break
 
     if cause == "workbegin":
         if roi_counter != 0:

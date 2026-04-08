@@ -251,10 +251,12 @@ ART::serveFromBuffer(PacketPtr pkt, ARTPrefetchBuffer &buf)
 {
     pkt->setData(buf.getData(pkt->getAddr(), pkt->getSize()));
     pkt->makeTimingResponse();
-    // +1 tick avoids same-tick response which can crash MinorCPU's
-    // SingleStageFetch pipeline (response must not arrive in the
-    // same event processing round as the request).
-    pushToOutputBuffer(pkt, curTick() + bufferHitLatency + 1);
+    // Use max of bufferHitLatency and next clock edge to ensure
+    // the response arrives at a cycle boundary where MinorCPU's
+    // SingleStageFetch pipeline state is consistent.
+    Tick readyTick = std::max(curTick() + bufferHitLatency,
+                              clockEdge(Cycles(0)));
+    pushToOutputBuffer(pkt, readyTick);
 }
 
 // -------------------------------------------------------------------
@@ -804,8 +806,10 @@ ART::recvTimingResp(PacketPtr pkt)
                 entry->cpuPtr->setData(
                     getSubBlockData(pkt, entry->cpuPtr));
                 entry->cpuPtr->makeTimingResponse();
-                pushToOutputBuffer(
-                    entry->cpuPtr, curTick() + bufferHitLatency + 1);
+                Tick readyTick = std::max(
+                    curTick() + bufferHitLatency,
+                    clockEdge(Cycles(0)));
+                pushToOutputBuffer(entry->cpuPtr, readyTick);
                 entry->clearCPUWaiting();
 
                 // Per RM0440 Section 3.3.4: on a miss (CPU missed

@@ -377,6 +377,10 @@ MFpOp::execute(ExecContext *xc, trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
 
+    DPRINTF(MProfileFP, "MFpOp::execute: %s pc=%#x\n",
+            mnemonic,
+            tc->pcState().as<ArmISA::PCState>().instAddr());
+
     // 1. Check FP access permission (CPACR.CP10)
     Fault fault = checkMProfileFPEnabled(tc);
     if (fault != NoFault)
@@ -426,6 +430,107 @@ MFpBinS::doFpOp(ExecContext *xc, trace::InstRecord *traceData) const
 
 std::string
 MFpBinS::generateDisassembly(
+    Addr pc, const loader::SymbolTable *symtab) const
+{
+    std::ostringstream ss;
+    ss << mnemonic << " s" << dest << ", s" << op1 << ", s" << op2;
+    return ss.str();
+}
+
+// =====================================================================
+// MFpTernaryS — Ternary single-precision (VFMA, VFMS, VFNMA, VFNMS)
+// =====================================================================
+
+Fault
+MFpTernaryS::doFpOp(ExecContext *xc,
+                     trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    FPSCR fpscr = tc->readMiscRegNoEffect(MISCREG_FPSCR);
+
+    float acc = bitsToFloat32(tc->getReg(vfpSRegId(dest)));
+    float val1 = bitsToFloat32(tc->getReg(vfpSRegId(op1)));
+    float val2 = bitsToFloat32(tc->getReg(vfpSRegId(op2)));
+
+    // Flush denormals if FPSCR.FZ=1
+    if (fpscr.fz) {
+        if (isDenormal(acc)) {
+            acc = std::copysign(0.0f, acc);
+            fpscr.idc = 1;
+        }
+        if (isDenormal(val1)) {
+            val1 = std::copysign(0.0f, val1);
+            fpscr.idc = 1;
+        }
+        if (isDenormal(val2)) {
+            val2 = std::copysign(0.0f, val2);
+            fpscr.idc = 1;
+        }
+    }
+
+    // Set host rounding mode
+    int savedRound = fegetround();
+    fesetround(armRModeToHost(fpscr.rMode));
+
+    feclearexcept(FE_ALL_EXCEPT);
+    float result = func(acc, val1, val2);
+
+    // Capture host FP exceptions
+    int excepts = fetestexcept(FE_ALL_EXCEPT);
+    if (excepts & FE_INVALID)   fpscr.ioc = 1;
+    if (excepts & FE_OVERFLOW)  fpscr.ofc = 1;
+    if (excepts & FE_UNDERFLOW) fpscr.ufc = 1;
+    if (excepts & FE_INEXACT)   fpscr.ixc = 1;
+
+    fesetround(savedRound);
+
+    // NaN fixup
+    if (std::isnan(result)) {
+        bool nanA = std::isnan(acc);
+        bool nan1 = std::isnan(val1);
+        bool nan2 = std::isnan(val2);
+        bool sigA = nanA && !(floatToBits32(acc) & (1u << 22));
+        bool sig1 = nan1 && !(floatToBits32(val1) & (1u << 22));
+        bool sig2 = nan2 && !(floatToBits32(val2) & (1u << 22));
+
+        if (sigA || sig1 || sig2)
+            fpscr.ioc = 1;
+
+        if (fpscr.dn || (!nanA && !nan1 && !nan2)) {
+            result = bitsToFloat32(armDefaultNaN32);
+        } else if (sigA) {
+            result = bitsToFloat32(floatToBits32(acc) | (1u << 22));
+        } else if (sig1) {
+            result = bitsToFloat32(floatToBits32(val1) | (1u << 22));
+        } else if (sig2) {
+            result = bitsToFloat32(floatToBits32(val2) | (1u << 22));
+        } else if (nanA) {
+            result = acc;
+        } else if (nan1) {
+            result = val1;
+        } else {
+            result = val2;
+        }
+    }
+
+    // Flush denormal output
+    if (fpscr.fz && isDenormal(result)) {
+        result = std::copysign(0.0f, result);
+        fpscr.ufc = 1;
+    }
+
+    uint32_t resultBits = floatToBits32(result);
+    tc->setReg(vfpSRegId(dest), (RegVal)resultBits);
+    tc->setMiscRegNoEffect(MISCREG_FPSCR, fpscr);
+
+    if (traceData)
+        traceData->setData(vecElemClass, (RegVal)resultBits);
+
+    return NoFault;
+}
+
+std::string
+MFpTernaryS::generateDisassembly(
     Addr pc, const loader::SymbolTable *symtab) const
 {
     std::ostringstream ss;
@@ -575,6 +680,64 @@ MFpMovSToCore::generateDisassembly(
 {
     std::ostringstream ss;
     ss << "vmov r" << rt << ", s" << sn;
+    return ss.str();
+}
+
+// =====================================================================
+// MFpMovCorePairToD — VMOV Dm, Rt, Rt2
+// =====================================================================
+
+Fault
+MFpMovCorePairToD::doFpOp(ExecContext *xc,
+                           trace::InstRecord *traceData) const
+{
+    // Rt → S(dd*2) (low word), Rt2 → S(dd*2+1) (high word)
+    uint32_t lo = (uint32_t)xc->getRegOperand(this, 0);
+    uint32_t hi = (uint32_t)xc->getRegOperand(this, 1);
+    xc->setRegOperand(this, 0, (RegVal)lo);
+    xc->setRegOperand(this, 1, (RegVal)hi);
+    if (traceData) {
+        uint64_t val = ((uint64_t)hi << 32) | lo;
+        traceData->setData(val);
+    }
+    return NoFault;
+}
+
+std::string
+MFpMovCorePairToD::generateDisassembly(
+    Addr pc, const loader::SymbolTable *symtab) const
+{
+    std::ostringstream ss;
+    ss << "vmov d" << dd << ", r" << rt << ", r" << rt2;
+    return ss.str();
+}
+
+// =====================================================================
+// MFpMovDToCorePair — VMOV Rt, Rt2, Dm
+// =====================================================================
+
+Fault
+MFpMovDToCorePair::doFpOp(ExecContext *xc,
+                           trace::InstRecord *traceData) const
+{
+    // S(dd*2) → Rt (low word), S(dd*2+1) → Rt2 (high word)
+    uint32_t lo = (uint32_t)xc->getRegOperand(this, 0);
+    uint32_t hi = (uint32_t)xc->getRegOperand(this, 1);
+    xc->setRegOperand(this, 0, (RegVal)lo);
+    xc->setRegOperand(this, 1, (RegVal)hi);
+    if (traceData) {
+        uint64_t val = ((uint64_t)hi << 32) | lo;
+        traceData->setData(val);
+    }
+    return NoFault;
+}
+
+std::string
+MFpMovDToCorePair::generateDisassembly(
+    Addr pc, const loader::SymbolTable *symtab) const
+{
+    std::ostringstream ss;
+    ss << "vmov r" << rt << ", r" << rt2 << ", d" << dd;
     return ss.str();
 }
 
@@ -758,6 +921,11 @@ MFpLdrS::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
         : tc->getReg(RegId(intRegClass, rn));
     Addr addr = add ? (base + imm) : (base - imm);
 
+    DPRINTF(MProfileFP, "MFpLdrS::initiateAcc: s%d [r%d%s%d] "
+            "rn_is_pc=%d base=%#x imm=%d add=%d addr=%#x\n",
+            sd, rn, add ? "+" : "-", imm,
+            (rn == int_reg::Pc), base, imm, add, addr);
+
     uint32_t dummy = 0;
     return gem5::initiateMemRead(xc, traceData, addr, dummy,
                                  Request::Flags(0));
@@ -813,6 +981,10 @@ MFpStrS::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
 
     Addr base = tc->getReg(RegId(intRegClass, rn));
     Addr addr = add ? (base + imm) : (base - imm);
+
+    DPRINTF(MProfileFP, "MFpStrS::initiateAcc: s%d [r%d%s%d] "
+            "base=%#x imm=%d add=%d addr=%#x\n",
+            sd, rn, add ? "+" : "-", imm, base, imm, add, addr);
 
     uint32_t data = (uint32_t)xc->getRegOperand(this, 1);
     return gem5::writeMemTimingLE(xc, traceData, data, addr,
@@ -877,6 +1049,11 @@ MFpLdrD::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
         ? (tc->pcState().as<ArmISA::PCState>().instAddr() & ~0x3)
         : tc->getReg(RegId(intRegClass, rn));
     Addr addr = add ? (base + imm) : (base - imm);
+
+    DPRINTF(MProfileFP, "MFpLdrD::initiateAcc: d%d [r%d%s%d] "
+            "rn_is_pc=%d base=%#x imm=%d add=%d addr=%#x\n",
+            dd, rn, add ? "+" : "-", imm,
+            (rn == int_reg::Pc), base, imm, add, addr);
 
     uint64_t dummy = 0;
     return gem5::initiateMemRead(xc, traceData, addr, dummy,
@@ -943,6 +1120,11 @@ MFpStrD::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
     uint32_t word2 = (uint32_t)xc->getRegOperand(this, 2);
     uint64_t data = ((uint64_t)word2 << 32) | word1;
 
+    DPRINTF(MProfileFP, "MFpStrD::initiateAcc: d%d [r%d%s%d] "
+            "base=%#x imm=%d add=%d addr=%#x data=%#x\n",
+            dd, rn, add ? "+" : "-", imm,
+            base, imm, add, addr, data);
+
     return gem5::writeMemTimingLE(xc, traceData, data, addr,
                                   Request::Flags(0), nullptr);
 }
@@ -962,6 +1144,95 @@ MFpStrD::generateDisassembly(Addr pc,
     ss << "vstr d" << dd << ", [r" << rn
        << ", #" << (add ? "+" : "-") << imm << "]";
     return ss.str();
+}
+
+// =====================================================================
+// MMacroVFPMemOp — M-profile VLDM/VSTM/VPUSH/VPOP
+//
+// Same expansion logic as MacroVFPMemOp (macromem.cc) but uses
+// MFpLdrS/MFpStrS/MFpLdrD/MFpStrD micro-ops with M-profile FP
+// checking instead of A-profile MicroLdr/StrFpUop which call
+// checkAdvSIMDOrFPEnabled32.
+// =====================================================================
+
+MMacroVFPMemOp::MMacroVFPMemOp(const char *mnem, ExtMachInst machInst,
+                               OpClass __opClass, RegIndex rn,
+                               RegIndex vd, bool single, bool up,
+                               bool writeback, bool load,
+                               uint32_t offset)
+    : PredMacroOp(mnem, machInst, __opClass)
+{
+    int count = single ? offset : (offset / 2);
+    numMicroops = count + (writeback ? 1 : 0);
+    microOps = new StaticInstPtr[numMicroops];
+
+    // Compute byte offsets from base register for each register.
+    // MFpLdr/Str use: EA = add ? (base + imm) : (base - imm)
+    // We always use add=true and pass signed offset as imm.
+    //
+    // For up (VLDM IA / increment after):
+    //   reg[0] at base+0, reg[1] at base+4/8, ...
+    // For down (VSTM DB / decrement before, e.g. VPUSH):
+    //   reg[0] at base-totalBytes, reg[1] at base-totalBytes+4/8, ...
+    //   (store lowest address first, ascending)
+    int32_t totalBytes = 4 * offset;
+    int32_t startOffset = up ? 0 : -totalBytes;
+
+    int i = 0;
+    for (int j = 0; j < count; j++) {
+        int32_t thisOffset;
+        if (single) {
+            thisOffset = startOffset + j * 4;
+            RegIndex sd = vd + j;
+            // Use add=true for positive offsets, add=false for negative
+            bool thisAdd = (thisOffset >= 0);
+            int32_t absOff = thisAdd ? thisOffset : -thisOffset;
+            if (load) {
+                microOps[i] = new MFpLdrS(machInst, sd, rn,
+                                           absOff, thisAdd);
+            } else {
+                microOps[i] = new MFpStrS(machInst, sd, rn,
+                                           absOff, thisAdd);
+            }
+        } else {
+            thisOffset = startOffset + j * 8;
+            RegIndex dd = (vd / 2) + j;
+            bool thisAdd = (thisOffset >= 0);
+            int32_t absOff = thisAdd ? thisOffset : -thisOffset;
+            if (load) {
+                microOps[i] = new MFpLdrD(machInst, dd, rn,
+                                           absOff, thisAdd);
+            } else {
+                microOps[i] = new MFpStrD(machInst, dd, rn,
+                                           absOff, thisAdd);
+            }
+        }
+
+        microOps[i]->setFlag(StaticInst::IsMicroop);
+        i++;
+    }
+
+    if (writeback) {
+        int32_t wb_imm = up ? (4 * offset) : -(int32_t)(4 * offset);
+        microOps[i] = new MFpWritebackUop(machInst, rn, wb_imm);
+        microOps[i]->setFlag(StaticInst::IsMicroop);
+        i++;
+    }
+
+    assert(numMicroops == i);
+    microOps[0]->setFirstMicroop();
+    microOps[numMicroops - 1]->setLastMicroop();
+
+    for (int k = 0; k < numMicroops - 1; k++) {
+        microOps[k]->setDelayedCommit();
+    }
+}
+
+std::string
+MMacroVFPMemOp::generateDisassembly(
+    Addr pc, const loader::SymbolTable *symtab) const
+{
+    return csprintf("%-10s (M-profile VFP multi-reg mem op)", mnemonic);
 }
 
 } // namespace ArmISA
