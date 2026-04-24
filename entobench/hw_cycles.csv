@@ -1,5 +1,0 @@
-benchmark,hw_cp_total,hw_none_total,inner_reps,hw_cp_per_call,hw_none_per_call,gem5_bench_name
-5pt-float,115937.22,125324.82,1,115937.22,125324.82,5pt-float
-madgwick-float-imu,19323.04,19413.87,50,386.4608,388.2774,madgwick-float-imu
-robofly-lqr,45916,45988,2,22958.0,22994.0,robofly-lqr
-robofly-tinympc,57041.4,59886.36,2,28520.7,29943.18,robofly-tinympc
