@@ -157,7 +157,17 @@ PipelinedSimpleMemory::MemoryPort::popReadyToFireBuffer() {
         DPRINTF(PipelinedMem, "port[%d] popReadyToFire: addr=%#x "
                 "bufferBlock=%#x\n", portId, pktAddr, portBufferedBlockAddr);
 
-        if (portBufferBlockSize > 0) {
+        // Skip the buffer-hit shortcut if the request is marked
+        // UNCACHEABLE.  CPU front-ends use this to model cases where
+        // the line in the latch is logically stale even though the
+        // physical address matches — e.g. the first instruction
+        // fetch after a taken-branch redirect on Cortex-M, which
+        // empirically pays the full Flash WS latency irrespective of
+        // whether the target line happens to still sit in the
+        // sense-amp output buffer.
+        const bool bypassBuffer = readyToFireBuffer.front()
+                                      .pkt->req->isUncacheable();
+        if (portBufferBlockSize > 0 && !bypassBuffer) {
             Addr pktBlockAddr = pktAddr & ~(Addr)(portBufferBlockSize - 1);
             if (pktBlockAddr == portBufferedBlockAddr) {
                 DPRINTF(PipelinedMem, "port[%d] BUFFER HIT addr=%#x "

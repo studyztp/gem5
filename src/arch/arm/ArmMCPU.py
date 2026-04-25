@@ -31,6 +31,7 @@ from m5.objects.ArmMMMU import ArmMMMU
 from m5.objects.BaseAtomicSimpleCPU import BaseAtomicSimpleCPU
 from m5.objects.BaseMinorCPU import BaseMinorCPU
 from m5.objects.BaseTimingSimpleCPU import BaseTimingSimpleCPU
+from m5.objects.Simple3CycleCPU import Simple3CycleCPU
 
 
 class ArmMCPU:
@@ -57,4 +58,8 @@ class ArmMTimingSimpleCPU(BaseTimingSimpleCPU, ArmMCPU):
 
 
 class ArmMMinorCPU(BaseMinorCPU, ArmMCPU):
+    mmu = ArmMMMU()
+
+
+class ArmMSimple3CycleCPU(Simple3CycleCPU, ArmMCPU):
     mmu = ArmMMMU()

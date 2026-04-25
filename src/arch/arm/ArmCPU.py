@@ -34,6 +34,7 @@ from m5.objects.BaseO3Checker import BaseO3Checker
 from m5.objects.BaseO3CPU import BaseO3CPU
 from m5.objects.BaseTimingSimpleCPU import BaseTimingSimpleCPU
 from m5.objects.LegoCPU import LegoCPU
+from m5.objects.Simple3CycleCPU import Simple3CycleCPU
 from m5.proxy import Self
 
 
@@ -88,4 +89,8 @@ class ArmMinorCPU(BaseMinorCPU, ArmCPU):
 
 
 class ArmLegoCPU(LegoCPU, ArmCPU):
+    mmu = ArmMMU()
+
+
+class ArmSimple3CycleCPU(Simple3CycleCPU, ArmCPU):
     mmu = ArmMMU()
