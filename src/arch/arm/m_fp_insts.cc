@@ -1266,50 +1266,67 @@ MMacroVFPMemOp::MMacroVFPMemOp(const char *mnem, ExtMachInst machInst,
                                uint32_t offset)
     : PredMacroOp(mnem, machInst, __opClass)
 {
-    int count = single ? offset : (offset / 2);
-    numMicroops = count + (writeback ? 1 : 0);
+    // -----------------------------------------------------------------
+    // Unified SP/DP micro-op expansion (single-word, 4 bytes per µop).
+    //
+    // History: the original expansion emitted one `MFpLdrD`/`MFpStrD`
+    // per D-register. Each of those micro-ops wrote TWO `vecElemClass`
+    // destinations (low S(2n) + high S(2n+1)). For a range like
+    // {d0-d3}, pairs of D-registers land in the same underlying NEON
+    // vector register (D0+D1 both in V0, D2+D3 both in V1), and the
+    // partial-V-register writes from consecutive multi-dest µops were
+    // ordering-sensitive — their final state leaked bits from the host
+    // (observed as `s4=garbage`, bit-identical within one host but
+    // different across hosts).
+    //
+    // Fix: always emit one `MFpLdrS`/`MFpStrS` per 4-byte block. Each
+    // µop has a single `vecElemClass` dest/src, so there is no partial
+    // V-register write. This matches the A-profile A7.7.234 expansion
+    // pattern (MicroLdrDBFpUop + MicroLdrDTFpUop) which is known-good.
+    //
+    // Register numbering:
+    //  - SP:  decoder passes `vd = S_base`, so `vd + j` walks S-regs.
+    //  - DP:  decoder passes `vd = D_base * 2` (the s-index of the
+    //         low half of the base D-reg). `vd + j` therefore walks
+    //         S(2*D_base), S(2*D_base+1), S(2*(D_base+1)), … which is
+    //         D_base low, D_base high, D_base+1 low, … as required.
+    //
+    // imm8 accounting:
+    //  - SP: imm8 = number of S-regs = number of 4-byte blocks.
+    //  - DP: imm8 = 2 * number_of_D_regs = number of 4-byte blocks.
+    //  - Deprecated FLDMIAX/FSTMIAX (DP, imm8 odd): we emit the
+    //    even portion (`offset & ~1`) of 4-byte blocks; writeback
+    //    still uses `4 * offset` so Rn lands on the ARM-specified
+    //    post-access address (including the 4 extra untouched bytes).
+    // -----------------------------------------------------------------
+
+    // Number of 4-byte blocks to actually load/store.
+    int count_s = single ? offset : (offset & ~1);
+    numMicroops = count_s + (writeback ? 1 : 0);
     microOps = new StaticInstPtr[numMicroops];
 
-    // Compute byte offsets from base register for each register.
-    // MFpLdr/Str use: EA = add ? (base + imm) : (base - imm)
-    // We always use add=true and pass signed offset as imm.
-    //
-    // For up (VLDM IA / increment after):
-    //   reg[0] at base+0, reg[1] at base+4/8, ...
-    // For down (VSTM DB / decrement before, e.g. VPUSH):
-    //   reg[0] at base-totalBytes, reg[1] at base-totalBytes+4/8, ...
-    //   (store lowest address first, ascending)
+    // Address sequencing:
+    //  - up (IA, increment after): blocks at base+0, +4, +8, …
+    //  - !up (DB, decrement before, e.g. VPUSH): blocks at
+    //    base-totalBytes, base-totalBytes+4, … (lowest address first,
+    //    ascending) — Rn is decremented by the writeback µop.
+    // `MFpLdrS`/`MFpStrS` take an unsigned imm + `add` flag, so we
+    // split the signed per-µop offset into (absOff, thisAdd) here.
     int32_t totalBytes = 4 * offset;
     int32_t startOffset = up ? 0 : -totalBytes;
 
     int i = 0;
-    for (int j = 0; j < count; j++) {
-        int32_t thisOffset;
-        if (single) {
-            thisOffset = startOffset + j * 4;
-            RegIndex sd = vd + j;
-            // Use add=true for positive offsets, add=false for negative
-            bool thisAdd = (thisOffset >= 0);
-            int32_t absOff = thisAdd ? thisOffset : -thisOffset;
-            if (load) {
-                microOps[i] = new MFpLdrS(machInst, sd, rn,
-                                           absOff, thisAdd);
-            } else {
-                microOps[i] = new MFpStrS(machInst, sd, rn,
-                                           absOff, thisAdd);
-            }
+    for (int j = 0; j < count_s; j++) {
+        int32_t thisOffset = startOffset + j * 4;
+        RegIndex sd = vd + j;
+        bool thisAdd = (thisOffset >= 0);
+        int32_t absOff = thisAdd ? thisOffset : -thisOffset;
+        if (load) {
+            microOps[i] = new MFpLdrS(machInst, sd, rn,
+                                       absOff, thisAdd);
         } else {
-            thisOffset = startOffset + j * 8;
-            RegIndex dd = (vd / 2) + j;
-            bool thisAdd = (thisOffset >= 0);
-            int32_t absOff = thisAdd ? thisOffset : -thisOffset;
-            if (load) {
-                microOps[i] = new MFpLdrD(machInst, dd, rn,
-                                           absOff, thisAdd);
-            } else {
-                microOps[i] = new MFpStrD(machInst, dd, rn,
-                                           absOff, thisAdd);
-            }
+            microOps[i] = new MFpStrS(machInst, sd, rn,
+                                       absOff, thisAdd);
         }
 
         microOps[i]->setFlag(StaticInst::IsMicroop);
