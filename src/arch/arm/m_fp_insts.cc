@@ -1085,8 +1085,16 @@ MFpLdrS::execute(ExecContext *xc, trace::InstRecord *traceData) const
     if (fault != NoFault) return fault;
     setFPCA(tc);
 
+    // PC-relative base for VLDR (literal). Thumb semantics (ARM ARM
+    // A6.1.2): the architected PC inside any instruction is
+    // `instruction_address + 4`, and VLDR (literal) then Align()s it
+    // to 4. `instAddr()` returns the raw instruction address without
+    // the +4 pipeline offset, so we add 4 explicitly before aligning.
+    // Skipping the +4 pulled the wrong word from the literal pool
+    // (e.g. Eigen's gebp zero-accumulator load was reading garbage,
+    // poisoning every VFMA — see tinympc iter1 blowup trace).
     Addr base = (rn == int_reg::Pc)
-        ? (tc->pcState().as<ArmISA::PCState>().instAddr() & ~0x3)
+        ? ((tc->pcState().as<ArmISA::PCState>().instAddr() + 4) & ~0x3)
         : tc->getReg(RegId(intRegClass, rn));
     Addr addr = add ? (base + imm) : (base - imm);
 
@@ -1106,8 +1114,16 @@ MFpLdrS::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
     if (fault != NoFault) return fault;
     setFPCA(tc);
 
+    // PC-relative base for VLDR (literal). Thumb semantics (ARM ARM
+    // A6.1.2): the architected PC inside any instruction is
+    // `instruction_address + 4`, and VLDR (literal) then Align()s it
+    // to 4. `instAddr()` returns the raw instruction address without
+    // the +4 pipeline offset, so we add 4 explicitly before aligning.
+    // Skipping the +4 pulled the wrong word from the literal pool
+    // (e.g. Eigen's gebp zero-accumulator load was reading garbage,
+    // poisoning every VFMA — see tinympc iter1 blowup trace).
     Addr base = (rn == int_reg::Pc)
-        ? (tc->pcState().as<ArmISA::PCState>().instAddr() & ~0x3)
+        ? ((tc->pcState().as<ArmISA::PCState>().instAddr() + 4) & ~0x3)
         : tc->getReg(RegId(intRegClass, rn));
     Addr addr = add ? (base + imm) : (base - imm);
 
@@ -1212,8 +1228,16 @@ MFpLdrD::execute(ExecContext *xc, trace::InstRecord *traceData) const
     if (fault != NoFault) return fault;
     setFPCA(tc);
 
+    // PC-relative base for VLDR (literal). Thumb semantics (ARM ARM
+    // A6.1.2): the architected PC inside any instruction is
+    // `instruction_address + 4`, and VLDR (literal) then Align()s it
+    // to 4. `instAddr()` returns the raw instruction address without
+    // the +4 pipeline offset, so we add 4 explicitly before aligning.
+    // Skipping the +4 pulled the wrong word from the literal pool
+    // (e.g. Eigen's gebp zero-accumulator load was reading garbage,
+    // poisoning every VFMA — see tinympc iter1 blowup trace).
     Addr base = (rn == int_reg::Pc)
-        ? (tc->pcState().as<ArmISA::PCState>().instAddr() & ~0x3)
+        ? ((tc->pcState().as<ArmISA::PCState>().instAddr() + 4) & ~0x3)
         : tc->getReg(RegId(intRegClass, rn));
     Addr addr = add ? (base + imm) : (base - imm);
 
@@ -1235,8 +1259,16 @@ MFpLdrD::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
     if (fault != NoFault) return fault;
     setFPCA(tc);
 
+    // PC-relative base for VLDR (literal). Thumb semantics (ARM ARM
+    // A6.1.2): the architected PC inside any instruction is
+    // `instruction_address + 4`, and VLDR (literal) then Align()s it
+    // to 4. `instAddr()` returns the raw instruction address without
+    // the +4 pipeline offset, so we add 4 explicitly before aligning.
+    // Skipping the +4 pulled the wrong word from the literal pool
+    // (e.g. Eigen's gebp zero-accumulator load was reading garbage,
+    // poisoning every VFMA — see tinympc iter1 blowup trace).
     Addr base = (rn == int_reg::Pc)
-        ? (tc->pcState().as<ArmISA::PCState>().instAddr() & ~0x3)
+        ? ((tc->pcState().as<ArmISA::PCState>().instAddr() + 4) & ~0x3)
         : tc->getReg(RegId(intRegClass, rn));
     Addr addr = add ? (base + imm) : (base - imm);
 
