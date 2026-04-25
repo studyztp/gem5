@@ -73,6 +73,25 @@ parser.add_argument(
     help="Print progress every N ticks (0 = disabled). "
     "E.g., 1000000000 for every 1M ticks (~170 cycles).",
 )
+# --run-to-exit:
+#   By default this script exits at the first m5_work_end so it can
+#   collect the cycle delta cheaply. EntoBench's Harness, however,
+#   prints its result signature (the "ENTO_RESULT name=... bytes=..."
+#   line consumed by the verification harness) AFTER work_end via a
+#   second semihosting call. Stopping at work_end means that line
+#   never reaches simout.txt, and the differential test harness has
+#   nothing to diff. When --run-to-exit is set, keep simulating past
+#   work_end — fall through to the natural "Stopped"/"exit" handler
+#   below — so the firmware can finish, print ENTO_RESULT, and exit
+#   cleanly. The Exec trace flag is already disabled at work_end so
+#   the post-ROI tail does not bloat simout.
+parser.add_argument(
+    "--run-to-exit",
+    action="store_true",
+    help="Keep simulating after the first work_end until the "
+    "firmware exits naturally. Required when the firmware prints "
+    "data (e.g. EntoBench ENTO_RESULT lines) after the ROI.",
+)
 args = parser.parse_args()
 
 debug_from_start = args.debug_from_start
@@ -174,6 +193,14 @@ while True:
                     f"  ROI cycles: {cycles:.1f}  (at {CLK_FREQ_HZ / 1e6:.0f} MHz)"
                 )
 
+            # Default behavior: stop here, the cycle delta is already
+            # collected. With --run-to-exit, keep simulating so the
+            # firmware can print post-ROI output (e.g. ENTO_RESULT)
+            # and then exit naturally — the "Stopped"/"exit" branch
+            # below will catch the firmware's final m5_exit / abort.
+            if args.run_to_exit:
+                print("\nROI complete; continuing to firmware exit...")
+                continue
             print(f"\nExiting after first ROI.")
             break
 
