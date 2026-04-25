@@ -1103,9 +1103,37 @@ MDecoder::decodeMProfileVfp(ExtMachInst mach_inst)
                 }
               case 0x4:
               case 0x5: {
-                // VCMP.F32 / VCMPE.F32
-                const bool withExc = bits(opc2, 0);
-                const bool withZero = (opc3 == 3);
+                // VCMP.F32 / VCMPE.F32 — Armv7-M ARM A7.7.213.
+                //
+                // Encoding (T1 register / T2 zero):
+                //   ... 1 1 1 opc2[2:0] | Vd | 1 0 1 sz E 1 (0)0 (0000)
+                //   opc2 in {0b100=0x4, 0b101=0x5}:
+                //     bit 0 distinguishes register (opc2=4) from
+                //     zero variant (opc2=5).
+                //   opc3 = bits(inst, 7, 6) = (E << 1) | 1:
+                //     bit 1 is the E flag (0 = VCMP, 1 = VCMPE).
+                //
+                // The previous code had withExc/withZero swapped:
+                //   withExc  = bits(opc2, 0)  ← wrongly reads zero
+                //                               variant flag as E
+                //   withZero = (opc3 == 3)    ← wrongly reads E flag
+                //                               as zero variant
+                // For VCMP register (opc2=4, opc3=1) and VCMPE zero
+                // (opc2=5, opc3=3) the swap happened to produce the
+                // right MFpCmpS args by coincidence. The two
+                // surviving misdecodes were:
+                //   * VCMPE register (opc2=4, opc3=3) decoded as
+                //     VCMP zero — produced wildly wrong NZCV when
+                //     the operand was a non-zero compared register
+                //     (e.g. Eigen's cwiseMin/cwiseMax clipping in
+                //      tinympc compares znew vs u_min/u_max with
+                //      VCMPE; gem5 was comparing znew vs 0.0
+                //      instead, so any negative znew got clamped
+                //      to u_min regardless of bounds).
+                //   * VCMP zero (opc2=5, opc3=1) decoded as VCMPE
+                //     register — symmetric mirror of the above.
+                const bool withExc  = bits(opc3, 1);
+                const bool withZero = bits(opc2, 0);
                 return new MFpCmpS(mach_inst, vd(), vm(),
                                    withExc, withZero);
               }
