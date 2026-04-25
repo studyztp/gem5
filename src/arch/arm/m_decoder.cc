@@ -1112,9 +1112,37 @@ MDecoder::decodeMProfileVfp(ExtMachInst mach_inst)
               case 0x8:
               case 0xc:
               case 0xd: {
-                // VCVT integer ↔ float conversions
+                // VCVT integer ↔ float conversions.
+                //
+                // T1 encoding of VCVT (between fp & integer), Armv7-M
+                // ARM ARM A7.7.218:
+                //
+                //   ... 1 1 1 opc2[2:0] | Vd | 1 0 1 sz op 1 M 0 Vm
+                //                                      ^   ^
+                //                                      |   bit 6 (constant 1)
+                //                                      bit 7 = op
+                //
+                // gem5 captures `opc3 = bits(inst, 7, 6)`, so opc3 is
+                // a 2-bit value `(op << 1) | 1`. For these encodings:
+                //   * float→int  (opc2 = 0xc / 0xd):
+                //         signed/unsigned is encoded in bit 0 of opc2
+                //         (0xc = U, 0xd = S) — `bits(opc2, 0)` is right.
+                //   * int→float (opc2 = 0x8):
+                //         signed/unsigned is encoded in the op bit
+                //         (op=1 → signed, op=0 → unsigned).
+                //         The op bit is bit 1 of opc3, NOT bit 0
+                //         (bit 0 is the constant 1 from bit 6).
+                //
+                // Previous code used `opc3 & 1`, which reads the
+                // constant 1 instead of op — making vcvt.f32.u32
+                // decode as vcvt.f32.s32 every time. Manifested as
+                // negative gem5 output when the source register held
+                // a u32 with the high bit set (e.g. the bit pattern
+                // of -1.0f, 0xBF800000, after `vmov.f32 s1, #-1.0`
+                // followed by `vcvt.f32.u32 s0, s1` → ref expects
+                // 3.2e9, gem5 produced -1.08e9).
                 const bool toFloat = (opc2 == 0x8);
-                const bool isSigned = toFloat ? (opc3 & 1)
+                const bool isSigned = toFloat ? bits(opc3, 1)
                                               : bits(opc2, 0);
                 return new MFpCvtS(mach_inst, vd(), vm(),
                                    toFloat, isSigned);
