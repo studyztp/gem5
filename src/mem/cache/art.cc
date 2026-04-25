@@ -363,15 +363,27 @@ ART::popOutputBuffer()
 void
 ART::retryStaleReturn()
 {
+    // Drain all stale BadAddress responses into the cpu-side port's
+    // RespPacketQueue via schedTimingResp. The queue then owns all
+    // send/retry state machinery for these packets, uniformly with the
+    // normal response path (popOutputBuffer uses schedTimingResp too).
+    //
+    // Previously this used raw `cpuSidePort.sendTimingResp()`, which
+    // bypasses the port's queue. When that direct send failed (e.g.,
+    // upstream xbar BUSY), the ART just returned and relied on "some
+    // future retry" to drain. But the eventual retry arrives via the
+    // port's default recvRespRetry → respQueue.retry(), which asserts
+    // `waitingOnRetry` — and respQueue's waitingOnRetry was false,
+    // because the failed send happened outside the queue. Observed as
+    // a deterministic PacketQueue::retry assertion at tick 150,202,752
+    // on bench-fpu-repeat-v{add,sub}-f32-n8 during firmware boot, when
+    // a stream-change flush marked an in-flight fetch BadAddress and
+    // the upstream icode_bus happened to be BUSY.
     while (!staleReturnQueue.empty()) {
         PacketPtr stale = staleReturnQueue.front();
-        DPRINTF(ARTCache, "retryStaleReturn: sending stale response "
-                "addr=%s\n", addrToString(stale->getAddr()));
-        if (!cpuSidePort.sendTimingResp(stale)) {
-            DPRINTF(ARTCache, "retryStaleReturn: send failed, "
-                    "waiting for recvRespRetry\n");
-            return;
-        }
+        DPRINTF(ARTCache, "retryStaleReturn: scheduling stale response "
+                "addr=%s via respQueue\n", addrToString(stale->getAddr()));
+        cpuSidePort.schedTimingResp(stale, curTick());
         staleReturnQueue.pop_front();
     }
 }
