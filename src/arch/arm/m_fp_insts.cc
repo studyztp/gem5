@@ -45,10 +45,12 @@
 
 #include "arch/arm/insts/fplib.hh"  // fplibMulAdd: bit-exact software FMA
 #include "arch/arm/m_faults.hh"
+#include "arch/arm/m_insts.hh"     // mProfilePredicateHolds (IT-block gate)
 #include "arch/arm/regs/int.hh"
 #include "arch/arm/regs/misc.hh"
 #include "arch/arm/regs/misc_types.hh"
 #include "arch/arm/regs/vec.hh"
+#include "arch/arm/utility.hh"     // testPredicate (called by helper)
 #include "arch/generic/memhelpers.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
@@ -377,6 +379,33 @@ Fault
 MFpOp::execute(ExecContext *xc, trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+
+    // 0. ITSTATE / IT-block predication.
+    //
+    // ARM ARM: an instruction in an IT block with a false condition
+    // has no architectural effect — including no FP-enable check, no
+    // CONTROL.FPCA toggle, and no lazy-stacking trigger. Return
+    // NoFault immediately; ITSTATE advancement happens in
+    // pc.advance() after execute returns.
+    //
+    // The shared helper mProfilePredicateHolds() (m_insts.hh) reads
+    // CPSR.NZCV (aliased to xPSR.NZCV via MISA on M-profile, set by
+    // `vmrs APSR_nzcv, fpscr` after vcmp) and evaluates condCode
+    // against it. Without this check, predicated VFP ops like
+    //   vcmp.f32 sa, sb
+    //   vmrs    APSR_nzcv, fpscr
+    //   it      ge
+    //   vmovge.f32 sd, sb        ← always executed by gem5 (BUG)
+    // run regardless of the condition. That's the canonical
+    // Cortex-M4 cwiseMin/cwiseMax idiom (Eigen, tinympc clipping),
+    // so the bug manifests as MPC inputs not being clamped to
+    // [u_min, u_max].
+    if (!mProfilePredicateHolds(tc, condCode)) {
+        DPRINTF(MProfileFP,
+                "MFpOp::execute: %s SUPPRESSED by IT predicate "
+                "(condCode=%d)\n", mnemonic, (int)condCode);
+        return NoFault;
+    }
 
     DPRINTF(MProfileFP, "MFpOp::execute: %s pc=%#x\n",
             mnemonic,
@@ -1081,6 +1110,10 @@ Fault
 MFpLdrS::execute(ExecContext *xc, trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: a false IT condition means no effect.
+    // Skip everything below (FP-enable check, FPCA, memory access).
+    // See mProfilePredicateHolds in m_insts.hh.
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     Fault fault = checkMProfileFPEnabled(tc);
     if (fault != NoFault) return fault;
     setFPCA(tc);
@@ -1110,6 +1143,10 @@ Fault
 MFpLdrS::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: a false IT condition means no effect.
+    // Skip everything below (FP-enable check, FPCA, memory access).
+    // See mProfilePredicateHolds in m_insts.hh.
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     Fault fault = checkMProfileFPEnabled(tc);
     if (fault != NoFault) return fault;
     setFPCA(tc);
@@ -1165,6 +1202,10 @@ Fault
 MFpStrS::execute(ExecContext *xc, trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: a false IT condition means no effect.
+    // Skip everything below (FP-enable check, FPCA, memory access).
+    // See mProfilePredicateHolds in m_insts.hh.
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     Fault fault = checkMProfileFPEnabled(tc);
     if (fault != NoFault) return fault;
     setFPCA(tc);
@@ -1181,6 +1222,10 @@ Fault
 MFpStrS::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: a false IT condition means no effect.
+    // Skip everything below (FP-enable check, FPCA, memory access).
+    // See mProfilePredicateHolds in m_insts.hh.
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     Fault fault = checkMProfileFPEnabled(tc);
     if (fault != NoFault) return fault;
     setFPCA(tc);
@@ -1224,6 +1269,10 @@ Fault
 MFpLdrD::execute(ExecContext *xc, trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: a false IT condition means no effect.
+    // Skip everything below (FP-enable check, FPCA, memory access).
+    // See mProfilePredicateHolds in m_insts.hh.
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     Fault fault = checkMProfileFPEnabled(tc);
     if (fault != NoFault) return fault;
     setFPCA(tc);
@@ -1255,6 +1304,10 @@ Fault
 MFpLdrD::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: a false IT condition means no effect.
+    // Skip everything below (FP-enable check, FPCA, memory access).
+    // See mProfilePredicateHolds in m_insts.hh.
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     Fault fault = checkMProfileFPEnabled(tc);
     if (fault != NoFault) return fault;
     setFPCA(tc);
@@ -1312,6 +1365,10 @@ Fault
 MFpStrD::execute(ExecContext *xc, trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: a false IT condition means no effect.
+    // Skip everything below (FP-enable check, FPCA, memory access).
+    // See mProfilePredicateHolds in m_insts.hh.
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     Fault fault = checkMProfileFPEnabled(tc);
     if (fault != NoFault) return fault;
     setFPCA(tc);
@@ -1331,6 +1388,10 @@ Fault
 MFpStrD::initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: a false IT condition means no effect.
+    // Skip everything below (FP-enable check, FPCA, memory access).
+    // See mProfilePredicateHolds in m_insts.hh.
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     Fault fault = checkMProfileFPEnabled(tc);
     if (fault != NoFault) return fault;
     setFPCA(tc);

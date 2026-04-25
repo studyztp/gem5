@@ -54,6 +54,7 @@
 #include <type_traits>
 
 #include "arch/arm/insts/pred_inst.hh"
+#include "arch/arm/m_insts.hh"     // mProfilePredicateHolds
 #include "arch/arm/pcstate.hh"
 #include "arch/arm/regs/cc.hh"
 #include "arch/arm/regs/int.hh"
@@ -1022,7 +1023,12 @@ class MFpWritebackUop : public PredOp
     Fault execute(ExecContext *xc,
                   trace::InstRecord *traceData) const override
     {
-        Addr base = xc->tcBase()->getReg(RegId(intRegClass, rn));
+        ThreadContext *tc = xc->tcBase();
+        // ITSTATE predication: if the parent VLDM/VSTM was predicated
+        // and the condition is false, the writeback must NOT happen.
+        // ARM ARM: predicated VLDM/VSTM has no effect on Rn either.
+        if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
+        Addr base = tc->getReg(RegId(intRegClass, rn));
         xc->setRegOperand(this, 0, (RegVal)(base + imm));
         return NoFault;
     }

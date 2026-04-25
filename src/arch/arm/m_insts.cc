@@ -137,6 +137,10 @@ MrsMProfile::execute(ExecContext *xc,
                      trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: skip everything below if the IT condition
+    // is false. ARM ARM A6.1.4: a predicated-false instruction has
+    // no effect. ITSTATE advancement still happens via pc.advance().
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     MiscRegIndex reg = sysMToMiscReg(sysM);
 
     if (reg == NUM_MISCREGS) {
@@ -206,6 +210,10 @@ MsrMProfile::execute(ExecContext *xc,
                      trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: skip everything below if the IT condition
+    // is false. ARM ARM A6.1.4: a predicated-false instruction has
+    // no effect. ITSTATE advancement still happens via pc.advance().
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     MiscRegIndex reg = sysMToMiscReg(sysM);
 
     if (reg == NUM_MISCREGS) {
@@ -289,6 +297,10 @@ CpsMProfile::execute(ExecContext *xc,
                      trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: skip everything below if the IT condition
+    // is false. ARM ARM A6.1.4: a predicated-false instruction has
+    // no effect. ITSTATE advancement still happens via pc.advance().
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
 
     auto *msys = dynamic_cast<ArmMSystem *>(tc->getSystemPtr());
     MProfileSCS *scs = (msys) ? msys->getSCS() : nullptr;
@@ -331,6 +343,10 @@ BxMProfile::execute(ExecContext *xc,
                     trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: skip everything below if the IT condition
+    // is false. ARM ARM A6.1.4: a predicated-false instruction has
+    // no effect. ITSTATE advancement still happens via pc.advance().
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     RegVal target = tc->getReg(RegId(intRegClass, op1));
 
     // EXC_RETURN detection (DDI0403E B1.5.8):
@@ -394,6 +410,10 @@ BlxRegMProfile::execute(ExecContext *xc,
                         trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: skip everything below if the IT condition
+    // is false. ARM ARM A6.1.4: a predicated-false instruction has
+    // no effect. ITSTATE advancement still happens via pc.advance().
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     RegVal target = tc->getReg(RegId(intRegClass, op1));
 
     // DDI0403E B1.5.8: BLX does NOT trigger EXC_RETURN.
@@ -436,6 +456,8 @@ Fault
 SvcMProfile::execute(ExecContext *xc,
                      trace::InstRecord *traceData) const
 {
+    // ITSTATE predication: a false IT condition suppresses the SVC.
+    if (!mProfilePredicateHolds(xc->tcBase(), condCode)) return NoFault;
     // M-profile SVC generates SVCall exception (exception number 11).
     // The exception entry mechanism (ArmMFault::invoke in m_faults.cc)
     // pushes the hardware exception frame and branches to the handler.
@@ -462,6 +484,10 @@ WfiMProfile::execute(ExecContext *xc,
     // M-profile WFI: sleep until an interrupt is pending.
     // Unlike A-profile, no hypervisor trap checks (no HCR/SCR).
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: skip everything below if the IT condition
+    // is false. ARM ARM A6.1.4: a predicated-false instruction has
+    // no effect. ITSTATE advancement still happens via pc.advance().
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     tc->quiesce();
     return NoFault;
 }
@@ -485,6 +511,10 @@ WfeMProfile::execute(ExecContext *xc,
     // For MVP, treat as hint-NOP (sleep for 1 cycle).
     // Full event register tracking deferred.
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: skip everything below if the IT condition
+    // is false. ARM ARM A6.1.4: a predicated-false instruction has
+    // no effect. ITSTATE advancement still happens via pc.advance().
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     Tick next_cycle = tc->getCpuPtr()->nextCycle();
     tc->quiesceTick(next_cycle + 1);
     return NoFault;
@@ -505,6 +535,10 @@ Fault
 MProfileUndefined::execute(ExecContext *xc,
                            trace::InstRecord *traceData) const
 {
+    // ITSTATE predication: a false IT condition suppresses the
+    // UsageFault. (Predicated undefined-encoding inside an IT block
+    // with false condition simply has no effect — does NOT trap.)
+    if (!mProfilePredicateHolds(xc->tcBase(), condCode)) return NoFault;
     // A-profile-only instruction on M-profile → UsageFault.
     // DDI0403E B1.5.3: undefined instruction generates UsageFault.
     // CFSR.UNDEFINSTR bit is set by the exception entry logic.
@@ -532,6 +566,10 @@ ExcReturnFromPC::execute(ExecContext *xc,
                          trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: skip everything below if the IT condition
+    // is false. ARM ARM A6.1.4: a predicated-false instruction has
+    // no effect. ITSTATE advancement still happens via pc.advance().
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     // The EXC_RETURN value was the address the CPU tried to fetch from.
     DPRINTF(MProfileStacking,
             "ExcReturnFromPC: excReturnVal=%#x, "
@@ -563,6 +601,10 @@ BkptSemiMProfile::execute(ExecContext *xc,
                           trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: skip everything below if the IT condition
+    // is false. ARM ARM A6.1.4: a predicated-false instruction has
+    // no effect. ITSTATE advancement still happens via pc.advance().
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
 
     // Get semihosting handler from ArmMSystem.
     auto *sys = dynamic_cast<ArmMSystem *>(tc->getSystemPtr());
@@ -604,6 +646,11 @@ Fault
 BarrierMProfile::execute(ExecContext *xc,
                          trace::InstRecord *traceData) const
 {
+    // ITSTATE predication: a false IT condition suppresses the
+    // barrier. (Already a no-op architecturally — the barrier flags
+    // do all the work — but staying consistent with the rest of
+    // m_insts.cc for clarity.)
+    if (!mProfilePredicateHolds(xc->tcBase(), condCode)) return NoFault;
     return NoFault;
 }
 
@@ -628,6 +675,10 @@ LdrexMProfile::execute(ExecContext *xc,
                        trace::InstRecord *traceData) const
 {
     ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: skip everything below if the IT condition
+    // is false. ARM ARM A6.1.4: a predicated-false instruction has
+    // no effect. ITSTATE advancement still happens via pc.advance().
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
     Addr addr = tc->getReg(RegId(intRegClass, base)) + imm;
 
     // Perform the exclusive load via the standard memory interface.

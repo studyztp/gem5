@@ -44,14 +44,59 @@
 
 #include "arch/arm/insts/macromem.hh"
 #include "arch/arm/insts/pred_inst.hh"
+#include "arch/arm/regs/cc.hh"      // cc_reg::Nz / C / V (flat NZCV)
 #include "arch/arm/regs/int.hh"
 #include "arch/arm/regs/misc.hh"
+#include "arch/arm/regs/misc_types.hh"
+#include "arch/arm/utility.hh"
+#include "cpu/thread_context.hh"
 
 namespace gem5
 {
 
 namespace ArmISA
 {
+
+/**
+ * IT-block predicate gate for hand-written M-profile instructions.
+ *
+ * Returns true if the instruction should commit. Returns false if
+ * the architectural condition is FALSE — per ARM ARM A6.1.4 the
+ * instruction has no effect in that case.
+ *
+ * Every M-profile instruction class in this directory overrides
+ * execute() (and sometimes initiateAcc()) to bypass the auto-
+ * generated A-profile decode path. None of them honor IT-block
+ * predication unless they call this helper at the top of every
+ * such method:
+ *
+ *   if (!mProfilePredicateHolds(xc->tcBase(), condCode))
+ *       return NoFault;
+ *
+ * `condCode` is populated by PredOp's constructor (insts/
+ * pred_inst.hh:226-232) from machInst.itstateCond when in an IT
+ * block, else from machInst.condCode (which is COND_AL/COND_UC
+ * for unpredicated Thumb-2 ops). For non-predicated instructions
+ * this returns true, preserving today's behavior — only
+ * predicated-but-condition-false instructions are now suppressed.
+ *
+ * NZCV source: in this fork the LIVE NZCV lives in the per-thread
+ * CC flat regs (cc_reg::Nz / C / V). xPSR's NZCV/GE bits are a
+ * sync copy that goes stale between syncCCRegsToXpsr() calls —
+ * see m_faults.cc syncCCRegsToXpsr / syncXpsrToCCRegs and the
+ * BUG-5 commit. Reading cc_reg directly avoids the staleness.
+ *
+ * cc_reg::Nz packs (N << 1) | Z in 2 bits — exactly what
+ * testPredicate's nz argument expects.
+ */
+inline bool
+mProfilePredicateHolds(ThreadContext *tc, ConditionCode condCode)
+{
+    return testPredicate(tc->getReg(cc_reg::Nz),
+                         tc->getReg(cc_reg::C),
+                         tc->getReg(cc_reg::V),
+                         condCode);
+}
 
 /**
  * M-profile MRS: Move from Special Register.
