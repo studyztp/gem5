@@ -256,6 +256,85 @@ class MFpTernaryS : public MFpOp
 };
 
 // =====================================================================
+// MFpFusedMulAddS — Ternary single-precision fused multiply-add
+// (VFMA, VFMS, VFNMA, VFNMS)
+//
+// Unlike MFpTernaryS (which uses host `*`/`+` via a C++ lambda and
+// therefore rounds TWICE), this class invokes gem5's pure-software
+// `fplibMulAdd<uint32_t>` (see src/arch/arm/insts/fplib.cc:2211) so
+// the fused multiply-add is computed with a SINGLE rounding, matching
+// ARM VFMA.F32 / VFMS.F32 / VFNMA.F32 / VFNMS.F32 semantics.
+//
+// fplibMulAdd operates on IEEE 754 bit patterns and handles FPSCR.FZ/
+// DN/RMode, NaN propagation, INF*0 invalid, and denormal flush
+// internally — no host FP state is read. This makes results
+// bit-identical across hosts, which VMLA/VMLS (still on MFpTernaryS)
+// do not guarantee.
+//
+// Variant is encoded as two booleans that XOR the sign bit of the
+// addend (Sd) and/or first multiplicand (Sn), matching ARM's FPNeg
+// (which only flips bit 31, preserving NaN payload):
+//
+//   Mnem    ARM pseudocode                      negateAddend  negateProduct
+//   VFMA    FPMulAdd(Sd, Sn, Sm)                false         false
+//   VFMS    FPMulAdd(Sd, FPNeg(Sn), Sm)         false         true
+//   VFNMS   FPMulAdd(FPNeg(Sd), Sn, Sm)         true          false
+//   VFNMA   FPMulAdd(FPNeg(Sd), FPNeg(Sn), Sm)  true          true
+//
+// src: S[dest], S[op1], S[op2], FPSCR   dest: S[dest], FPSCR
+// =====================================================================
+
+class MFpFusedMulAddS : public MFpOp
+{
+  private:
+    RegId srcRegIdxArr[4];
+    RegId destRegIdxArr[2];
+
+  protected:
+    RegIndex dest, op1, op2;
+    // XOR mask applied to addend (Sd) sign bit: true for VFNMS, VFNMA.
+    bool negateAddend;
+    // XOR mask applied to first multiplicand (Sn) sign bit so the
+    // product is negated inside the fused mul-add: true for VFMS, VFNMA.
+    bool negateProduct;
+
+    Fault doFpOp(ExecContext *xc,
+                 trace::InstRecord *traceData) const override;
+
+  public:
+    MFpFusedMulAddS(const char *mnem, ExtMachInst mach_inst,
+                    OpClass op_class, RegIndex _dest, RegIndex _op1,
+                    RegIndex _op2, bool _negateAddend,
+                    bool _negateProduct)
+        : MFpOp(mnem, mach_inst, op_class),
+          dest(_dest), op1(_op1), op2(_op2),
+          negateAddend(_negateAddend),
+          negateProduct(_negateProduct)
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        // Sd is both source (accumulator) and destination — same shape
+        // as MFpTernaryS, so dispatch / dependency tracking in the
+        // Minor CPU sees an identical ternary-µop profile.
+        setSrcRegIdx(_numSrcRegs++, vfpSRegId(dest));  // accumulator
+        setSrcRegIdx(_numSrcRegs++, vfpSRegId(op1));
+        setSrcRegIdx(_numSrcRegs++, vfpSRegId(op2));
+        setSrcRegIdx(_numSrcRegs++, miscRegClass[MISCREG_FPSCR]);
+        setDestRegIdx(_numDestRegs++, vfpSRegId(dest));
+        _numTypedDestRegs[vecElemClass.type()]++;
+        setDestRegIdx(_numDestRegs++, miscRegClass[MISCREG_FPSCR]);
+        _numTypedDestRegs[miscRegClass.type()]++;
+    }
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+// =====================================================================
 // MFpUnaryS — Unary single-precision (VNEG, VABS, VSQRT)
 // src: S[op1], FPSCR   dest: S[dest], FPSCR
 // =====================================================================

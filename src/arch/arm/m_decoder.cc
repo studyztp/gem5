@@ -1033,29 +1033,41 @@ MDecoder::decodeMProfileVfp(ExtMachInst mach_inst)
             break;
 
           case 0x9:
-            // VFNMA.F32 / VFNMS.F32
+            // VFNMA.F32 / VFNMS.F32 — FUSED (single rounding per ARM
+            // ARM). Routed to MFpFusedMulAddS, which calls
+            // fplibMulAdd<uint32_t> for a bit-exact, host-independent
+            // result. Sign flips mirror ARM's FPNeg on Sd and Sn:
+            //   opc3[0]=0: VFNMS  →  -Sd + (Sn * Sm)       (negateAddend)
+            //   opc3[0]=1: VFNMA  →  -Sd + (-Sn * Sm)      (both flipped)
             if ((opc3 & 0x1) == 0) {
-                return new MFpTernaryS("vfnms.f32", mach_inst,
+                return new MFpFusedMulAddS("vfnms.f32", mach_inst,
                     SimdFloatMultAccOp, vd(), vn(), vm(),
-                    [](float a, float n, float m) { return n * m - a; });
+                    /* negateAddend */ true,
+                    /* negateProduct */ false);
             } else {
-                return new MFpTernaryS("vfnma.f32", mach_inst,
+                return new MFpFusedMulAddS("vfnma.f32", mach_inst,
                     SimdFloatMultAccOp, vd(), vn(), vm(),
-                    [](float a, float n, float m) {
-                        return -(n * m) - a;
-                    });
+                    /* negateAddend */ true,
+                    /* negateProduct */ true);
             }
 
           case 0xa:
-            // VFMA.F32 / VFMS.F32
+            // VFMA.F32 / VFMS.F32 — FUSED (single rounding per ARM
+            // ARM). Previous implementation used a host `a + n*m`
+            // lambda which rounds twice; corrected by routing to
+            // MFpFusedMulAddS / fplibMulAdd.
+            //   opc3[0]=0: VFMA  →  Sd + (Sn * Sm)         (no flips)
+            //   opc3[0]=1: VFMS  →  Sd + (-Sn * Sm)        (negateProduct)
             if ((opc3 & 0x1) == 0) {
-                return new MFpTernaryS("vfma.f32", mach_inst,
+                return new MFpFusedMulAddS("vfma.f32", mach_inst,
                     SimdFloatMultAccOp, vd(), vn(), vm(),
-                    [](float a, float n, float m) { return a + n * m; });
+                    /* negateAddend */ false,
+                    /* negateProduct */ false);
             } else {
-                return new MFpTernaryS("vfms.f32", mach_inst,
+                return new MFpFusedMulAddS("vfms.f32", mach_inst,
                     SimdFloatMultAccOp, vd(), vn(), vm(),
-                    [](float a, float n, float m) { return a - n * m; });
+                    /* negateAddend */ false,
+                    /* negateProduct */ true);
             }
 
           case 0xb:

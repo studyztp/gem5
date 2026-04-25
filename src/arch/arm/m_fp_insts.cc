@@ -43,6 +43,7 @@
 #include <limits>
 #include <sstream>
 
+#include "arch/arm/insts/fplib.hh"  // fplibMulAdd: bit-exact software FMA
 #include "arch/arm/m_faults.hh"
 #include "arch/arm/regs/int.hh"
 #include "arch/arm/regs/misc.hh"
@@ -531,6 +532,91 @@ MFpTernaryS::doFpOp(ExecContext *xc,
 
 std::string
 MFpTernaryS::generateDisassembly(
+    Addr pc, const loader::SymbolTable *symtab) const
+{
+    std::ostringstream ss;
+    ss << mnemonic << " s" << dest << ", s" << op1 << ", s" << op2;
+    return ss.str();
+}
+
+// =====================================================================
+// MFpFusedMulAddS — Fused ternary single-precision
+// (VFMA, VFMS, VFNMA, VFNMS)
+//
+// Delegates to `fplibMulAdd<uint32_t>` for a SINGLE-ROUND fused
+// multiply-add on bit patterns. This differs from MFpTernaryS in two
+// crucial ways that matter for VFMA correctness and cross-host
+// determinism:
+//
+//   1. fplibMulAdd rounds once (correct per ARM VFMA spec); the host
+//      `a + n*m` lambda used by MFpTernaryS rounds twice (wrong).
+//   2. fplibMulAdd does not touch host FP state — no fesetround, no
+//      fetestexcept. It reads/writes IEEE 754 bits directly and
+//      updates FPSCR.IOC/OFC/UFC/IXC/IDC via set_fpscr0 inside
+//      fplib.cc. Results are byte-identical on any host.
+//
+// VMLA/VMLS/VNMLA/VNMLS are NOT fused (ARM spec: `FPAdd(FPRegD[d],
+// FPMul(...), …)` = two roundings), so they stay on MFpTernaryS with
+// its `a + n*m`-style lambda.
+// =====================================================================
+
+Fault
+MFpFusedMulAddS::doFpOp(ExecContext *xc,
+                        trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    FPSCR fpscr = tc->readMiscRegNoEffect(MISCREG_FPSCR);
+
+    // Operate on 32-bit IEEE 754 bit patterns. The S-reg register file
+    // stores values as RegVal (64-bit); we truncate to the low 32 bits.
+    uint32_t addend = (uint32_t)tc->getReg(vfpSRegId(dest));
+    uint32_t p1     = (uint32_t)tc->getReg(vfpSRegId(op1));
+    uint32_t p2     = (uint32_t)tc->getReg(vfpSRegId(op2));
+
+    // Capture the ORIGINAL register bits (pre-negation) for tracing.
+    // Lets the MProfileFP debug log show what the architected registers
+    // held going into this fused mul-add, independent of the variant-
+    // specific sign flips done below.
+    const uint32_t orig_addend = addend;
+    const uint32_t orig_p1     = p1;
+
+    // FPNeg per ARM ARM is bit-31 flip only; payload is preserved for
+    // NaNs. fplibMulAdd's internal NaN processing sees the flipped
+    // sign and propagates correctly.
+    if (negateAddend)  addend ^= 0x80000000u;
+    if (negateProduct) p1     ^= 0x80000000u;
+
+    // M-profile has no FPCR; default-constructed FPCR (all bits 0)
+    // gives the FPv4-SP behavior fplibMulAdd expects (no AH/FIZ/NEP).
+    // FPSCR is updated in place with sticky IOC/OFC/UFC/IXC/IDC flags.
+    FPCR fpcr = 0;
+    uint32_t result = fplibMulAdd<uint32_t>(addend, p1, p2, fpscr, fpcr);
+
+    tc->setReg(vfpSRegId(dest), (RegVal)result);
+    tc->setMiscRegNoEffect(MISCREG_FPSCR, fpscr);
+
+    // Diagnostic trace: architected inputs (pre-negation), variant
+    // flags, and architected output — all as hex bits and decoded
+    // floats. Primarily used to bisect numerical drift in benchmarks
+    // like tinympc where accumulators blow up over many VFMAs.
+    DPRINTF(MProfileFP,
+            "%s s%d, s%d, s%d: sd=%g[0x%08x] sn=%g[0x%08x] "
+            "sm=%g[0x%08x] [negA=%d negP=%d] = %g[0x%08x]\n",
+            mnemonic, dest, op1, op2,
+            bitsToFloat32(orig_addend), orig_addend,
+            bitsToFloat32(orig_p1), orig_p1,
+            bitsToFloat32(p2), p2,
+            (int)negateAddend, (int)negateProduct,
+            bitsToFloat32(result), result);
+
+    if (traceData)
+        traceData->setData(vecElemClass, (RegVal)result);
+
+    return NoFault;
+}
+
+std::string
+MFpFusedMulAddS::generateDisassembly(
     Addr pc, const loader::SymbolTable *symtab) const
 {
     std::ostringstream ss;
