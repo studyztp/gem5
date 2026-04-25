@@ -191,12 +191,23 @@ def _make_addr_router():
     A narrower width would add artificial payloadDelay to 8-byte fetch
     requests — the real bandwidth constraint is in the downstream bus
     (flash_bus or system_bus), not this address router.
+
+    Width MUST match cache_line_size (8 bytes). A narrower width causes
+    8-byte cache fills to be split into multi-beat transfers by the
+    xbar; combined with a retry that arrives mid-split (e.g. for a
+    `.data` copy sequentially crossing a flash prefetch boundary), that
+    path in BaseXBar::Layer::retryWaiting fires PacketQueue::retry on a
+    queue that no longer has `waitingOnRetry` set. Observed
+    deterministically as an assertion failure at tick 150,202,752 for
+    binaries whose .data source-paddr is 0x08007EF0
+    (bench-fpu-repeat-vadd/vsub-f32-n8). Setting width=8 keeps each
+    cache fill in a single beat and avoids the split-retry path.
     """
     return NoncoherentXBar(
         frontend_latency=0,
         forward_latency=0,
         response_latency=0,
-        width=4,
+        width=8,
         header_latency=0,
     )
 
