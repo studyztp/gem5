@@ -52,6 +52,7 @@
 #include "cpu/thread_context.hh"
 #include "debug/MProfileStacking.hh"
 #include "dev/arm/m_profile_scs.hh"
+#include "mem/packet_access.hh"
 #include "mem/request.hh"
 
 namespace gem5
@@ -739,6 +740,211 @@ LdrexMProfile::generateDisassembly(Addr pc,
         ss << ", #" << imm;
     ss << "]";
     return ss.str();
+}
+
+// Timing-CPU split path. MinorCPU calls initiateAcc/completeAcc
+// instead of execute(); without these overrides the StaticInst
+// default implementations panic with "initiateAcc not defined!".
+Fault
+LdrexMProfile::initiateAcc(ExecContext *xc,
+                           trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
+
+    Addr addr = tc->getReg(RegId(intRegClass, base)) + imm;
+
+    Request::Flags memFlags = Request::LLSC;
+    if (accessSize == 4)
+        memFlags = Request::Flags(2 | Request::LLSC);
+    else if (accessSize == 2)
+        memFlags = Request::Flags(1 | Request::LLSC);
+
+    // initiateMemRead is templated on the dummy operand's type to pick
+    // the access width.  Use the matching size variant.
+    if (accessSize == 4) {
+        uint32_t dummy = 0;
+        return gem5::initiateMemRead(xc, traceData, addr, dummy, memFlags);
+    } else if (accessSize == 2) {
+        uint16_t dummy = 0;
+        return gem5::initiateMemRead(xc, traceData, addr, dummy, memFlags);
+    } else {
+        uint8_t dummy = 0;
+        return gem5::initiateMemRead(xc, traceData, addr, dummy, memFlags);
+    }
+}
+
+Fault
+LdrexMProfile::completeAcc(PacketPtr pkt, ExecContext *xc,
+                           trace::InstRecord *traceData) const
+{
+    if (!mProfilePredicateHolds(xc->tcBase(), condCode)) return NoFault;
+
+    RegVal result = 0;
+    if (accessSize == 4) {
+        uint32_t data = 0;
+        gem5::getMemLE(pkt, data, traceData);
+        result = data;
+    } else if (accessSize == 2) {
+        uint16_t data = 0;
+        gem5::getMemLE(pkt, data, traceData);
+        result = data;
+    } else {
+        uint8_t data = 0;
+        gem5::getMemLE(pkt, data, traceData);
+        result = data;
+    }
+
+    xc->setRegOperand(this, 0, result);
+    if (traceData)
+        traceData->setData(result);
+    return NoFault;
+}
+
+// =========================================================================
+// StrexMProfile::execute — STREX / STREXB / STREXH
+// =========================================================================
+//
+// Companion to LdrexMProfile. The auto-generated A-profile STREX class
+// is missing initiateAcc(), so any timing-CPU run that hits STREX
+// panics with "initiateAcc not defined!".  Implement the exclusive
+// store directly via writeMemAtomicLE with Request::LLSC — the same
+// monitor primitive LdrexMProfile uses on the read side.
+//
+// On success: Rd <- 0,    store committed.
+// On failure: Rd <- 1,    store NOT committed (monitor was lost since
+//                         the most recent LDREX from this CPU).
+
+Fault
+StrexMProfile::execute(ExecContext *xc,
+                       trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    // ITSTATE predication: skip everything below if the IT condition
+    // is false. ARM ARM A6.1.4: a predicated-false instruction has
+    // no effect — including no destination-register update.
+    // ITSTATE advancement still happens via pc.advance().
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
+
+    Addr addr = tc->getReg(RegId(intRegClass, base)) + imm;
+    RegVal val = tc->getReg(RegId(intRegClass, src));
+
+    // Alignment requirements (matching LdrexMProfile + ISA-generated
+    // code: 2 = word, 1 = half, 0 = byte) plus LLSC for the
+    // exclusive-monitor check.
+    Request::Flags memFlags = Request::LLSC;
+    if (accessSize == 4)
+        memFlags = Request::Flags(2 | Request::LLSC);
+    else if (accessSize == 2)
+        memFlags = Request::Flags(1 | Request::LLSC);
+
+    // writeMemAtomicLE writes back the exclusive-monitor result via
+    // its `res` out-param: 0 on success, 1 on failure (matches the
+    // ARM ARM convention for STREX).
+    uint64_t monitor_result = 0;
+    Fault fault = NoFault;
+    if (accessSize == 4) {
+        uint32_t data = (uint32_t)val;
+        fault = writeMemAtomicLE(xc, traceData, data, addr, memFlags,
+                                 &monitor_result);
+    } else if (accessSize == 2) {
+        uint16_t data = (uint16_t)val;
+        fault = writeMemAtomicLE(xc, traceData, data, addr, memFlags,
+                                 &monitor_result);
+    } else {
+        uint8_t data = (uint8_t)val;
+        fault = writeMemAtomicLE(xc, traceData, data, addr, memFlags,
+                                 &monitor_result);
+    }
+    if (fault != NoFault)
+        return fault;
+
+    // ARM ARM A7.7.221: Rd takes the monitor pass/fail result.
+    tc->setReg(RegId(intRegClass, result_reg), (RegVal)monitor_result);
+
+    if (traceData)
+        traceData->setData(monitor_result);
+
+    return NoFault;
+}
+
+std::string
+StrexMProfile::generateDisassembly(Addr pc,
+    const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    if (accessSize == 1)
+        ss << "  strexb  ";
+    else if (accessSize == 2)
+        ss << "  strexh  ";
+    else
+        ss << "  strex   ";
+    printIntReg(ss, result_reg);
+    ss << ", ";
+    printIntReg(ss, src);
+    ss << ", [";
+    printIntReg(ss, base);
+    if (imm)
+        ss << ", #" << imm;
+    ss << "]";
+    return ss.str();
+}
+
+// Timing-CPU split path. The exclusive-store result (success / fail)
+// is reported by the cache controller via pkt->req->getExtraData()
+// in completeAcc — same convention the auto-generated A-profile
+// STREX uses. Convention:
+//   pkt->req->getExtraData() == 0 -> exclusive monitor was lost
+//                                    (failure); Rd <- 1
+//   pkt->req->getExtraData() != 0 -> exclusive store committed
+//                                    (success); Rd <- 0
+Fault
+StrexMProfile::initiateAcc(ExecContext *xc,
+                           trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    if (!mProfilePredicateHolds(tc, condCode)) return NoFault;
+
+    Addr addr = tc->getReg(RegId(intRegClass, base)) + imm;
+    RegVal val = tc->getReg(RegId(intRegClass, src));
+
+    Request::Flags memFlags = Request::LLSC;
+    if (accessSize == 4)
+        memFlags = Request::Flags(2 | Request::LLSC);
+    else if (accessSize == 2)
+        memFlags = Request::Flags(1 | Request::LLSC);
+
+    if (accessSize == 4) {
+        uint32_t data = (uint32_t)val;
+        return gem5::writeMemTimingLE(xc, traceData, data, addr,
+                                      memFlags, nullptr);
+    } else if (accessSize == 2) {
+        uint16_t data = (uint16_t)val;
+        return gem5::writeMemTimingLE(xc, traceData, data, addr,
+                                      memFlags, nullptr);
+    } else {
+        uint8_t data = (uint8_t)val;
+        return gem5::writeMemTimingLE(xc, traceData, data, addr,
+                                      memFlags, nullptr);
+    }
+}
+
+Fault
+StrexMProfile::completeAcc(PacketPtr pkt, ExecContext *xc,
+                           trace::InstRecord *traceData) const
+{
+    if (!mProfilePredicateHolds(xc->tcBase(), condCode)) return NoFault;
+
+    // pkt->req->getExtraData() carries the exclusive-monitor result.
+    // 0 => monitor lost (fail); non-zero => monitor held (success).
+    // Rd takes the inverted boolean, matching ARM ARM A7.7.221.
+    uint64_t writeResult = pkt->req->getExtraData();
+    RegVal result = !writeResult;
+
+    xc->setRegOperand(this, 0, result);
+    if (traceData)
+        traceData->setData(result);
+    return NoFault;
 }
 
 } // namespace ArmISA

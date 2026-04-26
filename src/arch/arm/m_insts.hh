@@ -612,6 +612,89 @@ class LdrexMProfile : public PredOp
     Fault execute(ExecContext *xc,
                   trace::InstRecord *traceData) const override;
 
+    // Timing-CPU split path. Without these the default StaticInst
+    // implementations panic with "initiateAcc not defined!" on
+    // MinorCPU. Mirror the read side of the auto-generated A-profile
+    // LDREX class.
+    Fault initiateAcc(ExecContext *xc,
+                      trace::InstRecord *traceData) const override;
+    Fault completeAcc(PacketPtr pkt, ExecContext *xc,
+                      trace::InstRecord *traceData) const override;
+
+    std::string generateDisassembly(
+            Addr pc,
+            const loader::SymbolTable *symtab) const override;
+};
+
+/**
+ * M-profile STREX / STREXB / STREXH: Store Register Exclusive.
+ *
+ * Companion to LdrexMProfile. The auto-generated A-profile STREX
+ * class is missing initiateAcc, so any timing-CPU run that issues
+ * STREX panics with "initiateAcc not defined!". This M-profile-
+ * specific class implements the exclusive-store path directly via
+ * writeMemAtomicLE with Request::LLSC, mirroring the read side.
+ *
+ * Operands:
+ *   Rd  (result)  — set to 0 on success, 1 on failure
+ *   Rt  (value)   — value to store
+ *   Rn  (base)    — pointer base
+ *   imm           — byte offset (only the word form takes a non-zero
+ *                   imm; STREXB/STREXH have imm = 0)
+ *
+ * accessSize selects the access width:
+ *   4 = STREX  (word)     DDI0403E A7.7.221
+ *   2 = STREXH (halfword) DDI0403E A7.7.223
+ *   1 = STREXB (byte)     DDI0403E A7.7.222
+ *
+ * Reference: DDI0403E A3.4.5 (Exclusive monitors)
+ */
+class StrexMProfile : public PredOp
+{
+  private:
+    RegId srcRegIdxArr[2];
+    RegId destRegIdxArr[1];
+
+  protected:
+    RegIndex result_reg;  // Rd — receives 0/1 success flag
+    RegIndex src;         // Rt — value to store
+    RegIndex base;        // Rn — address base
+    uint32_t imm;         // byte offset
+    unsigned accessSize;  // 1, 2, or 4
+
+  public:
+    StrexMProfile(ExtMachInst mach_inst, RegIndex _result, RegIndex _src,
+                  RegIndex _base, uint32_t _imm, unsigned _size)
+        : PredOp("strex", mach_inst, MemWriteOp),
+          result_reg(_result), src(_src), base(_base),
+          imm(_imm), accessSize(_size)
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        // Two source registers: the base address (Rn) and the data
+        // value (Rt). The destination is the success/fail flag (Rd).
+        setSrcRegIdx(_numSrcRegs++, intRegClass[base]);
+        setSrcRegIdx(_numSrcRegs++, intRegClass[src]);
+        setDestRegIdx(_numDestRegs++, intRegClass[result_reg]);
+        _numTypedDestRegs[intRegClass.type()]++;
+
+        flags[IsStore] = true;
+    }
+
+    Fault execute(ExecContext *xc,
+                  trace::InstRecord *traceData) const override;
+
+    // Timing-CPU split path. Mirror the write side of the auto-
+    // generated A-profile STREX class.
+    Fault initiateAcc(ExecContext *xc,
+                      trace::InstRecord *traceData) const override;
+    Fault completeAcc(PacketPtr pkt, ExecContext *xc,
+                      trace::InstRecord *traceData) const override;
+
     std::string generateDisassembly(
             Addr pc,
             const loader::SymbolTable *symtab) const override;

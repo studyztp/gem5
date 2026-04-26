@@ -713,6 +713,42 @@ MDecoder::tryMProfileDecode32(ExtMachInst mach_inst)
                 return new LdrexMProfile(mach_inst, rt, rn, 0, 2);
             }
         }
+        // ---- STREX / STREXB / STREXH ----
+        // M-profile-specific routing — the auto-generated A-profile
+        // STREX class is missing initiateAcc and panics under
+        // MinorCPU. ARM ARM A7.7.221 / A7.7.222 / A7.7.223:
+        //   STREX  T1: inst[31:20]=0xE84
+        //                Rd at [11:8], Rt at [15:12], Rn at [19:16],
+        //                imm8 at [7:0] (shifted left 2 = byte offset)
+        //   STREXB T1: inst[31:20]=0xE8C, inst[7:4]=0x4
+        //                Rd at [3:0],  Rt at [15:12], Rn at [19:16]
+        //   STREXH T1: inst[31:20]=0xE8C, inst[7:4]=0x5
+        //                Rd at [3:0],  Rt at [15:12], Rn at [19:16]
+        if (op_high == 0xE84) {
+            // STREX Rd, Rt, [Rn, #imm]
+            const RegIndex rd = (RegIndex)bits(inst, 11, 8);
+            const RegIndex rt = (RegIndex)bits(inst, 15, 12);
+            const RegIndex rn = (RegIndex)bits(inst, 19, 16);
+            const uint32_t imm8 = bits(inst, 7, 0) << 2;
+            return new StrexMProfile(mach_inst, rd, rt, rn, imm8, 4);
+        }
+        if (op_high == 0xE8C) {
+            const uint32_t op_low = bits(inst, 7, 4);
+            if (op_low == 0x4) {
+                // STREXB Rd, Rt, [Rn]
+                const RegIndex rd = (RegIndex)bits(inst, 3, 0);
+                const RegIndex rt = (RegIndex)bits(inst, 15, 12);
+                const RegIndex rn = (RegIndex)bits(inst, 19, 16);
+                return new StrexMProfile(mach_inst, rd, rt, rn, 0, 1);
+            }
+            if (op_low == 0x5) {
+                // STREXH Rd, Rt, [Rn]
+                const RegIndex rd = (RegIndex)bits(inst, 3, 0);
+                const RegIndex rt = (RegIndex)bits(inst, 15, 12);
+                const RegIndex rn = (RegIndex)bits(inst, 19, 16);
+                return new StrexMProfile(mach_inst, rd, rt, rn, 0, 2);
+            }
+        }
     }
 
     // ---- 32-bit PUSH (STMDB SP!, {reglist}) ----
