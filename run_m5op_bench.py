@@ -86,6 +86,18 @@ parser.add_argument(
 #   cleanly. The Exec trace flag is already disabled at work_end so
 #   the post-ROI tail does not bloat simout.
 parser.add_argument(
+    "--roi-counter",
+    type=int,
+    default=0,
+    help="Initial value of the internal roi_counter. The script "
+    "treats the (N+1)-th m5_work_begin as the measured ROI (i.e. "
+    "the one that enables --debug-flags trace + records "
+    "roi_start_tick); the first N work_begin events are skipped. "
+    "Default 0 matches the diff-test harness configuration "
+    "(do_warmup=false). For benchmarks with one warmup iteration "
+    "before the measured ROI, pass --roi-counter 1.",
+)
+parser.add_argument(
     "--run-to-exit",
     action="store_true",
     help="Keep simulating after the first work_end until the "
@@ -129,7 +141,7 @@ if debug_from_start:
         if flag_name in m5_debug.flags:
             m5_debug.flags[flag_name].enable()
 
-roi_counter = 1
+roi_counter = args.roi_counter
 progress_interval = args.progress_interval
 
 while True:
