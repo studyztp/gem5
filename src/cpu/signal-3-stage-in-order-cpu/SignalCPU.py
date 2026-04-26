@@ -1,4 +1,5 @@
-# Copyright (c) 2026 University of California, Davis and Cornell University
+# Copyright (c) 2026 Zhantong Qiu, University of California, Davis
+# and Cornell University
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -24,47 +25,47 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from m5.objects.ArmMDecoder import ArmMDecoder
-from m5.objects.ArmMInterrupts import MProfileInterrupts
-from m5.objects.ArmMISA import ArmMISA
-from m5.objects.ArmMMMU import ArmMMMU
-from m5.objects.BaseAtomicSimpleCPU import BaseAtomicSimpleCPU
-from m5.objects.BaseMinorCPU import BaseMinorCPU
-from m5.objects.BaseTimingSimpleCPU import BaseTimingSimpleCPU
-from m5.objects.SignalCPU import SignalCPU
-from m5.objects.Simple3CycleCPU import Simple3CycleCPU
+from m5.objects.BaseCPU import BaseCPU
+from m5.params import *
+from m5.proxy import Self
 
 
-class ArmMCPU:
-    """
-    M-profile CPU mixin.
+class SignalCPU(BaseCPU):
+    """Signal-driven 3-stage in-order CPU.
 
-    Binds ISA-independent CPU models to M-profile architecture components.
-    Mirrors ArmCPU (A-profile) but uses M-profile ISA, MMU, and interrupts.
-    The Thumb decoder is shared with A-profile (M-profile is Thumb-only).
+    Day-one knobs only (per DESIGN.md §6, plan Rev 2).  No
+    `mispredict_flush_cycles`, `taken_branch_redirect_delay`, etc. —
+    those are added in S6 only on data-driven demand.
     """
 
-    ArchDecoder = ArmMDecoder
-    ArchMMU = ArmMMMU
-    ArchInterrupts = MProfileInterrupts
-    ArchISA = ArmMISA
+    type = "SignalCPU"
+    cxx_header = "cpu/signal-3-stage-in-order-cpu/signal_cpu.hh"
+    cxx_class = "gem5::signal3::SignalCPU"
 
+    @classmethod
+    def memory_mode(cls):
+        return "timing"
 
-class ArmMAtomicSimpleCPU(BaseAtomicSimpleCPU, ArmMCPU):
-    mmu = ArmMMMU()
+    @classmethod
+    def support_take_over(cls):
+        return False
 
+    # ---- Cortex-M reference knobs (TRM-grounded defaults) ----
 
-class ArmMTimingSimpleCPU(BaseTimingSimpleCPU, ArmMCPU):
-    mmu = ArmMMMU()
+    pfu_fifo_words = Param.Unsigned(
+        3, "PFU prefetch FIFO depth (32-bit words). Cortex-M3 TRM §1.4."
+    )
 
+    halt_addr = Param.Addr(
+        0,
+        "Architectural PC at which the CPU halts the simulation "
+        "(typically the binary's `halt: b halt` infinite loop).  "
+        "0 means run forever.",
+    )
 
-class ArmMMinorCPU(BaseMinorCPU, ArmMCPU):
-    mmu = ArmMMMU()
+    icache_port = RequestPort("Instruction-side cache/AHB port")
+    dcache_port = RequestPort("Data-side cache/AHB port")
 
-
-class ArmMSimple3CycleCPU(Simple3CycleCPU, ArmMCPU):
-    mmu = ArmMMMU()
-
-
-class ArmMSignalCPU(SignalCPU, ArmMCPU):
-    mmu = ArmMMMU()
+    @classmethod
+    def require_caches(cls):
+        return False

@@ -1,4 +1,5 @@
-# Copyright (c) 2026 University of California, Davis and Cornell University
+# Copyright (c) 2026 Zhantong Qiu, University of California, Davis
+# and Cornell University
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -24,47 +25,40 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from m5.objects.ArmMDecoder import ArmMDecoder
-from m5.objects.ArmMInterrupts import MProfileInterrupts
-from m5.objects.ArmMISA import ArmMISA
-from m5.objects.ArmMMMU import ArmMMMU
-from m5.objects.BaseAtomicSimpleCPU import BaseAtomicSimpleCPU
-from m5.objects.BaseMinorCPU import BaseMinorCPU
-from m5.objects.BaseTimingSimpleCPU import BaseTimingSimpleCPU
-from m5.objects.SignalCPU import SignalCPU
-from m5.objects.Simple3CycleCPU import Simple3CycleCPU
+from m5.objects.ClockedObject import ClockedObject
+from m5.params import *
 
 
-class ArmMCPU:
-    """
-    M-profile CPU mixin.
+class SignalSmokeTest(ClockedObject):
+    """S0 smoke test for the Signal/Latch primitive.
 
-    Binds ISA-independent CPU models to M-profile architecture components.
-    Mirrors ArmCPU (A-profile) but uses M-profile ISA, MMU, and interrupts.
-    The Thumb decoder is shared with A-profile (M-profile is Thumb-only).
+    Builds a counter -> Latch<int> -> printer pipeline and runs it
+    for `num_cycles`.  Optionally schedules a one-shot async trigger
+    inside one of those cycles to validate the mid-cycle window
+    classification (Rev 2 issue #2).
     """
 
-    ArchDecoder = ArmMDecoder
-    ArchMMU = ArmMMMU
-    ArchInterrupts = MProfileInterrupts
-    ArchISA = ArmMISA
+    type = "SignalSmokeTest"
+    cxx_header = "cpu/signal-3-stage-in-order-cpu/signal_smoke_test.hh"
+    cxx_class = "gem5::signal3::SignalSmokeTest"
 
+    num_cycles = Param.Cycles(
+        100, "Number of clock cycles to run before exiting"
+    )
 
-class ArmMAtomicSimpleCPU(BaseAtomicSimpleCPU, ArmMCPU):
-    mmu = ArmMMMU()
+    run_async_test = Param.Bool(
+        True,
+        "Schedule a one-shot async trigger to validate "
+        "SignalGraph::isWithinCycle at a mid-cycle tick",
+    )
 
+    async_trigger_cycle = Param.Cycles(
+        10, "Cycle whose interior we'll schedule the async trigger in"
+    )
 
-class ArmMTimingSimpleCPU(BaseTimingSimpleCPU, ArmMCPU):
-    mmu = ArmMMMU()
-
-
-class ArmMMinorCPU(BaseMinorCPU, ArmMCPU):
-    mmu = ArmMMMU()
-
-
-class ArmMSimple3CycleCPU(Simple3CycleCPU, ArmMCPU):
-    mmu = ArmMMMU()
-
-
-class ArmMSignalCPU(SignalCPU, ArmMCPU):
-    mmu = ArmMMMU()
+    async_trigger_offset_ticks = Param.Tick(
+        100,
+        "Ticks past the start of async_trigger_cycle at which the "
+        "async event fires.  Must be < clock period (1 cycle = "
+        "default 1000 ticks at 1 GHz).",
+    )
