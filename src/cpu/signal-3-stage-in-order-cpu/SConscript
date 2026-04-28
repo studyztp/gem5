@@ -40,6 +40,7 @@ if env['CONF']['BUILD_ISA']:
     Source('fetch.cc')
     Source('decode.cc')
     Source('execute.cc')
+    Source('alu_fu.cc')
     Source('lsq.cc')
     Source('stats.cc')
 
@@ -68,11 +69,20 @@ if env['CONF']['BUILD_ISA']:
               'Memory: requests sent (port, addr, streamId), responses '
               'received (arrival tick, sameCycle classification)')
     DebugFlag('Signal3CPULineTrace',
-              'One line per cycle summarizing all three stages')
+              'Pretty-table cycle trace: one row per cycle showing the '
+              'end-of-cycle state of fetch / decode / execute.')
+    DebugFlag('Signal3CPULineTraceDetail',
+              'Detailed within-cycle table: one row per Settle event '
+              '(decode, accept, redirect, commit, queue, etc.) showing '
+              'the post-event snapshot of fetch / decode / execute.')
+    DebugFlag('Signal3CPUClockGate',
+              'Clock-gating decisions: idle stops at end of evaluate '
+              'when no stage will need work next cycle, and wake-ups '
+              'from icache/dcache port callbacks (resp + retry).')
 
     CompoundFlag('Signal3CPUAll',
                  ['Signal3CPU', 'Signal3CPUPipeline',
                   'Signal3CPUFetch', 'Signal3CPUDecode',
                   'Signal3CPUExecute', 'Signal3CPUSignal',
                   'Signal3CPULatch', 'Signal3CPUMem',
-                  'Signal3CPULineTrace'])
+                  'Signal3CPULineTrace', 'Signal3CPULineTraceDetail'])

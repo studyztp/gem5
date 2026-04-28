@@ -168,6 +168,12 @@ DebugFlag('SerialLink')
 DebugFlag('TokenPort')
 
 DebugFlag('PipelinedMem')
+DebugFlag('PipelinedMemLineTrace',
+          'Pretty-table per-tick trace of PipelinedSimpleMemory state: '
+          'arriveBuffer, readyToFireBuffer, outputBuffer, currentFetching, '
+          'nextAcceptTick, bufferedBlock per port. Designed to align with '
+          'SignalCPU cycle boundaries (5882 ticks at 170 MHz) so the CPU '
+          'and memory traces can be diffed cycle-by-cycle.')
 DebugFlag("MemChecker")
 DebugFlag("MemCheckerMonitor")
 DebugFlag("QOS")

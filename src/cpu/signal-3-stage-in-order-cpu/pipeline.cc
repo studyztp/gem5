@@ -29,6 +29,8 @@
 
 #include "cpu/signal-3-stage-in-order-cpu/pipeline.hh"
 
+#include <sstream>
+
 #include "arch/arm/m_interrupts.hh"
 #include "arch/arm/pcstate.hh"
 #include "arch/arm/regs/misc.hh"
@@ -39,7 +41,9 @@
 #include "cpu/signal-3-stage-in-order-cpu/signal_cpu.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Signal3CPU.hh"
+#include "debug/Signal3CPUClockGate.hh"
 #include "debug/Signal3CPULineTrace.hh"
+#include "debug/Signal3CPULineTraceDetail.hh"
 #include "debug/Signal3CPUMem.hh"
 #include "debug/Signal3CPUPipeline.hh"
 #include "sim/faults.hh"
@@ -79,14 +83,12 @@ Pipeline::Pipeline(SignalCPU &cpu, unsigned fifoCapacity)
     _execute->e_redirect_to_f.subscribe(_fetch.get());
     _execute->e_redirect_to_f.subscribe(_decode.get());
 
-    // S5: F <- D's same-cycle redirect (early-resolved branches).
-    //     D <- E's flag-setter pulse so D re-fires after E commits
-    //     a flag-producing inst and can resolve its dependent
-    //     conditional branch the same cycle.
+    // F <- D's same-cycle redirect (early-resolved direct
+    // unconditional branches).  Cortex-M4 has no D-side flag
+    // forwarding, so conditional branches go to E and never
+    // produce a D-redirect.
     _fetch->setDRedirectInput(&_decode->d_redirect_to_f);
-    _decode->setEFlagSetterInput(&_execute->e_flagSetterNextPc);
     _decode->d_redirect_to_f.subscribe(_fetch.get());
-    _execute->e_flagSetterNextPc.subscribe(_decode.get());
 }
 
 void
@@ -217,9 +219,13 @@ Pipeline::evaluate()
             (unsigned long long)numCycles.value(),
             (unsigned long long)curTick());
 
+    _lineTraceEvents.clear();
+
     _graph.beginCycle(curTick(), _cpu.clockPeriod());
 
-    // Per-cycle hooks on stages (re-arm one-shot guards).
+    // Per-cycle hooks on stages (re-arm one-shot guards, advance
+    // intra-stage pipeline registers).
+    _fetch->beginCycle();
     _decode->beginCycle();
     _execute->beginCycleHook();
 
@@ -244,16 +250,37 @@ Pipeline::evaluate()
     // Stats: track Settle iteration count if/when the SignalGraph
     // exposes it.  Placeholder for S2+.
 
-    DPRINTF(Signal3CPULineTrace,
-            "cyc=%llu F={pc=%#x fifo=%u inflt=%u pend=%lu} "
-            "D={next=%#x slotValid=%d}\n",
+    emitLineTrace();
+
+    // Clock-gating: when no stage will need work next cycle and the
+    // pipeline is in a safe-to-idle state, stop the Ticked event.
+    // Wake-up comes from external events via Pipeline::requestRetick
+    // (icache/dcache port resp + retry callbacks).  Cycle accounting
+    // stays correct: Ticked::start() catches numCycles up by
+    // cyclesSinceLastStopped on resume (see ticked_object.hh).
+    _needUpdate = computeNeedUpdate();
+    const bool canIdle = !_needUpdate && safeToIdle();
+    DPRINTF(Signal3CPUClockGate,
+            "cyc=%llu need=%d safeIdle=%d -> %s "
+            "F.fifo=%u F.flt=%u F.pq=%d F.staged=%d "
+            "D.macro=%d D.lout=%d "
+            "E.busy=%d LSQ.idle=%d retry=%d\n",
             (unsigned long long)numCycles.value(),
-            _fetch->fetchPc(), _fetch->fifoSize(),
-            _fetch->inFlight(),
-            _fetch->hasPendingIssue() ? 1ul : 0ul,
-            _decode->nextInstrAddrToDeliver(),
-            (int)(_decode->dSlot.out().valid()
-                  && _decode->dSlot.out().read().has_value()));
+            (int)_needUpdate, (int)safeToIdle(),
+            canIdle ? "STOP" : "tick",
+            _fetch->fifoSize(), _fetch->inFlight(),
+            (int)_fetch->hasPendingIssue(),
+            (int)_fetch->hasStagedWords(),
+            (int)_decode->inMacroExpansion(),
+            (int)_decode->hasLatchedOutput(),
+            (int)_execute->busy(),
+            (int)_lsq->idle(),
+            (int)_sawIcacheRetry);
+
+    if (canIdle) {
+        ++_cpu.signalStats().idleStops;
+        stop();
+    }
 
     if (haltConditionMet()) {
         DPRINTF(Signal3CPU,
@@ -264,6 +291,136 @@ Pipeline::evaluate()
                 _fetch->fifoSize(), _fetch->inFlight());
         stop();
         exitSimLoop("signal-cpu-halt", 0);
+    }
+}
+
+// Column widths for the line-trace tables.  Picked so the combined
+// row fits in ~200 chars — wide for terminal but parseable.
+namespace {
+constexpr unsigned kCycCol = 5;     // cycle number
+constexpr unsigned kUpdCol = 16;    // "update" event tag
+constexpr unsigned kFCol   = 70;    // fetch state
+constexpr unsigned kDCol   = 56;    // decode state
+constexpr unsigned kECol   = 64;    // execute state
+
+std::string padLeft(const std::string &s, unsigned w)
+{
+    if (s.size() >= w) return s;
+    return std::string(w - s.size(), ' ') + s;
+}
+std::string padRight(const std::string &s, unsigned w)
+{
+    if (s.size() >= w) return s.substr(0, w);
+    return s + std::string(w - s.size(), ' ');
+}
+
+std::string sepBar(bool withUpdate)
+{
+    std::string b = "+-" + std::string(kCycCol, '-') + "-+";
+    if (withUpdate)
+        b += "-" + std::string(kUpdCol, '-') + "-+";
+    b += "-" + std::string(kFCol, '-') + "-+";
+    b += "-" + std::string(kDCol, '-') + "-+";
+    b += "-" + std::string(kECol, '-') + "-+";
+    return b;
+}
+} // anonymous namespace
+
+void
+Pipeline::lineTraceEvent(const std::string &ev)
+{
+    if (!debug::Signal3CPULineTrace && !debug::Signal3CPULineTraceDetail)
+        return;
+    LineTraceEvent e;
+    e.tag = ev;
+    if (debug::Signal3CPULineTraceDetail) {
+        e.fSnap = _fetch->snapshotString();
+        e.dSnap = _decode->snapshotString();
+        e.eSnap = _execute->snapshotString();
+    }
+    _lineTraceEvents.push_back(std::move(e));
+}
+
+void
+Pipeline::emitLineTrace()
+{
+    const bool wantSummary = debug::Signal3CPULineTrace;
+    const bool wantDetail = debug::Signal3CPULineTraceDetail;
+    if (!wantSummary && !wantDetail) return;
+
+    const auto cyc_n =
+        static_cast<unsigned long long>(numCycles.value());
+    const std::string cyc_s = std::to_string(cyc_n);
+
+    // ---- Summary table: one row per cycle ---------------------------
+    // Columns: cycle | fetch | decode | execute
+    if (wantSummary) {
+        // First cycle: emit a header+separator block.  (Cheap to emit
+        // every cycle, but a per-CPU "_emittedHeader" flag would be
+        // better; for now a comment-banner each cycle is acceptable.)
+        if (cyc_n == 1) {
+            std::string bar = sepBar(/*withUpdate=*/false);
+            DPRINTF(Signal3CPULineTrace, "%s\n", bar.c_str());
+            DPRINTF(Signal3CPULineTrace,
+                    "| %s | %s | %s | %s |\n",
+                    padLeft("cycle", kCycCol).c_str(),
+                    padRight("fetch",   kFCol).c_str(),
+                    padRight("decode",  kDCol).c_str(),
+                    padRight("execute", kECol).c_str());
+            DPRINTF(Signal3CPULineTrace, "%s\n", bar.c_str());
+        }
+        DPRINTF(Signal3CPULineTrace,
+                "| %s | %s | %s | %s |\n",
+                padLeft(cyc_s, kCycCol).c_str(),
+                padRight(_fetch->snapshotString(),   kFCol).c_str(),
+                padRight(_decode->snapshotString(),  kDCol).c_str(),
+                padRight(_execute->snapshotString(), kECol).c_str());
+    }
+
+    // ---- Detail table: rows per within-cycle update -----------------
+    // Columns: cycle | update | fetch | decode | execute
+    // First an end-of-cycle "(state)" row, then one row per event in
+    // the order they fired during settle/onAsyncResponse.
+    if (wantDetail) {
+        if (cyc_n == 1) {
+            std::string bar = sepBar(/*withUpdate=*/true);
+            DPRINTF(Signal3CPULineTraceDetail, "%s\n", bar.c_str());
+            DPRINTF(Signal3CPULineTraceDetail,
+                    "| %s | %s | %s | %s | %s |\n",
+                    padLeft("cycle", kCycCol).c_str(),
+                    padRight("update", kUpdCol).c_str(),
+                    padRight("fetch",   kFCol).c_str(),
+                    padRight("decode",  kDCol).c_str(),
+                    padRight("execute", kECol).c_str());
+            DPRINTF(Signal3CPULineTraceDetail, "%s\n", bar.c_str());
+        }
+
+        // Per-event rows in firing order.  fSnap/dSnap/eSnap captured
+        // by lineTraceEvent at the moment the event fired show the
+        // post-event state of each stage.
+        for (size_t i = 0; i < _lineTraceEvents.size(); ++i) {
+            const auto &ev = _lineTraceEvents[i];
+            const std::string cyc_print = (i == 0) ? cyc_s : "";
+            DPRINTF(Signal3CPULineTraceDetail,
+                    "| %s | %s | %s | %s | %s |\n",
+                    padLeft(cyc_print, kCycCol).c_str(),
+                    padRight(ev.tag,   kUpdCol).c_str(),
+                    padRight(ev.fSnap, kFCol).c_str(),
+                    padRight(ev.dSnap, kDCol).c_str(),
+                    padRight(ev.eSnap, kECol).c_str());
+        }
+        // End-of-cycle state row (always emitted, even if no events).
+        const std::string cyc_print =
+            _lineTraceEvents.empty() ? cyc_s : "";
+        DPRINTF(Signal3CPULineTraceDetail,
+                "| %s | %s | %s | %s | %s |\n",
+                padLeft(cyc_print, kCycCol).c_str(),
+                padRight("(eoc)", kUpdCol).c_str(),
+                padRight(_fetch->snapshotString(),   kFCol).c_str(),
+                padRight(_decode->snapshotString(),  kDCol).c_str(),
+                padRight(_execute->snapshotString(), kECol).c_str());
+        DPRINTF(Signal3CPULineTraceDetail, "%s\n",
+                sepBar(true).c_str());
     }
 }
 
@@ -376,6 +533,58 @@ Pipeline::onAsyncResponse(const FetchWord &w, PortSide side)
         }
     } else {
         _fetch->stageForNextCycle(w);
+    }
+}
+
+// ============================================================================
+// Clock-gating predicate (Approach B / `needUpdate` plan)
+// ============================================================================
+//
+// `computeNeedUpdate()` returns true if any pipeline stage will need
+// more cycles of work to make progress.  `safeToIdle()` returns true
+// only when stopping right now is mid-cycle-state-safe (no half-issued
+// memref, no Settle in flight).  Phase 3 stops Ticked when both
+// !computeNeedUpdate() && safeToIdle().
+//
+// CONTRACT: every external entry point that mutates pipeline state
+// (icache/dcache `recvTimingResp`, port `recvReqRetry`) MUST call
+// requestRetick() so we wake from a stop.  The list lives in
+// signal_cpu.cc near the port callbacks.
+
+bool
+Pipeline::computeNeedUpdate() const
+{
+    return _fetch->fifoSize() > 0
+        || _fetch->inFlight() > 0
+        || _fetch->hasPendingIssue()
+        || _fetch->hasStagedWords()
+        || _fetch->hasPendingRedirect()
+        || _decode->inMacroExpansion()
+        || _decode->hasLatchedOutput()
+        || _execute->busy()
+        || !_lsq->idle()
+        || _sawIcacheRetry;
+}
+
+bool
+Pipeline::safeToIdle() const
+{
+    return !_graph.inSettle()
+        && _lsq->idle()
+        && !_execute->busy();
+}
+
+void
+Pipeline::requestRetick(const char *src)
+{
+    if (!running) {
+        DPRINTF(Signal3CPUClockGate,
+                "wake src=%s tick=%llu cyc=%llu\n",
+                src,
+                (unsigned long long)curTick(),
+                (unsigned long long)numCycles.value());
+        start();
+        ++_cpu.signalStats().wakeUps;
     }
 }
 

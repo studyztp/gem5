@@ -30,74 +30,149 @@
 #ifndef __CPU_LEGO_STAGE_HH__
 #define __CPU_LEGO_STAGE_HH__
 
+#include <any>
 #include <string>
-#include <vector>
-
-#include "arch/generic/mmu.hh"
-#include "params/LegoStage.hh"
-#include "sim/sim_object.hh"
+#include <unordered_map>
 
 namespace gem5
 {
 
-class LegoCPU;
-class SimpleThread;
-class SubStage;
-
-class Stage : public SimObject
+/**
+ * A StageState is a named bag of fields shared among function units
+ * inside a single stage during a tick. It is the primary medium for
+ * sharing values between FUs that live in the same stage.
+ *
+ * Fields are typed at the access site: set<T>/get<T> use std::any,
+ * giving runtime flexibility with compile-time type safety.
+ */
+class StageState
 {
-  public:
-    PARAMS(LegoStage);
-    Stage(const Params &params);
-
-    /** Set the parent CPU and stage index. */
-    void setCPU(LegoCPU *cpu, unsigned stage_id);
-
-    /** Latch cross-stage inputs on all functions. */
-    void latchInputs();
-
-    /** Call compute() on all substages. */
-    void compute();
-
-    /** Flush all substages. */
-    void flush();
-
-    /** Collect trace strings from all functions. */
-    std::string traceStatus() const;
-
-    /** Get the parent CPU. */
-    LegoCPU *cpu() { return _cpu; }
-
-    /** Get a thread from the CPU. */
-    SimpleThread *getThread(ThreadID tid);
-
-    unsigned stageId() const { return _stageId; }
-
-    /** Propagate needUpdate up to CPU. */
-    void notifyUpdate();
-
-    /** Check if tick is still within the current cycle. */
-    bool isCurrentCycle(Tick tick) const;
-
-    /** Send a packet up the chain to the CPU. */
-    void sendPacketToCPU(Packet *pkt);
-
-    /** Receive a timing response and dispatch to substage. */
-    void recvTimingResp(Packet *pkt);
-
-    /** Send a translation request up to the CPU. */
-    void sendTranslationToCPU(RequestPtr req,
-                              BaseMMU::Translation *translation,
-                              BaseMMU::Mode mode);
-
-    /** Get substages (for connection wiring). */
-    const std::vector<SubStage *> &getSubStages() const
-    { return subStages; }
-
   private:
-    unsigned _stageId;
-    LegoCPU *_cpu;
-    std::vector<SubStage *> subStages;
+    std::unordered_map<std::string, std::any> fields;
+
+  public:
+    StageState() = default;
+
+    /** Set a named field, creating or overwriting it. */
+    template <typename T>
+    void
+    set(const std::string &name, T value)
+    {
+        fields[name] = std::move(value);
+    }
+
+    /**
+     * Get a named field by reference.
+     *   throws std::out_of_range  if the field is absent
+     *   throws std::bad_any_cast  if the field exists but has type != T
+     */
+    template <typename T>
+    const T &
+    get(const std::string &name) const
+    {
+        return std::any_cast<const T &>(fields.at(name));
+    }
+
+    /** True if the named field exists (regardless of type). */
+    bool
+    has(const std::string &name) const
+    {
+        return fields.find(name) != fields.end();
+    }
+
+    /** Remove a single field. No-op if absent. */
+    void
+    erase(const std::string &name)
+    {
+        fields.erase(name);
+    }
+
+    /** Remove every field. */
+    void
+    clear()
+    {
+        fields.clear();
+    }
+
+    /** Number of fields currently stored. */
+    std::size_t
+    size() const
+    {
+        return fields.size();
+    }
+};
+
+
+/**
+ * A Stage is a pipeline cycle boundary. It holds two StageState
+ * snapshots:
+ *
+ *   stateIn   Snapshot taken at the start of the current tick.
+ *             Treated as read-only by function units during the tick.
+ *             Used as the anchor for squash rollback.
+ *
+ *   stateOut  Snapshot committed at the end of the current tick.
+ *             Each tick it starts as a copy of stateIn; function units
+ *             running in declared order mutate it.
+ *
+ * Self-loop between ticks: next tick's stateIn = previous tick's
+ * stateOut.  beginTick() performs that promotion.
+ *
+ * On squash: stateOut reverts to stateIn (this tick makes no
+ * progress).  FU-internal persistent state is NOT touched here -- the
+ * owning FU handles its own squash.
+ */
+class Stage
+{
+  protected:
+    std::string stageName;
+
+    StageState stateIn;
+    StageState stateOut;
+
+  public:
+    explicit
+    Stage(const std::string &name)
+        : stageName(name)
+    {}
+
+    virtual ~Stage() = default;
+
+    const std::string &name() const { return stageName; }
+
+    /** Read-only view of this tick's input snapshot. */
+    const StageState &getStateIn() const { return stateIn; }
+
+    /** Read-only view of this tick's working / committed output. */
+    const StageState &getStateOut() const { return stateOut; }
+
+    /** Mutable access to stateOut. FUs write here during the tick. */
+    StageState &getStateOut() { return stateOut; }
+
+    /**
+     * Called at the start of every tick.
+     *
+     * Promotes the previous tick's stateOut into this tick's stateIn
+     * (the self-loop), and seeds stateOut equal to stateIn so the
+     * stage's FUs can mutate it in declared order.
+     */
+    void
+    beginTick()
+    {
+        stateIn = stateOut;
+        // stateOut already equals stateIn after the line above, since
+        // stateOut was last tick's output. FUs now mutate stateOut.
+    }
+
+    /**
+     * Called on squash. Drops this tick's work by reverting stateOut
+     * to stateIn; the stage makes no forward progress.
+     */
+    void
+    squash()
+    {
+        stateOut = stateIn;
+    }
 };
 
 } // namespace gem5

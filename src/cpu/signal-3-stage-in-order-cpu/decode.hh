@@ -85,8 +85,6 @@ class Decode : public Stage
     void setEAcceptInput(Signal<bool> *s) { _eAcceptInput = s; }
     void setERedirectInput(Signal<std::optional<Addr>> *s)
     { _eRedirectInput = s; }
-    void setEFlagSetterInput(Signal<std::optional<Addr>> *s)
-    { _eFlagSetterInput = s; }
 
     /* ---- Apply redirect from E (resets decoder & dSlot) ---- */
     void applyRedirect(Addr target);
@@ -95,6 +93,21 @@ class Decode : public Stage
     Addr nextInstrAddrToDeliver() const { return _nextInstrAddrToDeliver; }
     bool haveLoadedWord() const { return _haveLoadedWord; }
     Addr lastFetchPc() const { return _lastFetchPc; }
+    bool inMacroExpansion() const { return (bool)_curMacro; }
+    MicroPC currentMicroPC() const {
+        return _macroPC ? _macroPC->microPC() : 0;
+    }
+
+    /** True if D's latched output (dSlot.out()) currently holds a
+     *  decoded slot that E hasn't accepted yet — meaning D->E has
+     *  pending work to flow next cycle. */
+    bool hasLatchedOutput() const
+    {
+        return dSlot.out().valid() && dSlot.out().read().has_value();
+    }
+
+    /** One-line printable state for the line-trace tables. */
+    std::string snapshotString() const;
 
   private:
     SignalCPU &_cpu;
@@ -128,13 +141,35 @@ class Decode : public Stage
     /* Bound by Pipeline ctor to Execute's e_redirect_to_f output. */
     Signal<std::optional<Addr>> *_eRedirectInput = nullptr;
 
-    /* Bound by Pipeline ctor to Execute's e_flagSetterNextPc. */
-    Signal<std::optional<Addr>> *_eFlagSetterInput = nullptr;
-
-    /* Try to early-resolve a just-decoded conditional branch using
-     * forwarded flags from E.  Returns true if resolution happened
-     * (slot was updated, possibly d_redirect_to_f written). */
+    /* Try to early-resolve a just-decoded direct unconditional
+     * branch from its immediate offset.  Returns true if
+     * resolution happened (slot marked earlyResolved, possibly
+     * d_redirect_to_f written).  Cortex-M4 has no D-side flag
+     * forwarding, so conditional and indirect branches go to E. */
     bool tryEarlyResolveBranch(DecodedSlot &ds);
+
+    /* ---- Macro-op micro-op expansion (Minor-style) -----------------
+     *
+     * ARM Thumb-2 LDM/STM/PUSH/POP and predicated multi-reg ops are
+     * encoded as a single PredMacroOp StaticInst whose execute()
+     * panics — they MUST be expanded into micro-ops via fetchMicroop().
+     *
+     * D iterates the macro-op's micro-ops at exactly one per cycle
+     * (single-issue), emitting each as a fresh DecodedSlot with the
+     * micro-op as `staticInst`.  This mirrors MinorCPU's Decode stage
+     * (cpu/minor/decode.cc) and naturally produces Cortex-M4 TRM
+     * Table 3-1's "1+N" cycle count for LDM/STM/PUSH/POP via the F→D→E
+     * pipeline overlap (see Pipeline path doc in DESIGN.md).
+     *
+     * `_curMacro` holds the macro-op while expansion is in progress.
+     * `_microPC` tracks the next micro-op index to emit.
+     * `_macroPC` holds a clone of the decode-time pcState used to
+     * tag each emitted micro-op slot (with microPC stamped from
+     * `_microPC` so E's pcStateAtDecode is correct on each cycle).
+     */
+    StaticInstPtr _curMacro = nullptr;
+    MicroPC _microPC = 0;
+    std::shared_ptr<PCStateBase> _macroPC;
 };
 
 } // namespace signal3

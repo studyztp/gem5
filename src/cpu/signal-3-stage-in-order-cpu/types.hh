@@ -85,6 +85,23 @@ struct DecodedSlot
     bool earlyResolved = false;
     Addr resolvedNpc = 0;
 
+    /* Size in BYTES of the architectural instruction this slot
+     * represents.  For non-macro insts this equals
+     * staticInst->size().  For macro-op micro-ops (LDM/STM/PUSH/POP
+     * children) this equals the parent macro's size so E can compute
+     * the architectural fall-through PC without depending on the
+     * micro-op's _size being set (gem5's ARM decoder sets _size on
+     * the macro and propagates via the PredMacroOp::size() override,
+     * but the propagation isn't always observed in time for cached
+     * micro-op pointers, so we carry the authoritative size here). */
+    uint8_t instSize = 0;
+
+    /* True iff this slot's staticInst is a micro-op that is the LAST
+     * micro-op of a macro (or any non-micro inst).  Used by E to
+     * decide when to emit redirect / flag-forward signals — only the
+     * last micro-op architecturally commits the macro. */
+    bool isLastInMacro = true;
+
     bool
     operator==(const DecodedSlot &o) const
     {

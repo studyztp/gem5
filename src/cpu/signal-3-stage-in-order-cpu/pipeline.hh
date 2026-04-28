@@ -31,6 +31,8 @@
 #define __CPU_SIGNAL_3_STAGE_IN_ORDER_CPU_PIPELINE_HH__
 
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "cpu/signal-3-stage-in-order-cpu/decode.hh"
 #include "cpu/signal-3-stage-in-order-cpu/execute.hh"
@@ -89,6 +91,26 @@ class Pipeline : public Ticked
     LSQ &getLsq() { return *_lsq; }
     SignalGraph &getGraph() { return _graph; }
 
+    /* ---- Within-cycle line-trace event recording ----
+     *
+     * Stages call lineTraceEvent() during settle()/onAsyncResponse to
+     * record interesting events (decode, redirect, memref issue, etc.).
+     * At end of evaluate() we emit a structured per-cycle block under
+     * the Signal3CPULineTrace debug flag showing the full pipeline
+     * snapshot plus the events that fired this cycle.  No-op (single
+     * branch + format-string skip) when the flag is off, so safe to
+     * leave instrumented in production builds. */
+    void lineTraceEvent(const std::string &ev);
+
+    /* ---- Clock-gating wake-up (Approach B / `needUpdate` plan) ----
+     *
+     * External entry points that mutate pipeline state (icache/dcache
+     * `recvTimingResp`, port `recvReqRetry`) must call this so the
+     * Ticked event re-fires next cycle if we'd previously stopped via
+     * the idle path at end of evaluate().  Idempotent: no-op while
+     * already running.  Bumps Stats::wakeUps for telemetry. */
+    void requestRetick(const char *src);
+
   private:
     SignalCPU &_cpu;
     SignalGraph _graph;
@@ -98,6 +120,43 @@ class Pipeline : public Ticked
     std::unique_ptr<Execute> _execute;
 
     bool _sawIcacheRetry = false;
+
+    /* Clock-gating predicate state.  Set at end of each evaluate()
+     * by computeNeedUpdate(); read by Phase 3 to decide whether
+     * to call stop() on Ticked.  Initialised true so the first cycle
+     * always runs. */
+    bool _needUpdate = true;
+
+    /** True if any pipeline stage will need more cycles of work to
+     *  make progress: F has FIFO words, in-flight icache requests,
+     *  pending issues, or staged async responses; D is mid-macro or
+     *  has a latched output E hasn't accepted; E has a slot in
+     *  flight; LSQ is non-idle; or an icache port retry is owed. */
+    bool computeNeedUpdate() const;
+
+    /** True only when it is safe to stop ticking right now: no Settle
+     *  is mid-flight, LSQ is idle (no half-issued memref), and E has
+     *  no slot in flight (no mid-commit instruction).  Combined with
+     *  !computeNeedUpdate(), this gates the actual stop() call. */
+    bool safeToIdle() const;
+
+    /* Per-cycle event log for Signal3CPULineTraceDetail.
+     *
+     * Each entry is recorded by a stage during settle() right after
+     * an interesting state mutation.  It captures:
+     *   - tag:    short stage prefix and event name (e.g. "F.queue")
+     *   - fSnap/dSnap/eSnap: post-event snapshots of all three stages
+     *
+     * Cleared at the start of each evaluate(); dumped at end. */
+    struct LineTraceEvent
+    {
+        std::string tag;
+        std::string fSnap;
+        std::string dSnap;
+        std::string eSnap;
+    };
+    std::vector<LineTraceEvent> _lineTraceEvents;
+    void emitLineTrace();
 
     void scheduleOutgoing();
     bool haltConditionMet() const;

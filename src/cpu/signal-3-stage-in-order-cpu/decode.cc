@@ -30,11 +30,13 @@
 #include "cpu/signal-3-stage-in-order-cpu/decode.hh"
 
 #include <cstring>
+#include <sstream>
 
 #include "arch/generic/decoder.hh"
 #include "arch/generic/pcstate.hh"
 #include "cpu/signal-3-stage-in-order-cpu/exec_context.hh"
 #include "cpu/signal-3-stage-in-order-cpu/fetch.hh"
+#include "cpu/signal-3-stage-in-order-cpu/pipeline.hh"
 #include "cpu/signal-3-stage-in-order-cpu/signal_cpu.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
@@ -68,6 +70,9 @@ Decode::resetTo(Addr entryPc)
     _haveLoadedWord = false;
     _lastFetchPc = 0;
     _decodedThisCycle = false;
+    _curMacro = nullptr;
+    _microPC = 0;
+    _macroPC.reset();
     DPRINTF(Signal3CPUDecode, "resetTo entry=%#x\n", entryPc);
 }
 
@@ -87,6 +92,10 @@ Decode::applyRedirect(Addr target)
     _nextInstrAddrToDeliver = target;
     _haveLoadedWord = false;
     _lastFetchPc = 0;
+    // Drop any in-flight macro-op expansion — wrong-path.
+    _curMacro = nullptr;
+    _microPC = 0;
+    _macroPC.reset();
     // Drop the speculatively-latched dSlot — it's wrong-path.  Mark
     // consumed so a fresh decode can proceed once F refills the FIFO.
     dSlot.in().write(std::optional<DecodedSlot>{});
@@ -113,24 +122,6 @@ Decode::settle()
             && _eRedirectInput->read().has_value()) {
         applyRedirect(*_eRedirectInput->read());
         // Fall through to refill from F's (post-redirect) FIFO.
-    }
-
-    // 0b. S5 same-cycle re-resolve:  if our pending dSlot.in() has
-    //     a conditional branch that hasn't been early-resolved yet,
-    //     and e_flagSetterNextPc just fired, attempt resolution.
-    //     This handles the cascade where D decoded the branch in
-    //     iter 1 (before E ran) and E pulses the forward signal in
-    //     iter 1, triggering D's iter 2 to resolve.
-    if (dSlot.in().valid() && dSlot.in().read().has_value()) {
-        DecodedSlot pending = *dSlot.in().read();
-        if (!pending.earlyResolved
-                && pending.staticInst
-                && pending.staticInst->isControl()
-                && !pending.staticInst->isIndirectCtrl()) {
-            if (tryEarlyResolveBranch(pending)) {
-                dSlot.in().write(std::optional<DecodedSlot>{pending});
-            }
-        }
     }
 
     // ----------------------------------------------------------------
@@ -184,6 +175,60 @@ Decode::settle()
         return;
 
     // ----------------------------------------------------------------
+    // 1.5  Macro-op micro-op streaming (Minor-style).
+    //
+    // ARM Thumb-2 LDM/STM/PUSH/POP and predicated multi-reg ops are
+    // PredMacroOp StaticInsts whose execute() panics — they MUST be
+    // expanded into micro-ops via fetchMicroop().  D iterates the
+    // macro at exactly one micro-op per cycle (single-issue),
+    // emitting each as a fresh DecodedSlot whose `staticInst` is a
+    // micro-op.  This matches Cortex-M4 TRM Table 3-1's "1+N" cycle
+    // count for LDM/STM/PUSH/POP via the F→D→E pipeline overlap.
+    //
+    // The fresh-decode path below sets `_curMacro` + `_macroPC`
+    // when it sees a macro-op and emits the first micro-op there.
+    // This block handles cycles 2..N of the expansion: emit the
+    // next micro-op from the cached macro and advance `_macroPC`.
+    // When the just-emitted micro-op is the last, clear macro state.
+    // ----------------------------------------------------------------
+    if (_curMacro) {
+        const MicroPC upc = _macroPC->microPC();
+        StaticInstPtr microInst = _curMacro->fetchMicroop(upc);
+
+        DecodedSlot ds;
+        ds.addr = _macroPC->instAddr();
+        ds.staticInst = microInst;
+        ds.pcStateAtDecode.reset(_macroPC->clone());
+        ds.instSize = static_cast<uint8_t>(_curMacro->size());
+        ds.isLastInMacro = microInst->isLastMicroop();
+
+        DPRINTF(Signal3CPUDecode,
+                "macro micro-op @ pc=%#x.%u "
+                "(isLast=%d)\n",
+                ds.addr, (unsigned)upc, (int)ds.isLastInMacro);
+        _cpu.pipeline().lineTraceEvent("D.microOp");
+
+        // Advance _macroPC: this either bumps microPC for the next
+        // micro-op, or (on isLastMicroop) advances instAddr past the
+        // macro and resets microPC to 0.
+        microInst->advancePC(*_macroPC);
+
+        if (microInst->isLastMicroop()) {
+            _curMacro = nullptr;
+            _macroPC.reset();
+        }
+
+        // tryEarlyResolveBranch is safe to call on micro-ops; it
+        // bails on non-control (the typical LDM/STM micro-op) and
+        // on indirect-control (POP {pc}'s last micro-op).
+        tryEarlyResolveBranch(ds);
+
+        dSlot.in().write(std::optional<DecodedSlot>{ds});
+        _decodedThisCycle = true;
+        return;
+    }
+
+    // ----------------------------------------------------------------
     // 2. Drive the decoder.  Mirrors the predecessor's stepOneInstr.
     // ----------------------------------------------------------------
     ThreadContext *tc = _cpu.thread(0)->getTC();
@@ -203,13 +248,38 @@ Decode::settle()
                 return;
             }
             FetchWord w = *_fetch.f_word_out.read();
-            // R6 word-level filter: skip wrong-path leftovers.
-            if (w.addr + sizeof(uint32_t) <= _nextInstrAddrToDeliver) {
+            // The word we need depends on which slot of the streaming
+            // decoder we're filling:
+            //   - Fresh start (no word loaded yet, or decoder has
+            //     consumed everything): need the 4-byte word covering
+            //     _nextInstrAddrToDeliver, i.e. addr & ~3.
+            //   - Continuation of a 32-bit Thumb-2 (decoder previously
+            //     fed lo half from word W, now needs hi half): the
+            //     next word at W + 4.
+            const Addr expectedWordAddr = _haveLoadedWord
+                ? (_lastFetchPc + sizeof(uint32_t))
+                : (_nextInstrAddrToDeliver & ~Addr(0x3));
+            if (w.addr < expectedWordAddr) {
+                // R6 wrong-path filter: word covers bytes wholly below
+                // what we need — pop and look at the next word.
                 DPRINTF(Signal3CPUDecode,
-                        "skip wrong-path word %#x (below %#x); pop\n",
-                        w.addr, _nextInstrAddrToDeliver);
+                        "skip stale word %#x (below expected %#x); "
+                        "pop\n",
+                        w.addr, expectedWordAddr);
                 d_pop_request.write(true);
-                return;   // re-fire when F's pop updates f_word_out
+                return;
+            }
+            if (w.addr > expectedWordAddr) {
+                // Out-of-order response: the word we need is still in
+                // flight (or queued behind an unsent fetch).  Wait
+                // WITHOUT popping — absorbStaging's ordered-insert
+                // will place the missing word at the head when it
+                // arrives, and the pipeline retick re-runs settle().
+                DPRINTF(Signal3CPUDecode,
+                        "wait: head word %#x is above expected %#x "
+                        "(awaiting reorder)\n",
+                        w.addr, expectedWordAddr);
+                return;
             }
             const size_t mb_size = decoder->moreBytesSize();
             DPRINTF(Signal3CPUDecode,
@@ -240,24 +310,61 @@ Decode::settle()
 
     DecodedSlot ds;
     ds.addr = _nextInstrAddrToDeliver;
-    ds.staticInst = staticInst;
     ds.pcStateAtDecode.reset(instrPc->clone());
 
     DPRINTF(Signal3CPUDecode,
             "decoded inst @ pc=%#x size=%u isControl=%d isCondCtrl=%d "
-            "isIndirectCtrl=%d\n",
+            "isIndirectCtrl=%d isMacroop=%d\n",
             ds.addr, staticInst->size(),
             (int)staticInst->isControl(),
             (int)staticInst->isCondCtrl(),
-            (int)staticInst->isIndirectCtrl());
+            (int)staticInst->isIndirectCtrl(),
+            (int)staticInst->isMacroop());
+
+    ds.instSize = static_cast<uint8_t>(staticInst->size());
+
+    // Macro-op detection: if this is a macro, set up expansion state
+    // and emit the FIRST micro-op (microPC=0).  Subsequent micro-ops
+    // are emitted by the section 1.5 block on later cycles.  The
+    // macro's own fall-through addr is set into _nextInstrAddrToDeliver
+    // here (so F can keep prefetching past the macro while D streams
+    // its remaining micro-ops out of the cached _curMacro).
+    if (staticInst->isMacroop()) {
+        _curMacro = staticInst;
+        _macroPC.reset(instrPc->clone());   // microPC=0 already
+
+        StaticInstPtr microInst = _curMacro->fetchMicroop(0);
+
+        ds.staticInst = microInst;
+        ds.isLastInMacro = microInst->isLastMicroop();
+        // ds.instSize already set above to staticInst (the macro)'s size.
+
+        DPRINTF(Signal3CPUDecode,
+                "macro 1st micro-op @ pc=%#x.0 isLast=%d\n",
+                ds.addr, (int)ds.isLastInMacro);
+        _cpu.pipeline().lineTraceEvent("D.decodeMacro");
+
+        // Advance _macroPC by this first micro-op.
+        microInst->advancePC(*_macroPC);
+        if (microInst->isLastMicroop()) {
+            // Single-microop macro (rare); finalize.
+            _curMacro = nullptr;
+            _macroPC.reset();
+        }
+    } else {
+        ds.staticInst = staticInst;
+        ds.isLastInMacro = true;  // non-macro inst always "completes"
+        _cpu.pipeline().lineTraceEvent("D.decode");
+    }
 
     _nextInstrAddrToDeliver = ds.addr + staticInst->size();
     _decodedThisCycle = true;
 
-    // S5: try to early-resolve a conditional branch using flags
-    // forwarded from E (e_flagSetterNextPc must match this branch's
-    // pc).  Updates ds.earlyResolved + ds.resolvedNpc and pulses
-    // d_redirect_to_f if the branch is taken.
+    // Try to early-resolve a direct unconditional branch from
+    // its immediate offset.  Updates ds.earlyResolved +
+    // ds.resolvedNpc and pulses d_redirect_to_f when the branch
+    // target differs from the fall-through.  Conditional and
+    // indirect branches return immediately and resolve at E.
     tryEarlyResolveBranch(ds);
 
     dSlot.in().write(std::optional<DecodedSlot>{ds});
@@ -271,38 +378,24 @@ Decode::tryEarlyResolveBranch(DecodedSlot &ds)
 {
     if (!ds.staticInst->isControl())
         return false;
-    // Direct conditional + unconditional branches resolve at D from
-    // their immediate operand.  Indirect branches (BX, BLX-reg)
-    // need the destination register's value, which D doesn't read,
-    // so they fall through to E-resolution.
+    // Only direct unconditional branches (B, BL) resolve at D —
+    // they need only the immediate offset.  Cortex-M4 has no
+    // D-side flag forwarding, so conditional branches must wait
+    // for E (TRM Table 3-1; CALIBRATION_HANDOFF.md notes
+    // "no D-side bypass").  Indirect branches need register reads
+    // and also resolve at E.
+    if (ds.staticInst->isCondCtrl())
+        return false;
     if (ds.staticInst->isIndirectCtrl())
         return false;
-    if (!_eFlagSetterInput
-            || !_eFlagSetterInput->valid()
-            || !_eFlagSetterInput->read().has_value()) {
-        // For UNCONDITIONAL direct branches we can resolve without
-        // any forwarded flags.  For CONDITIONAL ones we need the
-        // forwarded flag pulse from E.
-        if (ds.staticInst->isCondCtrl())
-            return false;
-        // Fall through: unconditional direct branch resolves with
-        // current tc state (flags don't matter).
-    } else if (ds.staticInst->isCondCtrl()) {
-        // Verify the forwarded predecessor was the inst right before
-        // this branch in PC order.  If not, the flags may be from
-        // a stale producer and we must defer to E.
-        const Addr expected = *_eFlagSetterInput->read();
-        if (expected != ds.addr) {
-            DPRINTF(Signal3CPUDecode,
-                    "skip early-resolve: e_flagSetterNextPc=%#x "
-                    "doesn't match branch pc=%#x\n",
-                    expected, ds.addr);
-            return false;
-        }
-    }
 
-    // Speculatively run the branch's execute() against the current
-    // thread context.  Save/restore tc.pcState() around the call.
+    // Speculatively run the unconditional branch's execute()
+    // against the current thread context.  Save/restore
+    // tc.pcState() around the call.  Unconditional B/BL ends any
+    // IT block per ARMv7-M ARM A7.7.5, so ITSTATE side-effects
+    // are bounded; the savedPc restore preserves the pre-execute
+    // architectural state until E commits via the earlyResolved
+    // fast path.
     SimpleThread &thread = *_cpu.thread(0);
     std::unique_ptr<PCStateBase> savedPc(thread.pcState().clone());
     thread.pcState(*ds.pcStateAtDecode);
@@ -312,35 +405,56 @@ Decode::tryEarlyResolveBranch(DecodedSlot &ds)
              "Decode::tryEarlyResolveBranch: fault from execute()");
     ds.staticInst->advancePC(thread.getTC());
     const Addr resolvedNpc = thread.pcState().instAddr();
-    // Restore tc.pcState — E will set it again from pcStateAtDecode
-    // before commit (or use the fast path if we mark earlyResolved).
     thread.pcState(*savedPc);
 
     ds.earlyResolved = true;
     ds.resolvedNpc = resolvedNpc;
 
-    const Addr fallThrough = ds.addr + ds.staticInst->size();
+    const Addr fallThrough = ds.addr + ds.instSize;
     if (resolvedNpc != fallThrough) {
         DPRINTF(Signal3CPUDecode,
-                "early-resolve TAKEN pc=%#x -> %#x (forwarded)\n",
+                "early-resolve TAKEN pc=%#x -> %#x\n",
                 ds.addr, resolvedNpc);
+        _cpu.pipeline().lineTraceEvent("D.earlyRes-T");
         d_redirect_to_f.write(std::optional<Addr>{resolvedNpc});
-        // D's own internal stream also redirects: future decodes
-        // start at the new target, not at the fall-through that
-        // _nextInstrAddrToDeliver currently points to.  The decoder
-        // cache must be invalidated since the target word's bytes
-        // are different.
+        // D's own internal stream redirects: future decodes start
+        // at the new target.  The decoder cache must be invalidated
+        // since the target word's bytes are different.
         _nextInstrAddrToDeliver = resolvedNpc;
         _haveLoadedWord = false;
         _lastFetchPc = 0;
     } else {
+        // Edge case: `b .` (infinite loop where target == fallThrough).
         DPRINTF(Signal3CPUDecode,
-                "early-resolve NOT-TAKEN pc=%#x (fall-through)\n",
+                "early-resolve NOT-TAKEN pc=%#x (target=fall-through)\n",
                 ds.addr);
-        // No redirect needed; the slot is marked earlyResolved with
-        // resolvedNpc=fallThrough so E commits as a no-op.
+        _cpu.pipeline().lineTraceEvent("D.earlyRes-NT");
     }
     return true;
+}
+
+std::string
+Decode::snapshotString() const
+{
+    std::ostringstream os;
+    os << "next=0x" << std::hex << _nextInstrAddrToDeliver
+       << " slot=";
+    if (dSlot.out().valid() && dSlot.out().read().has_value()) {
+        const auto &s = *dSlot.out().read();
+        os << "v(0x" << std::hex << s.addr
+           << " sz=" << std::dec << (unsigned)s.instSize
+           << " last=" << (int)s.isLastInMacro;
+        if (s.earlyResolved) {
+            os << " eR->0x" << std::hex << s.resolvedNpc;
+        }
+        os << ")";
+    } else {
+        os << "empty";
+    }
+    if (_curMacro) {
+        os << " macro@uop" << std::dec << (unsigned)currentMicroPC();
+    }
+    return os.str();
 }
 
 } // namespace signal3

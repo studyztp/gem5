@@ -29,14 +29,18 @@
 
 #include "cpu/signal-3-stage-in-order-cpu/execute.hh"
 
+#include <sstream>
+
 #include "arch/generic/pcstate.hh"
 #include "base/logging.hh"
 #include "cpu/signal-3-stage-in-order-cpu/exec_context.hh"
+#include "cpu/signal-3-stage-in-order-cpu/pipeline.hh"
 #include "cpu/signal-3-stage-in-order-cpu/signal_cpu.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Signal3CPUExecute.hh"
 #include "sim/faults.hh"
+#include "sim/insttracer.hh"
 
 namespace gem5
 {
@@ -50,11 +54,10 @@ Execute::Execute(SignalGraph &g, SignalCPU &cpu, Decode &decode,
                  /*pulse=*/false),
       e_redirect_to_f(g, "e_redirect_to_f", /*fromStage=*/this,
                       /*pulse=*/true),
-      e_flagSetterNextPc(g, "e_flagSetterNextPc",
-                         /*fromStage=*/this, /*pulse=*/true),
       _cpu(cpu),
       _decode(decode),
-      _lsq(lsq)
+      _lsq(lsq),
+      _alu(cpu)
 {
     // Re-fire when D presents a new slot or when an LSQ response
     // lands.  Subscribing to D's dSlot.out() means E re-evaluates
@@ -69,6 +72,7 @@ Execute::resetTo(Addr /*entryPc*/)
 {
     _eSlot.reset();
     _committedThisCycle = false;
+    _alu.reset();
 }
 
 Addr
@@ -115,6 +119,7 @@ Execute::settle()
             _eSlot = _decode.dSlot.out().read();
             DPRINTF(Signal3CPUExecute,
                     "accept slot pc=%#x\n", _eSlot->addr);
+            _cpu.pipeline().lineTraceEvent("E.accept");
         }
     }
 
@@ -156,23 +161,40 @@ Execute::commitOne()
     ExecContext ctx(_cpu, thread);
     Fault fault = NoFault;
 
+    // The DecodedSlot's staticInst is always a leaf (a non-macro
+    // StaticInst or a single micro-op).  D's settle() expands ARM
+    // macro-ops into a stream of micro-ops, one DecodedSlot per
+    // cycle (Minor-style — see decode.cc).  E never sees a macro-op
+    // here, so execute()/initiateAcc() are always safe to call.
+    StaticInstPtr inst = e.staticInst;
+
+    // Set up tracer record so the Exec debug flag emits a line per
+    // committed inst (used by run_signal_m5op_bench.py to compute
+    // precise kernel-only cycle counts excluding the m5op overhead).
+    trace::InstRecord *traceData = nullptr;
+#if TRACING_ON
+    if (auto *tracer = _cpu.getTracer()) {
+        traceData = tracer->getInstRecord(
+            curTick(), thread.getTC(), inst, thread.pcState(),
+            /*macrostaticinst=*/nullptr);
+    }
+#endif
+
     if (_lsq.complete()) {
         // Memory inst whose response just arrived.
         PacketPtr pkt = _lsq.completedPacket();
         DPRINTF(Signal3CPUExecute,
                 "completeAcc pc=%#x cmd=%s\n",
                 e.addr, pkt->cmdString());
-        fault = e.staticInst->completeAcc(pkt, &ctx,
-                                          /*traceData=*/nullptr);
+        fault = inst->completeAcc(pkt, &ctx, traceData);
         _lsq.release();
-    } else if (e.staticInst->isMemRef()) {
+    } else if (inst->isMemRef()) {
         // First touch of a memref: issue via ExecContext (which
         // pushes through the LSQ).  Stall if the LSQ went Pending.
         DPRINTF(Signal3CPUExecute,
                 "initiateAcc pc=%#x size=%u\n",
-                e.addr, e.staticInst->size());
-        fault = e.staticInst->initiateAcc(&ctx,
-                                          /*traceData=*/nullptr);
+                e.addr, (unsigned)e.instSize);
+        fault = inst->initiateAcc(&ctx, traceData);
         panic_if(fault != NoFault,
                  "Execute: fault from initiateAcc(): %s",
                  fault->name());
@@ -180,65 +202,118 @@ Execute::commitOne()
             DPRINTF(Signal3CPUExecute,
                     "memref issued, awaiting response\n");
             // Don't commit — wait for completionSignal next re-fire.
-            // Republish back-pressure: now that LSQ is Pending, we
-            // can't accept a new slot.
+            // Drop the unused tracer record (memref will get a fresh
+            // one when completionSignal re-enters commitOne).
+            if (traceData) {
+                delete traceData;
+            }
             e_accept_d.write(false);
             return;
         }
         // initiateAcc didn't push (predicate failed); fall through.
+    } else if (AluFunctionUnit::accepts(inst)) {
+        // Integer-ALU op routed through the ALU function unit.
+        // For 1-cy ops the FU completes in the same cycle as
+        // issue, so we run inst->execute() and retire immediately
+        // (preserving the current nop/mov/add timing).  Multi-
+        // cycle ops (UDIV/SDIV per TRM Table 3-1) would issue this
+        // cycle, leave the FU Pending, and stall E until tick()
+        // advances it to Complete on a future cycle.
+        if (_alu.idle()) {
+            _alu.issue(inst);
+        }
+        if (_alu.pending()) {
+            DPRINTF(Signal3CPUExecute,
+                    "ALU pending pc=%#x — stall\n", e.addr);
+            if (traceData) {
+                delete traceData;
+            }
+            e_accept_d.write(false);
+            return;
+        }
+        // FU is Complete this cycle — execute and retire.
+        fault = inst->execute(&ctx, traceData);
+        panic_if(fault != NoFault,
+                 "Execute: ALU fault from execute(): %s",
+                 fault->name());
+        _alu.release();
     } else {
-        // Non-memory inst: full execute in one cycle.
-        fault = e.staticInst->execute(&ctx, /*traceData=*/nullptr);
+        // Non-memory, non-ALU inst (control / floating-point /
+        // miscellaneous): full execute in one cycle on the legacy
+        // direct path.
+        fault = inst->execute(&ctx, traceData);
         panic_if(fault != NoFault,
                  "Execute: fault from execute(): %s",
                  fault->name());
     }
 
+    // Emit the trace line (if Exec flag enabled) and free the record.
+    if (traceData) {
+        traceData->dump();
+        delete traceData;
+    }
+
     // Retire.
     _cpu.signalStats().instsCommitted++;
-    e.staticInst->advancePC(thread.getTC());
+    inst->advancePC(thread.getTC());
     const Addr actualNextPc = thread.getTC()->pcState().instAddr();
 
-    // Any commit whose nextPc differs from the sequential fall-through
-    // must redirect F — regardless of whether the staticInst reports
-    // isControl().  Cortex-M's `bx lr` with an EXC_RETURN value
-    // triggers the unstacking sequence inside execute(), updating the
-    // thread's PC to the saved return address; gem5's ARM ISA does
-    // NOT always mark this instruction as isControl(), so we'd miss
-    // the redirect if we gated on that flag.  The address-only check
-    // catches both architecturally-classified branches and
-    // exception-return PC updates uniformly.
-    const Addr fallThrough = e.addr + e.staticInst->size();
-    const bool needRedirect = (actualNextPc != fallThrough);
+    // Redirect detection.  For micro-ops in a macro: a non-last
+    // micro-op's advancePC only increments microPC (instAddr stays
+    // put), so actualNextPc == e.addr — never a redirect.  Only the
+    // last micro-op of a macro (or any non-micro inst) can redirect.
+    // We use e.isLastInMacro (set by D) rather than isMicroop() flags
+    // on the instruction because some ARM micro-ops are constructed
+    // with metadata that makes flag-checking unreliable.
+    const bool isLast = e.isLastInMacro;
+    const Addr fallThrough = e.addr + e.instSize;
+    const bool needRedirect = isLast && (actualNextPc != fallThrough);
 
     DPRINTF(Signal3CPUExecute,
-            "commit pc=%#x size=%u nextPc=%#x ctrl=%d redirect=%d\n",
-            e.addr, e.staticInst->size(), actualNextPc,
-            (int)e.staticInst->isControl(), (int)needRedirect);
+            "commit pc=%#x size=%u nextPc=%#x ctrl=%d redirect=%d "
+            "uop=%d last=%d\n",
+            e.addr, (unsigned)e.instSize, actualNextPc,
+            (int)inst->isControl(), (int)needRedirect,
+            (int)inst->isMicroop(), (int)isLast);
 
     if (needRedirect) {
         e_redirect_to_f.write(std::optional<Addr>{actualNextPc});
         _cpu.signalStats().mispredicts++;
+        _cpu.pipeline().lineTraceEvent(
+            inst->isIndirectCtrl() ? "E.redir-indir" : "E.redir");
     }
 
-    // S5: pulse the flag-setter forward signal so D can resolve
-    // a dependent conditional branch this same cycle.  We pulse
-    // for every non-control commit (whether the inst actually wrote
-    // NZCV or not).  D's speculation is safe in either case
-    // because the inst between this commit and the branch's E
-    // execution is the branch itself (in-order single-issue), so
-    // tc.NZCV at D-speculation time is the same value it would have
-    // at E-execution time.
-    if (!e.staticInst->isControl()) {
-        const Addr fallThrough2 = e.addr + e.staticInst->size();
-        e_flagSetterNextPc.write(std::optional<Addr>{fallThrough2});
-    }
+    _cpu.pipeline().lineTraceEvent(
+        inst->isMicroop() && !isLast ? "E.commit-uop" : "E.commit");
 
     _eSlot.reset();
     _committedThisCycle = true;
-    // After retiring, E can accept a new slot this same cycle if the
-    // LSQ is Idle.  Tighten back-pressure accordingly.
     e_accept_d.write(!_lsq.pending());
+}
+
+std::string
+Execute::snapshotString() const
+{
+    std::ostringstream os;
+    const char *lsq_st = _lsq.idle()      ? "Idle"
+                        : _lsq.pending()  ? "Pending"
+                        : _lsq.complete() ? "Complete"
+                                          : "?";
+    os << "lsq=" << lsq_st << " slot=";
+    if (_eSlot.has_value()) {
+        os << "v(0x" << std::hex << _eSlot->addr
+           << " sz=" << std::dec << (unsigned)_eSlot->instSize << ")";
+    } else {
+        os << "empty";
+    }
+    os << " redir=";
+    if (e_redirect_to_f.valid() && e_redirect_to_f.read().has_value()) {
+        os << "0x" << std::hex << *e_redirect_to_f.read();
+    } else {
+        os << "-";
+    }
+    os << " " << _alu.snapshotString();
+    return os.str();
 }
 
 } // namespace signal3

@@ -301,21 +301,45 @@ class STM32G474REPlatform(ArmMPlatform):
             ]
         else:
             # No ART: CPU accesses Flash via AHB directly.
-            #   address_phase_latency="500ps": AHB address phase
-            #   latency="23000ps": data phase
-            #   read_buffer_size=8: 64-bit Flash read serves 2 fetches
+            #   latency="29410ps": Flash access = 4 WS + 1 = 5 HCLK at
+            #     170 MHz (5 / 170e6 = 29.41 ns).  RM0440 Table 19
+            #     specifies 4 wait states for VCORE Range 1 at
+            #     fHCLK <= 170 MHz, which means 4 wait states ON TOP
+            #     of the 1-cycle access -> 5 HCLK total per fetch.
+            #     This per-iter cycle aligns to silicon's measured
+            #     10 cy/iter on the bench-branch loop.
+            #   address_phase_latency="500ps": AHB address-phase
+            #     overlap allowance; small relative to read latency.
+            #   buffer_hit_latency="8235ps": ~1.4 HCLK at 170 MHz.
+            #     Models the AHB data-phase that elapses on a Flash
+            #     sense-amp hit (the second 32-bit beat of the 64-bit
+            #     read buffer): real AHB-Lite has a non-zero data
+            #     phase even when no Flash array access is needed.
+            #     With buffer_hit_latency=0 (former default), nop /
+            #     alu / alu16 under-predicted silicon by ~21 % because
+            #     every pair of sequential 32-bit fetches got the
+            #     second one for free.  Calibrated against silicon's
+            #     hardware_w_no_overhead numbers via the buffer-hit
+            #     sweep documented in
+            #     experiments/raw-data/gem5-stm32g4-verification/
+            #         buffer_hit_sweep.md
+            #   port_read_buffer_size=[8, 8]: 64-bit Flash sense-amp
+            #     output latch (RM0440 §4.3.4).  StreamId-aware so it
+            #     correctly misses on post-redirect fetches.
             flash_memories = [
                 PipelinedSimpleMemory(
                     range=AddrRange(0x08000000, size="256KiB"),
-                    latency="23000ps",
+                    latency="29410ps",
                     address_phase_latency="500ps",
+                    buffer_hit_latency="8235ps",
                     port_priority=[0, 1],
                     port_read_buffer_size=[8, 8],
                 ),
                 PipelinedSimpleMemory(
                     range=AddrRange(0x08040000, size="256KiB"),
-                    latency="23000ps",
+                    latency="29410ps",
                     address_phase_latency="500ps",
+                    buffer_hit_latency="8235ps",
                     port_priority=[0, 1],
                     port_read_buffer_size=[8, 8],
                 ),

@@ -243,7 +243,7 @@ class STM32G474RETimingBoard(ArmMSystem):
     4 x 16-bit instructions per 8-byte sub-block.
     """
 
-    def __init__(self, clk_freq="170MHz", enable_art=True):
+    def __init__(self, clk_freq="170MHz", enable_art=True, cpu_cls=None):
         super().__init__()
 
         platform = STM32G474REPlatform()
@@ -267,7 +267,9 @@ class STM32G474RETimingBoard(ArmMSystem):
 
         self.platform = platform
 
-        cpu = CortexM4CPU()
+        if cpu_cls is None:
+            cpu_cls = CortexM4CPU
+        cpu = cpu_cls()
         self.mem_mode = cpu.memory_mode()
         self.cpu = cpu
         self.cpu.clk_domain = self.clk_domain

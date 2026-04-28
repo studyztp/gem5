@@ -29,6 +29,9 @@
 
 #include "cpu/signal-3-stage-in-order-cpu/fetch.hh"
 
+#include <sstream>
+
+#include "cpu/signal-3-stage-in-order-cpu/pipeline.hh"
 #include "cpu/signal-3-stage-in-order-cpu/signal_cpu.hh"
 #include "debug/Signal3CPUFetch.hh"
 #include "debug/Signal3CPUMem.hh"
@@ -61,8 +64,29 @@ Fetch::resetTo(Addr entryPc)
     _wordFifoMinAddr = entryPc;
     _inFlight = 0;
     _drainedThisSettle = false;
+    _eRedirectPendingThisCycle.reset();
+    _eRedirectPendingNextCycle.reset();
+    _dRedirectPendingThisCycle.reset();
+    _dRedirectPendingNextCycle.reset();
+    _redirectAppliedThisCycle = false;
+    _streamSquashedThisCycle = false;
     DPRINTF(Signal3CPUFetch, "resetTo entry=%#x fetchPc=%#x\n",
             entryPc, _fetchPc);
+}
+
+void
+Fetch::beginCycle()
+{
+    // Advance the redirect pipeline register: any redirect sampled
+    // last cycle now becomes "this cycle's" pending, ready for
+    // settle() to apply.  E-redirects take priority over D's (the
+    // architectural-truth path wins over the speculative D-resolve).
+    _eRedirectPendingThisCycle = _eRedirectPendingNextCycle;
+    _dRedirectPendingThisCycle = _dRedirectPendingNextCycle;
+    _eRedirectPendingNextCycle.reset();
+    _dRedirectPendingNextCycle.reset();
+    _redirectAppliedThisCycle = false;
+    _streamSquashedThisCycle = false;
 }
 
 void
@@ -114,10 +138,31 @@ Fetch::absorbStaging()
                     w.addr, _wordFifoMinAddr);
             continue;
         }
-        fifo.push_back(w);
+        // Insert in-order by address.  Responses can arrive out of
+        // order from the memory side: with iiswc's PipelinedSimpleMemory
+        // an 8-byte buffer hit returns in 0 cy while a buffer miss
+        // takes WS+1 cy, so a fetch issued LATER may complete EARLIER
+        // when the two share an 8-byte block.  D consumes the FIFO
+        // head and assumes its addr matches _nextInstrAddrToDeliver,
+        // so we maintain address-order here.  Fetches within a single
+        // stream are always issued in increasing-addr order, so a
+        // simple linear scan to find the right slot suffices.  Stale
+        // streamId responses are already filtered at the port (see
+        // PipelinedSimpleMemory's streamId-flush retract path), so
+        // every word that reaches us is in the current stream.
+        auto it = fifo.begin();
+        while (it != fifo.end() && it->addr < w.addr) ++it;
+        // Skip if we already have this word (duplicate piggyback).
+        if (it != fifo.end() && it->addr == w.addr) {
+            DPRINTF(Signal3CPUFetch,
+                    "drop duplicate staged word %#x\n", w.addr);
+            continue;
+        }
+        fifo.insert(it, w);
         DPRINTF(Signal3CPUFetch,
                 "delivered word %#x data=%#x to FIFO (size=%lu)\n",
                 w.addr, w.data, fifo.size());
+        _cpu.pipeline().lineTraceEvent("F.asyncResp");
         _cpu.signalStats().wordsDelivered++;
     }
     currentCycleStaging.clear();
@@ -126,7 +171,17 @@ Fetch::absorbStaging()
 bool
 Fetch::shouldIssueFetch() const
 {
-    // The only gate is the FIFO capacity: don't oversubscribe.
+    // Don't issue if a redirect arrived this cycle but the new PC
+    // hasn't been latched into _fetchPc yet (PC mux output is in
+    // transition through its register stage).  Without this gate
+    // F would issue a fetch from the wrong-path _fetchPc with a
+    // freshly-bumped streamId, putting wrong-path traffic into
+    // memory under the new stream tag.
+    if (_eRedirectPendingNextCycle.has_value()
+            || _dRedirectPendingNextCycle.has_value())
+        return false;
+
+    // The only other gate is the FIFO capacity: don't oversubscribe.
     // Outstanding requests reserve FIFO slots that get returned via
     // recvTimingResp -> noteResponseArrived.  Halting is the
     // Pipeline's job (haltConditionMet checks archPc), not F's.
@@ -141,14 +196,6 @@ Fetch::buildFetchPacket()
 {
     const unsigned size = sizeof(uint32_t);
     Request::Flags flags = Request::INST_FETCH;
-    if (_nextFetchBypassBuffer) {
-        // S6: post-redirect first fetch — force a miss on the Flash
-        // 64-bit current-line buffer.  PipelinedSimpleMemory honours
-        // Request::UNCACHEABLE by skipping its buffer-hit shortcut
-        // and paying the full WS+1 cycle penalty.
-        flags = flags | Request::UNCACHEABLE;
-        _nextFetchBypassBuffer = false;
-    }
     const uint32_t streamId = _cpu.currentStreamId();
     RequestPtr req = std::make_shared<Request>(
         _fetchPc, size, flags, _cpu.instRequestorId());
@@ -156,9 +203,9 @@ Fetch::buildFetchPacket()
     PacketPtr pkt = new Packet(req, MemCmd::ReadReq);
     pkt->allocate();
     DPRINTF(Signal3CPUFetch,
-            "queue fetch addr=%#x streamId=%u uncacheable=%d "
+            "queue fetch addr=%#x streamId=%u "
             "(fifo=%lu in_flight=%u pending=%lu)\n",
-            _fetchPc, streamId, (int)req->isUncacheable(),
+            _fetchPc, streamId,
             fifo.size(), _inFlight, pendingIssueQueue.size());
     _fetchPc += size;
     return pkt;
@@ -176,37 +223,63 @@ Fetch::publishHead()
 }
 
 void
-Fetch::applyRedirect(Addr target)
+Fetch::squashStream()
 {
+    // Combinational squash of F's wrong-path stream state in
+    // response to a redirect signal arriving this cycle.  The
+    // PC mux output is registered, so _fetchPc / _wordFifoMinAddr
+    // are NOT updated here — applyPcUpdate() handles that at the
+    // next cycle's edge.
     DPRINTF(Signal3CPUFetch,
-            "applyRedirect target=%#x (clear FIFO size=%lu, "
-            "drop in_flight=%u, drop pending=%lu)\n",
-            target, fifo.size(), _inFlight,
-            pendingIssueQueue.size());
+            "squashStream (clear FIFO size=%lu, drop in_flight=%u, "
+            "drop pending=%lu)\n",
+            fifo.size(), _inFlight, pendingIssueQueue.size());
+    _cpu.pipeline().lineTraceEvent("F.squash");
     fifo.clear();
     currentCycleStaging.clear();
     nextCycleStaging.clear();
-    // Drop any outgoing wrong-path packets we hadn't yet sent.
-    // Without this, scheduleOutgoing would still send them after
-    // the redirect, mis-bumping in_flight (and forcing the stream
-    // to wait for their responses to clear before the right-path
-    // fetches fit in the in-flight budget).
+    // Drop outgoing wrong-path packets we hadn't sent yet.  This
+    // is the AHB-issue-side analogue of M4's combinational squash:
+    // the redirect signal kills any AHB request that was about to
+    // be driven this cycle (TRM §2.2.1 transfer-retraction).
     while (!pendingIssueQueue.empty()) {
         delete pendingIssueQueue.front();
         pendingIssueQueue.pop_front();
     }
-    _wordFifoMinAddr = target;
-    _fetchPc = target & ~Addr(0x3);
-    // Stale in-flight responses will be dropped at recvTimingResp
-    // by the streamId mismatch.  Forget them locally so
-    // shouldIssueFetch() doesn't gate the new stream's first fetch.
+    // Stale in-flight responses (already on the bus when redirect
+    // arrived) are filtered at recvTimingResp by streamId mismatch.
+    // Forget them locally so shouldIssueFetch() can grant new-stream
+    // budget once the PC mux update lands next cycle.
     _inFlight = 0;
     _cpu.bumpStreamId();
-    // S6: arm the next outgoing fetch to bypass the Flash 64-bit
-    // line buffer (pays full WS latency).  Models silicon's
-    // TAKEN_BRANCH bundle.
-    _nextFetchBypassBuffer = true;
     publishHead();
+}
+
+void
+Fetch::applyPcUpdate(Addr target)
+{
+    // Latched PC mux output: applied at the cycle following the
+    // redirect signal's arrival.  squashStream() already cleared
+    // the wrong-path stream state on the previous cycle; this just
+    // updates the PC so shouldIssueFetch() can begin the new
+    // stream's fetches.
+    DPRINTF(Signal3CPUFetch,
+            "applyPcUpdate target=%#x\n", target);
+    _cpu.pipeline().lineTraceEvent("F.pcUpdate");
+    _wordFifoMinAddr = target;
+    _fetchPc = target & ~Addr(0x3);
+    publishHead();
+}
+
+void
+Fetch::applyRedirect(Addr target)
+{
+    // Convenience wrapper for callers that want both the squash
+    // and the PC update applied immediately (IRQ entry, reset).
+    // The pipeline's natural redirect path goes through
+    // squashStream() + applyPcUpdate() across two cycles.
+    squashStream();
+    applyPcUpdate(target);
 }
 
 void
@@ -219,17 +292,44 @@ Fetch::settle()
     // subsequent re-fire within the same cycle.
     absorbStaging();
 
-    // 0a. Apply E's redirect (highest priority — represents the
-    //     architectural truth, all D-side speculation is wrong).
-    if (_eRedirectInput && _eRedirectInput->valid()
-            && _eRedirectInput->read().has_value()) {
-        applyRedirect(*_eRedirectInput->read());
-    } else if (_dRedirectInput && _dRedirectInput->valid()
-                                && _dRedirectInput->read().has_value()) {
-        // 0b. S5: D's same-cycle redirect (early-resolved branch
-        //     using forwarded flags from E).  Same applyRedirect
-        //     mechanism — clear FIFO and bump streamId.
-        applyRedirect(*_dRedirectInput->read());
+    // 0a. Apply pending PC update from a redirect that arrived
+    //     last cycle.  This is the latched output of F's PC mux:
+    //     squashStream() ran combinationally last cycle when the
+    //     redirect signal arrived; the new PC isn't visible until
+    //     this cycle's edge.  Guarded so re-fires within the same
+    //     settle pass don't re-apply.  E-side took priority over
+    //     D-side at sample time; the slots are therefore exclusive.
+    if (!_redirectAppliedThisCycle) {
+        if (_eRedirectPendingThisCycle.has_value()) {
+            applyPcUpdate(*_eRedirectPendingThisCycle);
+            _eRedirectPendingThisCycle.reset();
+            _redirectAppliedThisCycle = true;
+        } else if (_dRedirectPendingThisCycle.has_value()) {
+            applyPcUpdate(*_dRedirectPendingThisCycle);
+            _dRedirectPendingThisCycle.reset();
+            _redirectAppliedThisCycle = true;
+        }
+    }
+
+    // 0b. Sample any new redirect produced this cycle: combinationally
+    //     squash F's wrong-path stream state and remember the target
+    //     for next cycle's PC-mux update.  E-redirects supersede D's
+    //     (architectural truth wins over speculation).  Guarded by
+    //     _streamSquashedThisCycle so re-fires within the same
+    //     settle pass don't re-bump streamId.
+    if (!_streamSquashedThisCycle) {
+        if (_eRedirectInput && _eRedirectInput->valid()
+                && _eRedirectInput->read().has_value()) {
+            squashStream();
+            _eRedirectPendingNextCycle = *_eRedirectInput->read();
+            _dRedirectPendingNextCycle.reset();
+            _streamSquashedThisCycle = true;
+        } else if (_dRedirectInput && _dRedirectInput->valid()
+                                    && _dRedirectInput->read().has_value()) {
+            squashStream();
+            _dRedirectPendingNextCycle = *_dRedirectInput->read();
+            _streamSquashedThisCycle = true;
+        }
     }
 
     // 1. If D popped this cycle, advance the FIFO head.
@@ -241,6 +341,7 @@ Fetch::settle()
             DPRINTF(Signal3CPUFetch,
                     "pop FIFO head %#x (size %lu->%lu)\n",
                     fifo.front().addr, fifo.size(), fifo.size() - 1);
+            _cpu.pipeline().lineTraceEvent("F.pop");
             fifo.pop_front();
             _cpu.signalStats().wordsConsumed++;
         }
@@ -250,6 +351,7 @@ Fetch::settle()
     // sendTimingReq is deferred to Schedule.
     while (shouldIssueFetch()) {
         PacketPtr pkt = buildFetchPacket();
+        _cpu.pipeline().lineTraceEvent("F.queueReq");
         pendingIssueQueue.push_back(pkt);
     }
 
@@ -280,6 +382,25 @@ Fetch::tryIssuePendingFetch()
     ++_inFlight;
     pendingIssueQueue.pop_front();
     return true;
+}
+
+std::string
+Fetch::snapshotString() const
+{
+    std::ostringstream os;
+    os << "pc=0x" << std::hex << _fetchPc
+       << " fifo[" << std::dec << fifo.size() << "]={";
+    bool first = true;
+    for (const auto &w : fifo) {
+        if (!first) os << ",";
+        os << "0x" << std::hex << w.addr
+           << "(s" << std::dec << w.streamId << ")";
+        first = false;
+    }
+    os << "} flt=" << std::dec << _inFlight
+       << " pq=" << pendingIssueQueue.size()
+       << " min=0x" << std::hex << _wordFifoMinAddr;
+    return os.str();
 }
 
 } // namespace signal3

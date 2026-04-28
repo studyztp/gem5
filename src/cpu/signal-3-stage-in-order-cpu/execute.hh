@@ -33,6 +33,7 @@
 #include <optional>
 
 #include "base/types.hh"
+#include "cpu/signal-3-stage-in-order-cpu/alu_fu.hh"
 #include "cpu/signal-3-stage-in-order-cpu/decode.hh"
 #include "cpu/signal-3-stage-in-order-cpu/lsq.hh"
 #include "cpu/signal-3-stage-in-order-cpu/signal.hh"
@@ -84,16 +85,14 @@ class Execute : public Stage
     Signal<bool>                  e_accept_d;
     Signal<std::optional<Addr>>   e_redirect_to_f;  // S4+
 
-    /* S5 forward: when E commits a flag-setting non-branch inst,
-     * publish (PC, PC+size) so D can detect that the inst it just
-     * decoded (a conditional branch) has its flag-producer freshly
-     * committed and may early-resolve using the updated thread
-     * context flags.  Pulse signal — reset each cycle. */
-    Signal<std::optional<Addr>>   e_flagSetterNextPc;
-
     /* ---- Read-only query helpers ---- */
     bool busy() const { return _eSlot.has_value(); }
     Addr archPc() const;
+    bool slotValid() const { return _eSlot.has_value(); }
+    Addr slotPc() const { return _eSlot.has_value() ? _eSlot->addr : 0; }
+
+    /** One-line printable state for the line-trace tables. */
+    std::string snapshotString() const;
 
   private:
     SignalCPU &_cpu;
@@ -105,9 +104,22 @@ class Execute : public Stage
      * Latch would be redundant. */
     std::optional<DecodedSlot> _eSlot;
 
+    /* Basic ALU function unit.  Handles integer-ALU ops (nop, mov,
+     * add, sub, cmp, mul, ...) with a per-op latency.  For 1-cy
+     * ops the FU is a same-cycle pass-through so existing timing is
+     * preserved; multi-cycle ops (UDIV/SDIV per TRM Table 3-1) are
+     * the future calibration target. */
+    AluFunctionUnit _alu;
+
     /* Single-issue throttle: at most one commit per cycle. */
     bool _committedThisCycle = false;
-    void beginCycleHook() { _committedThisCycle = false; }
+    void beginCycleHook()
+    {
+        _committedThisCycle = false;
+        // Advance any in-flight ALU op toward Complete before
+        // settle() looks at the FU state this cycle.
+        _alu.tick();
+    }
 
     friend class Pipeline;   // for beginCycleHook()
 

@@ -79,6 +79,9 @@ class Fetch : public Stage
 
     void settle() override;
 
+    /* ---- Per-cycle hook (called from Pipeline::evaluate) ---- */
+    void beginCycle();
+
     /* ---- Reset/seed (called from SignalCPU::startup) ---- */
     void resetTo(Addr entryPc);
 
@@ -94,9 +97,24 @@ class Fetch : public Stage
     void setDRedirectInput(Signal<std::optional<Addr>> *s)
     { _dRedirectInput = s; }
 
-    /* ---- Apply a taken-branch redirect (called from settle when
-     *      e_redirect_to_f is asserted, and from external test
-     *      hooks). ---- */
+    /* ---- Apply a taken-branch redirect.
+     *
+     *   squashStream(): combinational squash of F's wrong-path
+     *     stream state — clears FIFO, drops in-flight tracking,
+     *     cancels pending-issue, bumps streamId.  Called from
+     *     settle() when a redirect signal arrives; mirrors the
+     *     M4's combinational squash on the AHB-issue side.
+     *
+     *   applyPcUpdate(): latched PC-mux update.  Sets _fetchPc
+     *     and _wordFifoMinAddr.  Called from settle() at the cycle
+     *     after the redirect signal (the PC mux output is a
+     *     pipeline register).
+     *
+     *   applyRedirect(): convenience wrapper for callers (IRQ
+     *     entry, reset) that want the squash and PC update applied
+     *     in a single step. ---- */
+    void squashStream();
+    void applyPcUpdate(Addr target);
     void applyRedirect(Addr target);
 
     /* ---- Async ingress (called by Pipeline::onAsyncResponse) ---- */
@@ -116,6 +134,44 @@ class Fetch : public Stage
     Addr fetchPc() const { return _fetchPc; }
     unsigned fifoSize() const { return fifo.size(); }
     unsigned inFlight() const { return _inFlight; }
+    Addr wordFifoMinAddr() const { return _wordFifoMinAddr; }
+
+    /** True if any async-response word is staged for this or next
+     *  cycle's settle.  Used by Pipeline's clock-gating predicate to
+     *  keep ticking until staged data has been absorbed. */
+    bool hasStagedWords() const
+    {
+        return !currentCycleStaging.empty()
+            || !nextCycleStaging.empty();
+    }
+
+    /** True if a redirect signal was sampled this cycle but its PC
+     *  update hasn't been latched in yet, OR a sampled redirect is
+     *  waiting for next-cycle's beginCycle() advance.  Used by
+     *  Pipeline's clock-gating predicate to keep the CPU ticking
+     *  through the redirect's 1-cycle pipeline register. */
+    bool hasPendingRedirect() const
+    {
+        return _eRedirectPendingThisCycle.has_value()
+            || _eRedirectPendingNextCycle.has_value()
+            || _dRedirectPendingThisCycle.has_value()
+            || _dRedirectPendingNextCycle.has_value();
+    }
+
+    /** Snapshot of FIFO contents for line-trace debug.  Returns
+     *  {addr, streamId} pairs in head-to-tail order. */
+    std::vector<std::pair<Addr, uint32_t>>
+    fifoSnapshot() const
+    {
+        std::vector<std::pair<Addr, uint32_t>> out;
+        out.reserve(fifo.size());
+        for (const auto &w : fifo)
+            out.emplace_back(w.addr, w.streamId);
+        return out;
+    }
+
+    /** One-line printable state for the line-trace tables. */
+    std::string snapshotString() const;
 
   private:
     SignalCPU &_cpu;
@@ -143,20 +199,36 @@ class Fetch : public Stage
     /* Re-fire guards (reset at the top of each settle() group). */
     bool _drainedThisSettle = false;
 
+    /* 1-cycle pipeline register on the redirect-to-F path.  Models
+     * the register stage between the producer (E's branch resolver
+     * or D's tryEarlyResolveBranch) and Fetch's PC-mux input.  A
+     * redirect observed by F via _eRedirectInput / _dRedirectInput
+     * during settle() at cycle N is *sampled* into the
+     * "*PendingNextCycle" slots.  At cycle N+1's beginCycle the
+     * sampled value moves to the "*PendingThisCycle" slot, and
+     * settle() applies it (clearing the slot once applied).  The
+     * `_redirectAppliedThisCycle` flag protects against multiple
+     * applies within a single cycle when settle() re-fires through
+     * subscribe-and-refire. */
+    std::optional<Addr> _eRedirectPendingThisCycle;
+    std::optional<Addr> _eRedirectPendingNextCycle;
+    std::optional<Addr> _dRedirectPendingThisCycle;
+    std::optional<Addr> _dRedirectPendingNextCycle;
+    bool                _redirectAppliedThisCycle = false;
+    /* Guards squashStream() against being re-fired multiple times
+     * within a single settle pass (subscribe-and-refire would
+     * otherwise bump streamId on every re-fire).  Reset by
+     * beginCycle(). */
+    bool                _streamSquashedThisCycle = false;
+
     /* Bound by Pipeline ctor to D's d_pop_request output. */
     Signal<bool> *_popRequestInput = nullptr;
 
     /* Bound by Pipeline ctor to E's e_redirect_to_f output. */
     Signal<std::optional<Addr>> *_eRedirectInput = nullptr;
 
-    /* Bound by Pipeline ctor to D's d_redirect_to_f output (S5). */
+    /* Bound by Pipeline ctor to D's d_redirect_to_f output. */
     Signal<std::optional<Addr>> *_dRedirectInput = nullptr;
-
-    /* S6: when set, the next outgoing fetch is marked UNCACHEABLE so
-     * PipelinedSimpleMemory bypasses its 64-bit current-line buffer
-     * and pays the full Flash WS latency.  Models the silicon
-     * TAKEN_BRANCH HCLK bundle on the post-redirect target fetch. */
-    bool _nextFetchBypassBuffer = false;
 
     void absorbStaging();
     bool shouldIssueFetch() const;

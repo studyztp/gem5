@@ -32,7 +32,6 @@
 
 #include <vector>
 
-#include "arch/generic/mmu.hh"
 #include "cpu/base.hh"
 #include "cpu/simple_thread.hh"
 #include "params/LegoCPU.hh"
@@ -40,19 +39,11 @@
 namespace gem5
 {
 
-class Stage;
-class StageFunction;
-
 class LegoCPU : public BaseCPU
 {
   protected:
-    /** The thread state for each hardware thread. */
     std::vector<SimpleThread *> threads;
 
-    /** Pipeline stages, built from Python config. */
-    std::vector<Stage *> stages;
-
-    /** ICache port: sends timing fetch requests to the memory system. */
     class IcachePort : public RequestPort
     {
       public:
@@ -67,7 +58,6 @@ class LegoCPU : public BaseCPU
         void recvReqRetry() override;
     };
 
-    /** DCache port: for data memory access. */
     class DcachePort : public RequestPort
     {
       public:
@@ -88,37 +78,6 @@ class LegoCPU : public BaseCPU
     Port &getDataPort() override { return dcachePort; }
     Port &getInstPort() override { return icachePort; }
 
-    /** The main pipeline tick event (cycle boundary). */
-    EventFunctionWrapper tickEvent;
-
-    /** Mid-cycle update event (async response recomputation). */
-    EventFunctionWrapper updateEvent;
-
-    /** Called every cycle to advance the pipeline. */
-    void tick();
-
-    /** Recompute stages within the current cycle (async response). */
-    void update();
-
-    /** Print line trace (one line per cycle). */
-    void printLineTrace();
-
-    /** Tick at which the current cycle started. */
-    Tick cycleStartTick = 0;
-
-    /** Set by cross-stage output writes. If true at end of tick,
-     *  schedule next cycle. */
-    bool needUpdate = false;
-
-    /** Cycle counter for line tracing. */
-    uint64_t curCycle = 0;
-
-    /** Last trace line for stall cycle backfill. */
-    std::string lastTraceLine;
-
-    /** Wire ports by matching output/input names across all functions. */
-    void wireConnections();
-
   public:
     PARAMS(LegoCPU);
     LegoCPU(const Params &params);
@@ -134,42 +93,6 @@ class LegoCPU : public BaseCPU
 
     Counter totalInsts() const override;
     Counter totalOps() const override;
-
-    void serializeThread(CheckpointOut &cp, ThreadID tid) const override;
-    void unserializeThread(CheckpointIn &cp, ThreadID tid) override;
-
-    DrainState drain() override;
-    void drainResume() override;
-
-    void switchOut() override;
-    void takeOverFrom(BaseCPU *old_cpu) override;
-
-    void verifyMemoryMode() const override;
-
-    /** Get a thread by ID. */
-    SimpleThread *getThread(ThreadID tid) { return threads[tid]; }
-
-    /** Called by stages/functions when a cross-stage output is written. */
-    void notifyUpdate();
-
-    /** Check if we are still within the current cycle. */
-    bool isCurrentCycle() const
-    { return curTick() < cycleStartTick + clockPeriod(); }
-
-    /** Check if a given tick falls within the current cycle. */
-    bool isCurrentCycle(Tick tick) const
-    { return tick >= cycleStartTick; }
-
-    /** Send a packet to the appropriate memory port. */
-    void sendPacketToPort(Packet *pkt);
-
-    /** Receive a timing response and dispatch to the pipeline. */
-    void recvTimingResp(Packet *pkt);
-
-    /** Send a translation request to the MMU. */
-    void sendTranslationToMMU(RequestPtr req,
-                              BaseMMU::Translation *translation,
-                              BaseMMU::Mode mode);
 };
 
 } // namespace gem5

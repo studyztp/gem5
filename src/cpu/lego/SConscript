@@ -30,24 +30,8 @@
 Import('*')
 
 if env['CONF']['BUILD_ISA']:
-    SimObject('LegoCPU.py', sim_objects=[
-        'LegoStageFunction', 'LegoStageFunctionWithPort',
-        'LegoStageFunctionTranslation',
-        'FetchAddressGen', 'FetchMemRequest',
-        'InstructionDecode', 'ALUExecute', 'PCUpdate',
-        'LegoSubStage', 'LegoStage', 'LegoCPU'])
+    SimObject('LegoCPU.py', sim_objects=['LegoCPU'])
 
     Source('lego_cpu.cc')
-    Source('stage.cc')
-    Source('sub_stage.cc')
-    Source('stage_function.cc')
-    Source('fetch_functions.cc')
-    Source('execute_functions.cc')
 
     DebugFlag('LegoCPU', 'Lego CPU top-level events')
-    DebugFlag('LegoCPULineTrace', 'Lego CPU cycle-by-cycle line trace')
-    DebugFlag('LegoCPUFunc', 'Lego CPU stage function compute details')
-    DebugFlag('LegoCPUPort', 'Lego CPU port read/write/notify')
-
-    CompoundFlag('LegoCPUAll', [
-        'LegoCPU', 'LegoCPULineTrace', 'LegoCPUFunc', 'LegoCPUPort'])

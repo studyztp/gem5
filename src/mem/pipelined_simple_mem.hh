@@ -82,9 +82,17 @@ class PipelinedSimpleMemory : public AbstractMemory
         PipelinedSimpleMemory &mem;
         const PortID portId;
 
-        /** Per-port current buffer state (filled at dequeue time). */
+        /** Per-port current buffer state (filled at dequeue time).
+         *  The buffer models the Flash sense-amp output latch
+         *  (RM0440 §4.3.4), which holds the most-recently-completed
+         *  read.  `portBufferedStreamId` records which CPU stream
+         *  filled it; a hit requires both block-address and
+         *  streamId to match — modelling that the sense-amp is
+         *  overwritten by every Flash read, including wrong-path
+         *  prefetches that completed before a redirect. */
         Addr portBufferedBlockAddr;
         unsigned portBufferBlockSize;  // bytes, 0 = disabled
+        uint32_t portBufferedStreamId;
 
         /**
          * Per-port stream tracking for AHB transfer retraction.
@@ -174,6 +182,19 @@ class PipelinedSimpleMemory : public AbstractMemory
 
     Tick recvTimingReq();
 
+    /** Emit a structured table row under PipelinedMemLineTrace.
+     *
+     *  Each row: tick | event | port | addr | nextAccept (relative) |
+     *            arr/rtf/out counts | currentFetchingBlock | bufferedBlock
+     *  Designed so a 5882-tick CPU cycle boundary aligns with the
+     *  CPU's Signal3CPULineTrace rows for tick-by-tick correlation.
+     *  No-op when the flag is off (cheap to leave instrumented). */
+    void lineTraceEvent(const std::string &event, PortID port,
+                        Addr addr, ReturnType rt = NotScheduled);
+
+  private:
+    /** True iff the trace header has been emitted (one-shot). */
+    bool _lineTraceHeaderEmitted = false;
 };
 
 } // namespace memory

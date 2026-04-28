@@ -57,6 +57,15 @@ struct SignalCPUStats : public statistics::Group
     statistics::Scalar dcacheRequestsIssued;
     statistics::Scalar dcacheResponsesReceived;
     statistics::Scalar memStallCycles;
+
+    /* Clock-gating telemetry: how many times Pipeline::evaluate
+     * declared the CPU idle and stopped Ticked, and how many times
+     * an external event (memory response, retry hand-off) called
+     * requestRetick to wake the CPU back up.  These should be
+     * roughly paired; large divergence indicates a missed wake-up
+     * or a redundant stop. */
+    statistics::Scalar idleStops;
+    statistics::Scalar wakeUps;
 };
 
 } // namespace signal3

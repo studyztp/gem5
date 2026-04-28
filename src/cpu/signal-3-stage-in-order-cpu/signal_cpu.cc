@@ -96,12 +96,11 @@ SignalCPU::startup()
     DPRINTF(Signal3CPU, "startup\n");
 
     // Run real STM32G4 firmware: the workload (loaded by
-    // ArmMFsWorkload) has placed the binary in Flash and SRAM and
-    // initialised the thread's reset PC from the ELF entry symbol
-    // (Reset_Handler).  All we do here is seed the pipeline's
-    // fetchPc to that same address so F starts pulling instructions
-    // from the reset vector.
-    const Addr resetPc = thread(0)->pcState().instAddr();
+    // ArmMFsWorkload via MProfileReset) has cleared arch regs, set
+    // VTOR, populated SP from mem[VTOR+0] and PC from mem[VTOR+4],
+    // and put the thread into Thumb mode.  Seed F's fetch_pc to the
+    // thread's PC so F pulls instructions from Reset_Handler onward.
+    const Addr resetPc = thread(0)->getTC()->pcState().instAddr();
     DPRINTF(Signal3CPU,
             "seeding pipeline from workload reset PC %#x\n", resetPc);
     _pipeline->resetTo(resetPc);
@@ -148,6 +147,15 @@ SignalCPU::totalOps() const
     return totalInsts();
 }
 
+// Clock-gating wake-up contract (Approach B / `needUpdate` plan):
+//
+// Each external entry point below mutates pipeline state from outside
+// `Pipeline::evaluate()`.  When evaluate() previously declared the CPU
+// idle and called `Ticked::stop()`, none of these are followed by a
+// scheduled tick — so we MUST call `pipeline().requestRetick(src)` to
+// re-arm Ticked.  `requestRetick` is idempotent (no-op while running)
+// so it is safe to call unconditionally after each entry point.
+
 bool
 SignalCPU::IcachePort::recvTimingResp(PacketPtr pkt)
 {
@@ -162,12 +170,15 @@ SignalCPU::IcachePort::recvTimingResp(PacketPtr pkt)
                 "drop stale response addr=%#x streamId=%u (cur=%u)\n",
                 addr, streamId, cpu.currentStreamId());
         cpu._stats.staleResponsesDropped++;
+        // Stale-drop path: no real progress (F's _inFlight was already
+        // zeroed by applyRedirect), so we do NOT wake here.
     } else {
         FetchWord w;
         w.addr = addr;
         w.data = pkt->getLE<uint32_t>();
         w.streamId = streamId;
         cpu.pipeline().onAsyncResponse(w, PortSide::Icache);
+        cpu.pipeline().requestRetick("icacheResp");
     }
 
     cpu.pipeline().getFetch().noteResponseArrived();
@@ -180,12 +191,14 @@ SignalCPU::IcachePort::recvReqRetry()
 {
     DPRINTF(Signal3CPUMem, "icache recvReqRetry\n");
     cpu.pipeline().retrySendPendingFetch();
+    cpu.pipeline().requestRetick("icacheRetry");
 }
 
 bool
 SignalCPU::DcachePort::recvTimingResp(PacketPtr pkt)
 {
     cpu.pipeline().onDcacheResponse(pkt);
+    cpu.pipeline().requestRetick("dcacheResp");
     // pkt ownership: held by LSQ until E calls release() (which
     // deletes it).  Don't delete here.
     return true;
@@ -195,6 +208,7 @@ void
 SignalCPU::DcachePort::recvReqRetry()
 {
     cpu.pipeline().retrySendPendingDcache();
+    cpu.pipeline().requestRetick("dcacheRetry");
 }
 
 LSQ &

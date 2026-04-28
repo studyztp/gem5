@@ -60,7 +60,13 @@ SignalCPUStats::SignalCPUStats(statistics::Group *parent)
       ADD_STAT(dcacheResponsesReceived, statistics::units::Count::get(),
                "Number of dcache responses accepted by the LSQ"),
       ADD_STAT(memStallCycles, statistics::units::Cycle::get(),
-               "Cycles E was stalled waiting for an LSQ response")
+               "Cycles E was stalled waiting for an LSQ response"),
+      ADD_STAT(idleStops, statistics::units::Count::get(),
+               "Pipeline::evaluate() declared the CPU idle and stopped "
+               "Ticked at end of cycle"),
+      ADD_STAT(wakeUps, statistics::units::Count::get(),
+               "External events (icache/dcache resp or retry) that "
+               "called requestRetick() to wake the CPU from a stop")
 {
 }
 

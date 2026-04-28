@@ -28,9 +28,13 @@
 
 #include "mem/pipelined_simple_mem.hh"
 
+#include <iomanip>
+#include <sstream>
+
 #include "base/random.hh"
 #include "base/trace.hh"
 #include "debug/PipelinedMem.hh"
+#include "debug/PipelinedMemLineTrace.hh"
 
 namespace gem5
 {
@@ -51,6 +55,7 @@ PipelinedSimpleMemory::MemoryPort::MemoryPort(
       portId(_id),
       portBufferedBlockAddr(~(Addr)0),
       portBufferBlockSize(_readBufferSize),
+      portBufferedStreamId(~(uint32_t)0),
       lastStreamId(0),
       priority(_priority),
       retryReq(false),
@@ -99,8 +104,10 @@ PipelinedSimpleMemory::MemoryPort::popArriveBuffer() {
         DPRINTF(PipelinedMem, "port[%d] moving pkt addr=%#x from "
                 "arriveBuffer to readyToFire\n",
                 portId, arriveBuffer.front().pkt->getAddr());
+        Addr movedAddr = arriveBuffer.front().pkt->getAddr();
         readyToFireBuffer.push_back(std::move(arriveBuffer.front()));
         arriveBuffer.pop();
+        mem.lineTraceEvent("popArr", portId, movedAddr);
     }
 
     popReadyToFireBuffer();
@@ -126,14 +133,28 @@ PipelinedSimpleMemory::MemoryPort::popOutputBuffer() {
                 "addr=%#x type=%d tick=%d\n",
                 portId, outputBuffer.front().pkt->getAddr(),
                 outputBuffer.front().returnType, outputBuffer.front().tick);
+        mem.lineTraceEvent("respDeliver", portId,
+                           outputBuffer.front().pkt->getAddr(),
+                           outputBuffer.front().returnType);
         retryResp = !sendTimingResp(outputBuffer.front().pkt);
         if (!retryResp) {
             if (outputBuffer.front().returnType == ReturnFromMem
                     && portBufferBlockSize > 0) {
-                portBufferedBlockAddr = outputBuffer.front().pkt->getAddr()
+                PacketPtr filledPkt = outputBuffer.front().pkt;
+                portBufferedBlockAddr = filledPkt->getAddr()
                                             & ~(Addr)(portBufferBlockSize - 1);
+                // Tag with streamId only if the request carries one;
+                // untagged requests fall back to address-only matching
+                // on the consumer side (see popReadyToFireBuffer).
+                if (filledPkt->req->hasStreamId()) {
+                    portBufferedStreamId = filledPkt->req->streamId();
+                } else {
+                    portBufferedStreamId = ~(uint32_t)0;
+                }
                 DPRINTF(PipelinedMem, "port[%d] buffer updated: "
-                        "blockAddr=%#x\n", portId, portBufferedBlockAddr);
+                        "blockAddr=%#x bufferedStreamId=%u\n",
+                        portId, portBufferedBlockAddr,
+                        portBufferedStreamId);
             }
             outputBuffer.pop_front();
             if (!outputBuffer.empty()) {
@@ -153,25 +174,31 @@ PipelinedSimpleMemory::MemoryPort::popOutputBuffer() {
 void
 PipelinedSimpleMemory::MemoryPort::popReadyToFireBuffer() {
     if (!readyToFireBuffer.empty()) {
-        Addr pktAddr = readyToFireBuffer.front().pkt->getAddr();
+        PacketPtr pkt = readyToFireBuffer.front().pkt;
+        Addr pktAddr = pkt->getAddr();
+        // ICode requests (Fetch) carry a streamId so the buffer can
+        // model the silicon Flash sense-amp being overwritten on a
+        // taken-branch redirect (streamId bumps in Fetch::applyRedirect).
+        // DCode loads from the LSQ and any system-port functional
+        // accesses don't set one — for those we fall back to
+        // address-only matching, which preserves their existing
+        // buffer-hit behaviour.
+        const bool pktHasStreamId = pkt->req->hasStreamId();
         DPRINTF(PipelinedMem, "port[%d] popReadyToFire: addr=%#x "
-                "bufferBlock=%#x\n", portId, pktAddr, portBufferedBlockAddr);
+                "hasStreamId=%d bufferBlock=%#x bufferStreamId=%u\n",
+                portId, pktAddr, (int)pktHasStreamId,
+                portBufferedBlockAddr, portBufferedStreamId);
 
-        // Skip the buffer-hit shortcut if the request is marked
-        // UNCACHEABLE.  CPU front-ends use this to model cases where
-        // the line in the latch is logically stale even though the
-        // physical address matches — e.g. the first instruction
-        // fetch after a taken-branch redirect on Cortex-M, which
-        // empirically pays the full Flash WS latency irrespective of
-        // whether the target line happens to still sit in the
-        // sense-amp output buffer.
-        const bool bypassBuffer = readyToFireBuffer.front()
-                                      .pkt->req->isUncacheable();
-        if (portBufferBlockSize > 0 && !bypassBuffer) {
+        if (portBufferBlockSize > 0) {
             Addr pktBlockAddr = pktAddr & ~(Addr)(portBufferBlockSize - 1);
-            if (pktBlockAddr == portBufferedBlockAddr) {
+            const bool streamIdOk =
+                !pktHasStreamId
+                || pkt->req->streamId() == portBufferedStreamId;
+            if (pktBlockAddr == portBufferedBlockAddr && streamIdOk) {
                 DPRINTF(PipelinedMem, "port[%d] BUFFER HIT addr=%#x "
                         "block=%#x\n", portId, pktAddr, pktBlockAddr);
+                mem.lineTraceEvent("hit", portId, pktAddr,
+                                   ReturnFromBuffer);
                 readyToFireBuffer.front().tick = curTick() + bufferHitLatency;
                 readyToFireBuffer.front().returnType = ReturnFromBuffer;
                 outputBuffer.push_back(readyToFireBuffer.front());
@@ -184,6 +211,7 @@ PipelinedSimpleMemory::MemoryPort::popReadyToFireBuffer() {
 
         DPRINTF(PipelinedMem, "port[%d] BUFFER MISS addr=%#x, "
                 "requesting flash\n", portId, pktAddr);
+        mem.lineTraceEvent("miss", portId, pktAddr);
         Tick nextAcceptTick = mem.recvTimingReq();
         if (!readyToFireBuffer.empty() && mem.currentFetchingPkt
                 && portId == mem.currentFetchingPkt->portId) {
@@ -195,6 +223,9 @@ PipelinedSimpleMemory::MemoryPort::popReadyToFireBuffer() {
                         "fetchBlock=%#x, ready at tick=%d\n",
                         portId, readyToFireBuffer.front().pkt->getAddr(),
                         mem.currentFetchingBlockAddr, nextAcceptTick);
+                mem.lineTraceEvent("piggyback", portId,
+                    readyToFireBuffer.front().pkt->getAddr(),
+                    ReturnFromPiggyback);
                 readyToFireBuffer.front().tick = nextAcceptTick;
                 readyToFireBuffer.front().returnType = ReturnFromPiggyback;
                 outputBuffer.push_back(readyToFireBuffer.front());
@@ -322,6 +353,7 @@ PipelinedSimpleMemory::MemoryPort::recvTimingReq(PacketPtr pkt)
                         "addr=%#x streamId=%d (current=%d)\n",
                         portId, stale->getAddr(),
                         stale->req->streamId(), streamId);
+                mem.lineTraceEvent("retract", portId, stale->getAddr());
                 stale->makeResponse();
                 stale->setBadAddress();
                 arriveBuffer.pop();
@@ -345,6 +377,7 @@ PipelinedSimpleMemory::MemoryPort::recvTimingReq(PacketPtr pkt)
     DPRINTF(PipelinedMem, "port[%d] accepted, arriveBuffer=%d, "
             "scheduling popArriveBuffer at tick=%d\n",
             portId, arriveBuffer.size(), addrPhaseDone);
+    mem.lineTraceEvent("req", portId, pkt->getAddr());
     if (!popArriveBufferEvent.scheduled()) {
         mem.schedule(popArriveBufferEvent, addrPhaseDone);
     }
@@ -515,6 +548,8 @@ PipelinedSimpleMemory::recvTimingReq()
             currentFetchingPkt->pkt->getAddr(),
             currentFetchingBlockAddr,
             nextAcceptTick - curTick(), nextAcceptTick);
+    lineTraceEvent("fetchStart", currentFetchingPkt->portId,
+                   currentFetchingPkt->pkt->getAddr(), ReturnFromMem);
     return nextAcceptTick;
 }
 
@@ -523,6 +558,145 @@ PipelinedSimpleMemory::retry() {
     recvTimingReq();
 }
 
+// ===========================================================================
+// PipelinedMemLineTrace — table-format trace aligned to CPU cycle boundaries
+// ===========================================================================
+//
+// Each row of the table is one event from the memory's perspective.  Columns:
+//   tick    — absolute simulation tick (correlate with the CPU's
+//             Signal3CPULineTrace via tick).
+//   cycle   — tick / 5882 (CPU cycle at 170 MHz; helpful when reading by eye)
+//   event   — short tag (req, popArr, fire, hit, miss, fetchStart,
+//             respDeliver, retract, retry, ...)
+//   port    — port index (0=icache, 1=dcache typically)
+//   addr    — packet address
+//   dTick   — relative tick remaining for the in-flight Flash transfer
+//             (nextAcceptTick - curTick) when a request is "fired", or "-"
+//   arr/rtf/out — per-port queue depths after the event
+//   curBlk  — currentFetchingBlockAddr (Flash sense-amp's in-progress line)
+//   bufBlk  — port's portBufferedBlockAddr (the latched 64-bit line)
+//
+// All columns are fixed-width so the table aligns when read with `awk`.
+
+namespace
+{
+constexpr unsigned kTickCol  = 12;
+constexpr unsigned kCycCol   = 7;
+constexpr unsigned kEvCol    = 12;
+constexpr unsigned kPortCol  = 4;
+constexpr unsigned kAddrCol  = 12;
+constexpr unsigned kDTickCol = 8;
+constexpr unsigned kQCol     = 13;   // arr/rtf/out triple
+constexpr unsigned kBlkCol   = 12;
+
+constexpr Tick kTickPerCycle170MHz = 5882;
+
+std::string padLeft(const std::string &s, unsigned w)
+{
+    if (s.size() >= w) return s;
+    return std::string(w - s.size(), ' ') + s;
+}
+std::string padRight(const std::string &s, unsigned w)
+{
+    if (s.size() >= w) return s.substr(0, w);
+    return s + std::string(w - s.size(), ' ');
+}
+
+std::string sepBar()
+{
+    std::string b = "+-" + std::string(kTickCol, '-')
+                  + "-+-" + std::string(kCycCol, '-')
+                  + "-+-" + std::string(kEvCol, '-')
+                  + "-+-" + std::string(kPortCol, '-')
+                  + "-+-" + std::string(kAddrCol, '-')
+                  + "-+-" + std::string(kDTickCol, '-')
+                  + "-+-" + std::string(kQCol, '-')
+                  + "-+-" + std::string(kBlkCol, '-')
+                  + "-+-" + std::string(kBlkCol, '-')
+                  + "-+";
+    return b;
+}
+}  // namespace
+
+void
+PipelinedSimpleMemory::lineTraceEvent(const std::string &event, PortID port,
+                                      Addr addr, ReturnType rt)
+{
+    if (!debug::PipelinedMemLineTrace) return;
+
+    if (!_lineTraceHeaderEmitted) {
+        std::string bar = sepBar();
+        DPRINTF(PipelinedMemLineTrace, "%s\n", bar.c_str());
+        DPRINTF(PipelinedMemLineTrace,
+            "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+            padLeft("tick", kTickCol).c_str(),
+            padLeft("cycle", kCycCol).c_str(),
+            padRight("event", kEvCol).c_str(),
+            padRight("port", kPortCol).c_str(),
+            padRight("addr", kAddrCol).c_str(),
+            padRight("dTick", kDTickCol).c_str(),
+            padRight("arr/rtf/out", kQCol).c_str(),
+            padRight("curBlk", kBlkCol).c_str(),
+            padRight("bufBlk", kBlkCol).c_str());
+        DPRINTF(PipelinedMemLineTrace, "%s\n", bar.c_str());
+        _lineTraceHeaderEmitted = true;
+    }
+
+    const Tick now = curTick();
+    const auto cyc = now / kTickPerCycle170MHz;
+
+    std::string dTickS = "-";
+    if (nextAcceptTick > now) {
+        std::ostringstream os;
+        os << (nextAcceptTick - now);
+        dTickS = os.str();
+    }
+
+    // Per-port queue depths.
+    std::string qS;
+    {
+        std::ostringstream os;
+        if (port >= 0 && (size_t)port < ports.size()) {
+            const auto &p = *ports[port];
+            os << p.arriveBuffer.size() << "/"
+               << p.readyToFireBuffer.size() << "/"
+               << p.outputBuffer.size();
+        } else {
+            os << "-";
+        }
+        qS = os.str();
+    }
+
+    std::ostringstream addrS;
+    addrS << "0x" << std::hex << addr;
+
+    std::ostringstream curS;
+    curS << "0x" << std::hex << currentFetchingBlockAddr;
+
+    std::ostringstream bufS;
+    if (port >= 0 && (size_t)port < ports.size()) {
+        bufS << "0x" << std::hex << ports[port]->portBufferedBlockAddr;
+    } else {
+        bufS << "-";
+    }
+
+    std::string evTag = event;
+    if (rt == ReturnFromMem)         evTag += "<mem";
+    else if (rt == ReturnFromBuffer) evTag += "<buf";
+    else if (rt == ReturnFromPiggyback) evTag += "<pig";
+
+    DPRINTF(PipelinedMemLineTrace,
+        "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+        padLeft(std::to_string(now), kTickCol).c_str(),
+        padLeft(std::to_string(cyc), kCycCol).c_str(),
+        padRight(evTag, kEvCol).c_str(),
+        padLeft(std::to_string((int)port), kPortCol).c_str(),
+        padRight(addrS.str(), kAddrCol).c_str(),
+        padRight(dTickS, kDTickCol).c_str(),
+        padRight(qS, kQCol).c_str(),
+        padRight(curS.str(), kBlkCol).c_str(),
+        padRight(bufS.str(), kBlkCol).c_str());
+}
 
 } // namespace memory
 } // namespace gem5
