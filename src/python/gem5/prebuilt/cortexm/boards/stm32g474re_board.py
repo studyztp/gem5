@@ -334,6 +334,20 @@ class STM32G474RETimingBoard(ArmMSystem):
         # -- SCS (NVIC + SysTick) --
         self.platform.scs.pio = self.system_bus.mem_side_ports
 
+        # NOTE on attaching extra peripherals (e.g., MProfileBridgeIO):
+        # both `self.platform.scs` and `self.system_bus.mem_side_ports`
+        # are public and remain valid after __init__ returns.  Callers
+        # that want a bridge or other MMIO device can attach it
+        # themselves, idiomatic-gem5 style:
+        #
+        #   from m5.objects.MProfileBridgeIO import MProfileBridgeIO
+        #   board.bridge_io = MProfileBridgeIO(
+        #       pio_addr=0x90000000,
+        #       scs=board.platform.scs,
+        #       irq_num=101,
+        #   )
+        #   board.bridge_io.pio = board.system_bus.mem_side_ports
+
         # -- Address routers: zero-latency XBars for ICode/DCode decode --
         flash_ranges = platform.code_ranges
 

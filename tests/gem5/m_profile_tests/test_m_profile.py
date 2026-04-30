@@ -215,6 +215,114 @@ def m_profile_checkpoint_test(name, firmware_name):
 m_profile_checkpoint_test("scs_checkpoint", "test_scs_checkpoint.elf")
 
 
+def m_profile_bridge_io_test(name, firmware_name):
+    """Register an MProfileBridgeIO smoke test.
+
+    Uses run_bridge_io_test.py (which configures the timing board with
+    enable_bridge_io=True) instead of run_m4_test.py.  The verifier
+    additionally requires "MProfileBridgeIO signaled done." in simout
+    so that a regression in the bridge's exit-on-done path fails the
+    test even if the firmware otherwise reports PASS via the standard
+    0xCAFECAFE store.
+    """
+    firmware_path = joinpath(
+        config.base_dir,
+        "tests",
+        "gem5",
+        "m_profile_tests",
+        "programs",
+        firmware_name,
+    )
+
+    if not os.path.exists(firmware_path):
+        return
+
+    verifiers = [
+        verifier.MatchRegex(re.compile(r"Exiting @ tick \d+ because")),
+        # Catches the case where the CPU never wrote 1 to register[1]
+        # — i.e., the firmware bailed via the belt-and-braces semihosted
+        # SYS_EXIT instead of the bridge done path.
+        verifier.MatchRegex(re.compile(r"MProfileBridgeIO signaled done\.")),
+    ]
+
+    gem5_verify_config(
+        name=f"m_profile_{name}",
+        verifiers=verifiers,
+        fixtures=(),
+        config=joinpath(
+            config.base_dir,
+            "tests",
+            "gem5",
+            "m_profile_tests",
+            "configs",
+            "run_bridge_io_test.py",
+        ),
+        config_args=["--firmware", firmware_path],
+        valid_isas=(constants.all_compiled_tag,),
+        valid_hosts=constants.supported_hosts,
+        length=constants.quick_tag,
+    )
+
+
+# MProfileBridgeIO end-to-end smoke: register reads, output buffer
+# write/readback, exit via firmware writing register[1].
+m_profile_bridge_io_test("bridge_io", "test_bridge_io.elf")
+
+
+def m_profile_bridge_io_irq_test(name, firmware_name):
+    """Register an IRQ-driven MProfileBridgeIO ping-pong test.
+
+    Uses run_bridge_io_irq_test.py, which drives a multi-iteration
+    Python <-> firmware exchange via updateInputData() / raiseInterrupt()
+    / getOutputData() / clearInterrupt() — the same API surface the
+    crazyflie harness uses.  The Python script prints "TEST PASSED"
+    only after every iteration's echo round-trip matches.
+    """
+    firmware_path = joinpath(
+        config.base_dir,
+        "tests",
+        "gem5",
+        "m_profile_tests",
+        "programs",
+        firmware_name,
+    )
+
+    if not os.path.exists(firmware_path):
+        return
+
+    # The verifier matches the Python script's success line so we
+    # catch both "firmware exited via the wrong path" and "an
+    # iteration's echo mismatched" — both result in NO "TEST PASSED"
+    # appearing in the output.
+    verifiers = [
+        verifier.MatchRegex(re.compile(r"TEST PASSED")),
+    ]
+
+    gem5_verify_config(
+        name=f"m_profile_{name}",
+        verifiers=verifiers,
+        fixtures=(),
+        config=joinpath(
+            config.base_dir,
+            "tests",
+            "gem5",
+            "m_profile_tests",
+            "configs",
+            "run_bridge_io_irq_test.py",
+        ),
+        config_args=["--firmware", firmware_path],
+        valid_isas=(constants.all_compiled_tag,),
+        valid_hosts=constants.supported_hosts,
+        length=constants.quick_tag,
+    )
+
+
+# IRQ-driven echo: exercises raiseInterrupt + updateInputData +
+# getOutputData + clearInterrupt across multiple Python <-> firmware
+# round trips.  Models the crazyflie ping-pong pattern.
+m_profile_bridge_io_irq_test("bridge_io_irq", "test_bridge_io_irq.elf")
+
+
 # FreeRTOS holistic test — uses the same run_m4_test.py but with a longer
 # tick limit (FreeRTOS needs many SysTick periods for context switches).
 # The firmware is in the freertos/ subdirectory.

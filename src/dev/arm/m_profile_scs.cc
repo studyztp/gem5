@@ -816,13 +816,44 @@ MProfileSCS::writeFpExt(Addr addr, uint32_t data)
 void
 MProfileSCS::sendInt(uint32_t irq)
 {
-    // TODO
+    // Peripheral-side raise of an external IRQ.
+    //
+    // External IRQ index N maps to exception number N+16 per ARMv7-M
+    // B1.5.2 (the first 16 exception slots are system exceptions:
+    // Reset/NMI/HardFault/.../SysTick).  We accept a 0-based IRQ index
+    // here so callers don't need to know about the +16 offset.
+    //
+    // Routing through pendInterrupt() (the same primitive used by ISPR
+    // writes at writeNvicW1S call site, by STIR, and by sysTickExpire)
+    // gives us, in one call: pending bit set, push onto the pending
+    // priority queue (idempotent via inPendingQueue), and CPU wakeup
+    // via postInterrupt().  This means a peripheral calling sendInt()
+    // produces the same state as firmware writing to NVIC->ISPR.
+    uint32_t excNum = irq + 16;
+    panic_if(excNum >= interrupts.size(),
+             "MProfileSCS::sendInt: irq %u out of range (numIrqs=%u)",
+             irq, numIrqs);
+    pendInterrupt(interrupts[excNum]);
 }
 
 void
 MProfileSCS::clearInt(uint32_t irq)
 {
-    // TODO
+    // Peripheral-side de-assert of an external IRQ.
+    //
+    // Mirror the ICPR W1C semantics at writeNvicW1C call site:
+    // clear the pending bit only.  Active state is intentionally
+    // untouched — per ARMv7-M B3.4.6, ICPR has no effect on
+    // interrupts that are currently active (the handler must run
+    // to completion).  The pending priority queue entry is left in
+    // place; the consumer (updatePending / acknowledgeIRQ) re-checks
+    // intr.pending before delivering, so a stale queue entry for a
+    // now-cleared interrupt is harmless.
+    uint32_t excNum = irq + 16;
+    panic_if(excNum >= interrupts.size(),
+             "MProfileSCS::clearInt: irq %u out of range (numIrqs=%u)",
+             irq, numIrqs);
+    interrupts[excNum].pending = false;
 }
 
 // -- CPU-side interface --

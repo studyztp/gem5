@@ -40,7 +40,9 @@ TESTS = cortexm4_basic test_cps test_mrs_msr test_bx_exc_return \
         test_control_spsel \
         test_scb_byte_access \
         test_exc_return_validate \
-        test_faultmask_priority
+        test_faultmask_priority \
+        test_bridge_io \
+        test_bridge_io_irq
 
 all: $(addsuffix .elf, $(TESTS)) freertos-tests
 

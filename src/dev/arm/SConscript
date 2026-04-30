@@ -113,6 +113,13 @@ SimObject(
     sim_objects=['MProfileSCS'],
     tags=['arm isa'],
 )
+# Arm-M bridge I/O device — peripheral that lets a Python harness
+# raise IRQs through the SCS and exchange data buffers with firmware.
+SimObject(
+    'MProfileBridgeIO.py',
+    sim_objects=['MProfileBridgeIO'],
+    tags=['arm isa'],
+)
 SimObject(
     'VirtIOMMIO.py',
     sim_objects=['MmioVirtIO'],
@@ -127,6 +134,7 @@ if env['CONF']['USE_ARM_FASTMODEL']:
 
 Source('m_profile_platform.cc', tags=['arm isa'])
 Source('m_profile_scs.cc', tags=['arm isa'])
+Source('m_profile_bridge_io.cc', tags=['arm isa'])
 Source('a9scu.cc', tags=['arm isa'])
 Source('amba_device.cc', tags=['arm isa'])
 Source('amba_fake.cc', tags=['arm isa'])
@@ -172,6 +180,7 @@ Source('energy_ctrl.cc', tags=['arm isa'])
 Source('fvp_base_pwr_ctrl.cc', tags=['arm isa'])
 
 DebugFlag('MProfileSCS', tags=['arm isa'])
+DebugFlag('MProfileBridgeIO', tags=['arm isa'])
 DebugFlag('AMBA', tags=['arm isa'])
 DebugFlag('FlashDevice', tags=['arm isa'])
 DebugFlag('HDLcd', tags=['arm isa'])
