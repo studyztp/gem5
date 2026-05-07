@@ -32,6 +32,9 @@
 #include <cstring>
 #include <sstream>
 
+#include "arch/arm/insts/static_inst.hh"
+#include "arch/arm/regs/cc.hh"
+#include "arch/arm/utility.hh"
 #include "arch/generic/decoder.hh"
 #include "arch/generic/pcstate.hh"
 #include "cpu/signal-3-stage-in-order-cpu/exec_context.hh"
@@ -41,6 +44,7 @@
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Signal3CPUDecode.hh"
+#include "debug/Signal3CPUFlagsFwd.hh"
 #include "sim/faults.hh"
 
 namespace gem5
@@ -81,6 +85,8 @@ Decode::beginCycle()
 {
     _decodedThisCycle = false;
     _slotDecisionMadeThisCycle = false;
+    _pendingCondBranchAddr.reset();
+    _pendingCondBranchFallThrough = 0;
 }
 
 void
@@ -92,6 +98,10 @@ Decode::applyRedirect(Addr target)
     _nextInstrAddrToDeliver = target;
     _haveLoadedWord = false;
     _lastFetchPc = 0;
+    // Any unresolved cond branch we were waiting to re-resolve is
+    // wrong-path now — drop the pending state.
+    _pendingCondBranchAddr.reset();
+    _pendingCondBranchFallThrough = 0;
     // Drop any in-flight macro-op expansion — wrong-path.
     _curMacro = nullptr;
     _microPC = 0;
@@ -123,6 +133,13 @@ Decode::settle()
         applyRedirect(*_eRedirectInput->read());
         // Fall through to refill from F's (post-redirect) FIFO.
     }
+
+    // 0a. If we deferred a cond-branch resolution earlier this cycle
+    //     because forwarded flags weren't yet available, retry now
+    //     that E may have pulsed.  This re-fire is the SignalGraph's
+    //     way of giving us E-after-D ordering for the in-cycle
+    //     flag-setter -> dependent-bcc case.
+    retryPendingCondBranchResolve();
 
     // ----------------------------------------------------------------
     // 1. Slot management.
@@ -378,14 +395,20 @@ Decode::tryEarlyResolveBranch(DecodedSlot &ds)
 {
     if (!ds.staticInst->isControl())
         return false;
-    // Only direct unconditional branches (B, BL) resolve at D —
-    // they need only the immediate offset.  Cortex-M4 has no
-    // D-side flag forwarding, so conditional branches must wait
-    // for E (TRM Table 3-1; CALIBRATION_HANDOFF.md notes
-    // "no D-side bypass").  Indirect branches need register reads
-    // and also resolve at E.
+
+    // Conditional branches: 16-bit T1 Bcond resolves at D using
+    // flags forwarded from E's same-cycle commit (see
+    // tryDecodeOnlyResolveCondBranch).  32-bit T3 B.W cond and
+    // any condition we can't decode-only resolve fall through to
+    // E.  Note tryDecodeOnlyResolveCondBranch may set
+    // _pendingCondBranchAddr and return false if forwarded
+    // flags haven't arrived yet — D's settle re-fire on the
+    // e_flags_to_d pulse will retry.
     if (ds.staticInst->isCondCtrl())
-        return false;
+        return tryDecodeOnlyResolveCondBranch(ds);
+
+    // Indirect branches need register reads via the
+    // operand-forwarding path which is E-side.
     if (ds.staticInst->isIndirectCtrl())
         return false;
 
@@ -431,6 +454,205 @@ Decode::tryEarlyResolveBranch(DecodedSlot &ds)
         _cpu.pipeline().lineTraceEvent("D.earlyRes-NT");
     }
     return true;
+}
+
+bool
+Decode::tryDecodeOnlyResolveCondBranch(DecodedSlot &ds)
+{
+    // 16-bit T1 Bcond decode-only resolution using flags
+    // FORWARDED from E's same-cycle commit.
+    //
+    // Encoding (ARMv7-M ARM A7.7.12, T1):
+    //     1101 cccc imm8     where cond cccc != 0xE/0xF
+    // PC-relative target = (ds.addr + 4) + sign_extend(imm8 << 1).
+    //
+    // Per ARM ARM, T1 Bcond cannot appear inside an IT block, so
+    // the encoding's cond field is the actual condition (no
+    // ITSTATE override) — we can resolve without touching any
+    // thread state.
+    //
+    // Crucially, we read NZCV from the e_flags_to_d FORWARDING
+    // signal, NOT from MISCREG_CPSR.  The SignalGraph dispatches
+    // stages in stageId order (D=1 fires before E=2), so on D's
+    // first fire of a cycle the CPSR misc-reg holds pre-commit
+    // flags — wrong if a flag-setter is being committed at E
+    // this cycle.  The earlier decode-only-with-misc-reg attempt
+    // failed exactly this way (CopyDataInit loop ran
+    // indefinitely with stale flags).  When forwarded flags
+    // aren't yet available, we DEFER resolution: store the slot's
+    // address in _pendingCondBranchAddr and return false.  E's
+    // commitOne() then pulses e_flags_to_d, which re-queues D;
+    // D's next settle pass calls retryPendingCondBranchResolve()
+    // and finishes the resolution with valid forwarded flags.
+    if (ds.instSize != 2)
+        return false;  // 32-bit B.W cond falls back to E-side
+
+    auto *armInst = dynamic_cast<gem5::ArmISA::ArmStaticInst *>(
+        ds.staticInst.get());
+    if (!armInst)
+        return false;
+
+    const uint16_t enc = (uint16_t) armInst->encoding();
+    if ((enc & 0xF000) != 0xD000)
+        return false;
+    const unsigned cond = (enc >> 8) & 0xF;
+    if (cond == 0xE || cond == 0xF)
+        return false;  // AL or invalid — not a real Bcond
+
+    const Addr fallThrough = ds.addr + ds.instSize;
+
+    // Pick the flag source.  Three cases:
+    //
+    //   (1) Forwarded flags valid → E has already committed this
+    //       cycle (typical on D's settle re-fire after E's
+    //       e_flags_to_d pulse).  Always preferred.
+    //
+    //   (2) Forwarded flags invalid AND dSlot.out() does NOT hold
+    //       a pending flag-setter → misc-reg is up-to-date from a
+    //       prior cycle's commit.  Safe.  Covers the common
+    //       cross-cycle case (subs in cycle T-1, bne decoded in
+    //       cycle T; in cycle T's settle E commits something else
+    //       or nothing, so no in-cycle flag-setter pulse arrives).
+    //
+    //   (3) Forwarded flags invalid AND dSlot.out() holds a
+    //       pending flag-setter that E will commit this cycle but
+    //       hasn't yet (D fires at stageId=1 before E at
+    //       stageId=2) → misc-reg is stale.  Defer; the
+    //       e_flags_to_d pulse from E's commit will re-queue D
+    //       and retryPendingCondBranchResolve() finishes us.
+    ForwardedFlags ff;
+    if (_eFlagsInput && _eFlagsInput->valid()) {
+        ff = _eFlagsInput->read();
+    } else if (!dSlotOutHasPendingFlagSetter()) {
+        // ARM stores NZCV in dedicated CC regs (cc_reg::Nz / C / V),
+        // not MISCREG_CPSR.  Flag-setting insts write these regs
+        // when they execute, so reading them here gets the
+        // architectural NZCV state from the most recent commit.
+        ThreadContext *tc = _cpu.thread(0)->getTC();
+        ff.nz = (uint8_t) tc->getReg(gem5::ArmISA::cc_reg::Nz);
+        ff.c  = (bool)    tc->getReg(gem5::ArmISA::cc_reg::C);
+        ff.v  = (bool)    tc->getReg(gem5::ArmISA::cc_reg::V);
+    } else {
+        _pendingCondBranchAddr = ds.addr;
+        _pendingCondBranchFallThrough = fallThrough;
+        DPRINTF(Signal3CPUDecode,
+                "defer cond-branch resolve pc=%#x (in-cycle "
+                "flag-setter pending at E)\n", ds.addr);
+        return false;
+    }
+
+    const bool taken = gem5::ArmISA::testPredicate(
+        ff.nz, ff.c, ff.v,
+        (gem5::ArmISA::ConditionCode) cond);
+    DPRINTF(Signal3CPUFlagsFwd,
+            "resolve check pc=%#x cond=%u nz=%u c=%u v=%u taken=%d\n",
+            ds.addr, cond, (unsigned)ff.nz,
+            (unsigned)ff.c, (unsigned)ff.v, (int)taken);
+
+    // Branch target: PC-relative from PC+4.
+    const int8_t imm8 = (int8_t) (enc & 0xFF);
+    const int32_t offset = static_cast<int32_t>(imm8) << 1;
+    const Addr target = taken ? (ds.addr + 4 + offset) : fallThrough;
+
+    ds.earlyResolved = true;
+    ds.resolvedNpc = target;
+    _pendingCondBranchAddr.reset();
+    _pendingCondBranchFallThrough = 0;
+
+    const char *src =
+        (_eFlagsInput && _eFlagsInput->valid()) ? "fwd" : "miscreg";
+    if (taken) {
+        DPRINTF(Signal3CPUDecode,
+                "decode-only resolve TAKEN pc=%#x cond=%u -> %#x "
+                "(%s)\n", ds.addr, cond, target, src);
+        _cpu.pipeline().lineTraceEvent("D.earlyRes-T");
+        d_redirect_to_f.write(std::optional<Addr>{target});
+        // D's own internal stream redirects: future decodes start
+        // at the new target.  The decoder cache must be invalidated.
+        _nextInstrAddrToDeliver = target;
+        _haveLoadedWord = false;
+        _lastFetchPc = 0;
+    } else {
+        DPRINTF(Signal3CPUDecode,
+                "decode-only resolve NOT-TAKEN pc=%#x cond=%u "
+                "(%s)\n", ds.addr, cond, src);
+        _cpu.pipeline().lineTraceEvent("D.earlyRes-NT");
+        // No redirect — D continues sequentially.
+    }
+    return true;
+}
+
+bool
+Decode::dSlotOutHasPendingFlagSetter() const
+{
+    if (!dSlot.out().valid() || !dSlot.out().read().has_value())
+        return false;
+    const StaticInstPtr &inst = dSlot.out().read()->staticInst;
+    if (!inst)
+        return false;
+    // ARM flag-setting insts (subs, cmps, adds, ...) write the
+    // dedicated CC regs (cc_reg::Nz / C / V), not MISCREG_CPSR.
+    // Some insts only write a subset (e.g. shifts that only
+    // update C), so check for ANY of Nz/C/V as a dest.
+    const uint8_t n = inst->numDestRegs();
+    for (uint8_t i = 0; i < n; ++i) {
+        const RegId &dest = inst->destRegIdx(i);
+        if (!dest.is(CCRegClass))
+            continue;
+        const RegIndex idx = dest.index();
+        if (idx == gem5::ArmISA::cc_reg::_NzIdx
+                || idx == gem5::ArmISA::cc_reg::_CIdx
+                || idx == gem5::ArmISA::cc_reg::_VIdx) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void
+Decode::retryPendingCondBranchResolve()
+{
+    if (!_pendingCondBranchAddr.has_value())
+        return;
+    if (!_eFlagsInput || !_eFlagsInput->valid())
+        return;  // E hasn't pulsed yet this cycle — wait for re-fire
+
+    // The slot we deferred on should still be in dSlot.in() — D
+    // is single-issue per cycle so nothing has overwritten it.
+    if (!dSlot.in().valid() || !dSlot.in().read().has_value()) {
+        // Lost — should not happen given single-issue, but bail
+        // safely rather than panic.  The cond branch falls through
+        // to E-side resolution.
+        _pendingCondBranchAddr.reset();
+        _pendingCondBranchFallThrough = 0;
+        return;
+    }
+
+    DecodedSlot ds = *dSlot.in().read();
+    if (ds.addr != *_pendingCondBranchAddr || ds.earlyResolved) {
+        // Slot was overwritten or already resolved — clean up
+        // and skip.
+        _pendingCondBranchAddr.reset();
+        _pendingCondBranchFallThrough = 0;
+        return;
+    }
+
+    // Re-run the resolution.  tryDecodeOnlyResolveCondBranch will
+    // see _eFlagsInput->valid() this time and finalize ds.
+    if (tryDecodeOnlyResolveCondBranch(ds)) {
+        // Rewrite dSlot.in() with the now-resolved slot so E's
+        // earlyResolved fast path commits it without redirecting.
+        // Signal value-equality detects the change (earlyResolved
+        // / resolvedNpc differ) and cascades to E.
+        dSlot.in().write(std::optional<DecodedSlot>{ds});
+        DPRINTF(Signal3CPUDecode,
+                "retry resolved pc=%#x earlyResolved=1 npc=%#x\n",
+                ds.addr, ds.resolvedNpc);
+    }
+    // _pendingCondBranchAddr was cleared by the successful path
+    // inside tryDecodeOnlyResolveCondBranch; if it failed (eg the
+    // signal cleared between fires — unlikely), we'll retry on the
+    // next fire or fall through to E.
 }
 
 std::string

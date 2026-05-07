@@ -85,6 +85,12 @@ class Execute : public Stage
     Signal<bool>                  e_accept_d;
     Signal<std::optional<Addr>>   e_redirect_to_f;  // S4+
 
+    /* Pulsed once per commit with the post-commit NZCV.  D
+     * subscribes so it can re-resolve a same-cycle dependent
+     * 16-bit T1 Bcond using just-committed flags instead of
+     * waiting for E to commit the branch itself. */
+    Signal<ForwardedFlags>        e_flags_to_d;
+
     /* ---- Read-only query helpers ---- */
     bool busy() const { return _eSlot.has_value(); }
     Addr archPc() const;

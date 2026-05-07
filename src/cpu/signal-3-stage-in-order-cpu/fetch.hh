@@ -124,6 +124,16 @@ class Fetch : public Stage
     /* ---- Bookkeeping called by IcachePort::recvTimingResp ---- */
     void noteResponseArrived();
 
+    /** Called by E when committing a control instruction (branch /
+     *  bx / call / etc.).  Decrements F's count of unresolved
+     *  branches in flight.  Models the Cortex-M4 PFU's behaviour of
+     *  not speculating past an unresolved conditional branch (TRM
+     *  §1.4): once predecode at FIFO insertion detects a branch
+     *  halfword, F stops issuing further fetches until E confirms
+     *  the branch has resolved.  In the taken-branch case
+     *  squashStream() also clears the count. */
+    void noteBranchCommitted();
+
     /* ---- Schedule phase: drains pendingIssueQueue ---- */
     bool tryIssuePendingFetch();   // returns false if port refused
     bool hasPendingIssue() const { return !pendingIssueQueue.empty(); }
@@ -220,6 +230,23 @@ class Fetch : public Stage
      * otherwise bump streamId on every re-fire).  Reset by
      * beginCycle(). */
     bool                _streamSquashedThisCycle = false;
+
+    /* Number of unresolved branches that F has predecoded out of
+     * fetched FIFO words.  F stops issuing new fetches while >0;
+     * decremented when E commits a control inst (noteBranchCommitted)
+     * and reset to 0 when squashStream() runs on a redirect. */
+    unsigned            _branchesInFlight = 0;
+
+    /* Sticky state for predecode: when a 32-bit Thumb-2 inst's
+     * first halfword is the upper half of a fetched word, its
+     * second half is the lower half of the NEXT fetched word.
+     * The next word's lo isn't a 16-bit inst — it's data.  This
+     * flag tells the next absorbStaging predecode pass to skip
+     * the lo position to avoid false-positive branch flags
+     * (e.g. ubfx.w's second half can match a Bcond bit pattern).
+     * Reset on squashStream since the redirect target starts a
+     * fresh decode flow. */
+    bool                _nextWordLoIsThumb2Tail = false;
 
     /* Bound by Pipeline ctor to D's d_pop_request output. */
     Signal<bool> *_popRequestInput = nullptr;

@@ -79,10 +79,15 @@ if env['CONF']['BUILD_ISA']:
               'Clock-gating decisions: idle stops at end of evaluate '
               'when no stage will need work next cycle, and wake-ups '
               'from icache/dcache port callbacks (resp + retry).')
+    DebugFlag('Signal3CPUFlagsFwd',
+              'E->D NZCV forwarding (e_flags_to_d) and D-side cond '
+              'branch resolution: pre/post ALU exec CC regs, fwd flags '
+              'pulse values, decode-only resolve checks.')
 
     CompoundFlag('Signal3CPUAll',
                  ['Signal3CPU', 'Signal3CPUPipeline',
                   'Signal3CPUFetch', 'Signal3CPUDecode',
                   'Signal3CPUExecute', 'Signal3CPUSignal',
                   'Signal3CPULatch', 'Signal3CPUMem',
-                  'Signal3CPULineTrace', 'Signal3CPULineTraceDetail'])
+                  'Signal3CPULineTrace', 'Signal3CPULineTraceDetail',
+                  'Signal3CPUFlagsFwd'])

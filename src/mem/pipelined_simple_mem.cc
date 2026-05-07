@@ -78,23 +78,25 @@ PipelinedSimpleMemory::MemoryPort::popArriveBuffer() {
             portId, arriveBuffer.size(), readyToFireBuffer.size(),
             outputBuffer.size());
 
+    // Drop stale entries from the front of readyToFireBuffer.
+    // Real silicon's bus matrix cancels speculative AHB transfers
+    // for free on a redirect — there is no per-tick retry storm
+    // serializing stale-return delivery against new fetches.
+    // Modelling the retry would add ~3 cy per redirect on
+    // forward-branch kernels (see buffer_hit_sweep / forward
+    // line-trace in experiments/raw-data/gem5-stm32g4-verification).
+    // F-side filters any remaining in-flight stale responses by
+    // streamId at recvTimingResp.
     while (!readyToFireBuffer.empty()
         && readyToFireBuffer.front().pkt->req->hasStreamId()
         && readyToFireBuffer.front().pkt->req->streamId()!=lastStreamId) {
         PacketPtr stale = readyToFireBuffer.front().pkt;
-        DPRINTF(PipelinedMem, "port[%d] returning stale pkt addr=%#x "
+        DPRINTF(PipelinedMem, "port[%d] dropping stale pkt addr=%#x "
                 "streamId=%d (current=%d)\n",
                 portId, stale->getAddr(),
                 stale->req->streamId(), lastStreamId);
-        stale->makeResponse();
-        stale->setBadAddress();
         readyToFireBuffer.pop_front();
-        if (retryResp) {
-            staleReturnQueue.push_back(stale);
-        } else if (!sendTimingResp(stale)) {
-            retryResp = true;
-            staleReturnQueue.push_back(stale);
-        }
+        delete stale;
     }
 
     if (!arriveBuffer.empty()
@@ -128,6 +130,22 @@ void
 PipelinedSimpleMemory::MemoryPort::popOutputBuffer() {
     if (retryResp)
         return;
+    // Drop any stale responses sitting at the head of outputBuffer
+    // (Flash fetches that completed for a wrong-path streamId).
+    // The bus matrix on real silicon discards these for free; not
+    // dropping them here would incur a bus-send + master-reject cycle
+    // that delays the next valid response.
+    while (!outputBuffer.empty()
+            && outputBuffer.front().pkt->req->hasStreamId()
+            && outputBuffer.front().pkt->req->streamId()!=lastStreamId) {
+        PacketPtr stale = outputBuffer.front().pkt;
+        DPRINTF(PipelinedMem, "port[%d] dropping stale output addr=%#x "
+                "streamId=%d (current=%d)\n",
+                portId, stale->getAddr(),
+                stale->req->streamId(), lastStreamId);
+        outputBuffer.pop_front();
+        delete stale;
+    }
     if (!outputBuffer.empty()) {
         DPRINTF(PipelinedMem, "port[%d] popOutputBuffer: sending resp "
                 "addr=%#x type=%d tick=%d\n",
@@ -342,26 +360,24 @@ PipelinedSimpleMemory::MemoryPort::recvTimingReq(PacketPtr pkt)
         uint32_t streamId = pkt->req->streamId();
         if (lastStreamId != streamId) {
             DPRINTF(PipelinedMem, "port[%d] stream change %d -> %d, "
-                    "flushing stale arrivals\n",
+                    "dropping stale arrivals\n",
                     portId, lastStreamId, streamId);
             lastStreamId = streamId;
+            // Drop stale arrivals immediately — see comment in
+            // popArriveBuffer for the structural rationale (real
+            // bus matrix cancels speculative transfers for free).
             while (!arriveBuffer.empty()
                     && arriveBuffer.front().pkt->req->hasStreamId()
                     && arriveBuffer.front().pkt->req->streamId()!=streamId) {
                 PacketPtr stale = arriveBuffer.front().pkt;
-                DPRINTF(PipelinedMem, "port[%d] returning stale arrival "
+                DPRINTF(PipelinedMem, "port[%d] dropping stale arrival "
                         "addr=%#x streamId=%d (current=%d)\n",
                         portId, stale->getAddr(),
                         stale->req->streamId(), streamId);
                 mem.lineTraceEvent("retract", portId, stale->getAddr());
-                stale->makeResponse();
-                stale->setBadAddress();
                 arriveBuffer.pop();
-                staleReturnQueue.push_back(stale);
+                delete stale;
             }
-            if (!staleReturnQueue.empty() && !retryResp
-                    && !staleReturnEvent.scheduled())
-                mem.schedule(staleReturnEvent, curTick() + 1);
         }
     }
     if (arriveBufferSizeLimit != 0

@@ -117,6 +117,35 @@ struct DecodedSlot
 };
 
 /**
+ * NZCV flags forwarded from E to D in the same cycle E commits a
+ * flag-updating instruction.  Lets D resolve a 16-bit T1 Bcond
+ * combinationally against the just-committed flags instead of going
+ * through E's full redirect bubble (saves the wrong-path Flash
+ * serialization that motivated the +25 % calibration gap on the
+ * forward / align / alternating benchmarks).
+ *
+ * Producer: E's commitOne() reads CPSR after the inst executes and
+ * pulses the signal.  Consumer: D's tryDecodeOnlyResolveCondBranch
+ * reads the forwarded flags only — no misc-reg fallback — because
+ * StageOrder dispatches D (stageId=1) before E (stageId=2), so a
+ * misc-reg read on D's first fire would always see pre-commit flags
+ * in the very cycles where forwarding matters.
+ */
+struct ForwardedFlags
+{
+    uint8_t nz = 0;
+    bool c = false;
+    bool v = false;
+
+    bool
+    operator==(const ForwardedFlags &o) const
+    {
+        return nz == o.nz && c == o.c && v == o.v;
+    }
+    bool operator!=(const ForwardedFlags &o) const { return !(*this == o); }
+};
+
+/**
  * Two 'sides' for the asynchronous response router.  Selected by the
  * port that called Pipeline::onAsyncResponse.
  */

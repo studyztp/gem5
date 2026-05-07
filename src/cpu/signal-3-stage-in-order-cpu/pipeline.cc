@@ -84,11 +84,20 @@ Pipeline::Pipeline(SignalCPU &cpu, unsigned fifoCapacity)
     _execute->e_redirect_to_f.subscribe(_decode.get());
 
     // F <- D's same-cycle redirect (early-resolved direct
-    // unconditional branches).  Cortex-M4 has no D-side flag
-    // forwarding, so conditional branches go to E and never
-    // produce a D-redirect.
+    // unconditional branches AND decode-only-resolved 16-bit
+    // T1 Bcond — see decode.cc::tryDecodeOnlyResolveCondBranch).
     _fetch->setDRedirectInput(&_decode->d_redirect_to_f);
     _decode->d_redirect_to_f.subscribe(_fetch.get());
+
+    // D <- E's flag forwarding pulse.  E commits a flag-setter
+    // (or any inst — we pulse on every commit), pulses
+    // e_flags_to_d with post-commit NZCV, which re-queues D so
+    // a same-cycle dependent 16-bit T1 Bcond can resolve at D
+    // against just-committed flags instead of waiting for the
+    // full E-side redirect bubble.  This closes the +25 % gap
+    // on the forward / align / alternating BP benchmarks.
+    _decode->setEFlagsInput(&_execute->e_flags_to_d);
+    _execute->e_flags_to_d.subscribe(_decode.get());
 }
 
 void
@@ -174,6 +183,15 @@ Pipeline::checkAndTakeInterrupts()
     if (!_lsq->idle())
         return;
     if (_execute->busy())
+        return;
+    // Don't take interrupts mid-macro: a multi-uop macro (push,
+    // ldm/stm, ...) that's already committed some uops cannot be
+    // safely interrupted because the post-interrupt re-fetch
+    // restarts the macro from uop 0, double-counting the
+    // already-committed uops (e.g. pushing the same registers
+    // twice and corrupting the stack frame).  Defer until D
+    // finishes the macro expansion.
+    if (_decode->inMacroExpansion())
         return;
 
     auto *intr = _cpu.getInterruptController(0);

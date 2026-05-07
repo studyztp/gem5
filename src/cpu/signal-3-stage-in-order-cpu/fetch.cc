@@ -115,6 +115,148 @@ Fetch::noteResponseArrived()
         --_inFlight;
 }
 
+namespace {
+// Detect 16-bit Cortex-M Thumb branch encodings in a halfword.
+// Covers the redirecting 16-bit insts that show up in our microbench
+// kernels and the harness:
+//   - 16-bit B<cond>      `1101 cccc xxxx xxxx`  (cond != 0xE/0xF)
+//   - 16-bit B (uncond)   `11100 imm11`          (top 5 bits = 0x1C)
+//   - 16-bit BX/BLX       `0100 0111 X 0 mmm 000`
+//
+// 32-bit Thumb-2 branches (B.W / BL / BLX) are intentionally NOT
+// predecoded here.  Distinguishing a 32-bit branch (first hw top5
+// = 11110, second hw top1 = 1) from a non-branch 32-bit inst with
+// the same first-hw pattern (msr / mrs / etc.) requires a fuller
+// decoder than F has available.  Counting them as branches and
+// decrementing on every isControl commit at E would mismatch when
+// non-control 32-bit insts share the pattern.  Instead we
+// underestimate (no predecode for 32-bit branches) and pair the
+// decrement at E to 16-bit control insts only — see
+// Execute::commitOne.  The microbench kernels use 16-bit branches;
+// 32-bit BL/BLX in the harness prologue are bypassed cleanly
+// because no predecode increment ever fires for them.
+bool
+isLikelyBranch16(uint16_t hw)
+{
+    // 16-bit B<cond> imm8
+    if ((hw & 0xF000) == 0xD000) {
+        const unsigned cond = (hw >> 8) & 0xF;
+        return cond != 0xE && cond != 0xF;
+    }
+    // 16-bit B (unconditional) imm11
+    if ((hw & 0xF800) == 0xE000)
+        return true;
+    // 16-bit BX/BLX register
+    if ((hw & 0xFF00) == 0x4700)
+        return true;
+    return false;
+}
+
+// True if `hw` is the first halfword of a 32-bit Thumb-2 inst.
+// Per ARMv7-M ARM A5.1, top 5 bits in {11101, 11110, 11111}.
+bool
+isThumb2First(uint16_t hw)
+{
+    const unsigned top5 = (hw >> 11) & 0x1F;
+    return top5 == 0x1D || top5 == 0x1E || top5 == 0x1F;
+}
+
+// Predecode result: branch flag plus the sticky state for the
+// next word's predecode.  The sticky bit tells the next call
+// "your lo is the second half of a 32-bit Thumb-2 inst — skip it."
+struct PredecodeResult
+{
+    bool branchSeen;
+    bool nextWordLoIsThumb2Tail;
+};
+
+// Returns whether the 32-bit fetched word contains a live 16-bit
+// branch halfword (`branchSeen`), and whether the FOLLOWING word's
+// lo will be the second half of a 32-bit Thumb-2 inst started
+// here (`nextWordLoIsThumb2Tail`).
+//
+// Address filter: `minDeliverAddr` rules out halfwords below D's
+// current delivery point — e.g. the first halfword of a fetch
+// when the redirect target is mid-word and D will skip lo.
+// Without this filter, a flagged branch that never commits leaves
+// the F predecode counter stuck > 0 and hangs the CPU.
+//
+// Halfword classification: 32-bit Thumb-2 insts have a defining
+// first-half bit pattern (top5 in {11101, 11110, 11111}).  Their
+// second half is instruction *data* — register lists, immediates,
+// etc. — which can match 16-bit branch encodings by accident
+// (e.g. push.w {r4-r10,lr}'s hi = 0x47F0 matches BX, ubfx.w's tail
+// can match Bcond).  We must not predecode such tail bytes as
+// 16-bit insts.  Three positions:
+//   - lo = first-half-of-32-bit-from-prev-word (sticky in flag)
+//   - lo = first-half-of-32-bit (covers the whole word)
+//   - lo = 16-bit, hi = first-half-of-32-bit (hi's tail is in next word)
+// Each is handled below.  The `isLikelyBranch16` only flags 16-bit
+// branches, so 32-bit B.W/BL/BLX are NOT predecoded; F will
+// speculate past them, producing a small over-prediction in
+// kernels that contain 32-bit branches (none of the microbenches
+// here do — they're all 16-bit).
+PredecodeResult
+predecodeFetchWord(Addr wordAddr, uint32_t data, Addr minDeliverAddr,
+                   bool loIsThumb2Tail)
+{
+    const uint16_t lo = data & 0xFFFF;
+    const uint16_t hi = (data >> 16) & 0xFFFF;
+
+    PredecodeResult r{false, false};
+
+    // Case 1: lo is the second half of a 32-bit inst that started
+    // in the previous word.  Don't predecode lo — it's tail data.
+    // hi may be the start of a fresh inst (16-bit or 32-bit-first).
+    if (loIsThumb2Tail) {
+        if (isThumb2First(hi)) {
+            // hi starts a new 32-bit; its tail is in next word's lo.
+            r.nextWordLoIsThumb2Tail = true;
+        } else if ((wordAddr + 2) >= minDeliverAddr
+                   && isLikelyBranch16(hi)) {
+            r.branchSeen = true;
+        }
+        return r;
+    }
+
+    // Case 2: lo is itself the first half of a 32-bit inst.
+    // The word holds one 32-bit inst; nothing more to predecode.
+    if (isThumb2First(lo)) {
+        // Tail (hi) is data of the 32-bit inst, not a new inst.
+        // Next word's lo is a fresh inst (no sticky).
+        return r;
+    }
+
+    // Case 3: lo is a 16-bit inst.
+    if (wordAddr >= minDeliverAddr && isLikelyBranch16(lo)) {
+        r.branchSeen = true;
+        // Continue checking hi — there could be more in this word.
+    }
+
+    // hi position: at addr wordAddr+2.  Either 16-bit inst or
+    // first half of a 32-bit inst whose tail spans into next word.
+    if (isThumb2First(hi)) {
+        r.nextWordLoIsThumb2Tail = true;
+    } else if ((wordAddr + 2) >= minDeliverAddr
+               && isLikelyBranch16(hi)) {
+        r.branchSeen = true;
+    }
+
+    return r;
+}
+} // namespace
+
+void
+Fetch::noteBranchCommitted()
+{
+    if (_branchesInFlight > 0) {
+        --_branchesInFlight;
+        DPRINTF(Signal3CPUFetch,
+                "noteBranchCommitted: branchesInFlight now %u\n",
+                _branchesInFlight);
+    }
+}
+
 void
 Fetch::absorbStaging()
 {
@@ -164,6 +306,25 @@ Fetch::absorbStaging()
                 w.addr, w.data, fifo.size());
         _cpu.pipeline().lineTraceEvent("F.asyncResp");
         _cpu.signalStats().wordsDelivered++;
+        // Predecode for branch.  When a fetched word contains a
+        // branch halfword, F bumps a counter that gates further
+        // speculative issue (shouldIssueFetch).  E clears the
+        // counter via noteBranchCommitted() when the branch
+        // commits; squashStream resets it on redirect.  Models the
+        // Cortex-M4 PFU's behaviour of stopping at unresolved
+        // branches (TRM §1.4) — the silicon-measured forward-branch
+        // bubble of ~7 cy assumes no wrong-path Flash is in flight
+        // when the branch resolves at E.
+        const auto pd = predecodeFetchWord(
+            w.addr, w.data, _wordFifoMinAddr,
+            _nextWordLoIsThumb2Tail);
+        _nextWordLoIsThumb2Tail = pd.nextWordLoIsThumb2Tail;
+        if (pd.branchSeen) {
+            ++_branchesInFlight;
+            DPRINTF(Signal3CPUFetch,
+                    "predecode: branch in word %#x, branchesInFlight=%u\n",
+                    w.addr, _branchesInFlight);
+        }
     }
     currentCycleStaging.clear();
 }
@@ -179,6 +340,19 @@ Fetch::shouldIssueFetch() const
     // memory under the new stream tag.
     if (_eRedirectPendingNextCycle.has_value()
             || _dRedirectPendingNextCycle.has_value())
+        return false;
+
+    // PFU "stop-at-branch" gate (Cortex-M4 TRM §1.4): the
+    // prefetch unit does not speculate past an unresolved
+    // branch.  Once F has predecoded a branch in any FIFO word
+    // (set in absorbStaging), no further fetches are issued
+    // until E commits the branch (noteBranchCommitted) or a
+    // redirect clears the count (squashStream).  Without this
+    // gate, F speculatively pre-fetches past forward-cond
+    // branches, leaves Flash mid-access, and the right-path
+    // fetch waits for it to drain — the +25 % over silicon on
+    // forward / align / alternating in the calibration data.
+    if (_branchesInFlight > 0)
         return false;
 
     // The only other gate is the FIFO capacity: don't oversubscribe.
@@ -251,6 +425,15 @@ Fetch::squashStream()
     // Forget them locally so shouldIssueFetch() can grant new-stream
     // budget once the PC mux update lands next cycle.
     _inFlight = 0;
+    // All predecoded branches are resolved by the redirect (the
+    // taken case implies the branch's outcome was determined; any
+    // following branches in flight were on the wrong path and
+    // are now gone with the squashed FIFO).
+    _branchesInFlight = 0;
+    // Redirect target starts a fresh decode flow — clear the
+    // sticky 32-bit-tail bit (in-flight wrong-path 32-bit insts
+    // are squashed along with the FIFO).
+    _nextWordLoIsThumb2Tail = false;
     _cpu.bumpStreamId();
     publishHead();
 }
@@ -280,6 +463,18 @@ Fetch::applyRedirect(Addr target)
     // squashStream() + applyPcUpdate() across two cycles.
     squashStream();
     applyPcUpdate(target);
+    // Drop any pending D/E redirect from a prior cycle's settle —
+    // otherwise the next settle pass would apply the stale redirect
+    // and overwrite this immediate redirect's PC.  Hits when an
+    // interrupt fires the cycle after D resolves a cond branch via
+    // forwarded flags: D's d_redirect_to_f is sampled into the
+    // pending register at end of the prior cycle, then the IRQ
+    // arrives at the next cycle's edge and calls applyRedirect()
+    // before settle; without this clear, the IRQ's PC is then
+    // clobbered by the still-pending d_redirect_to_f target.
+    _eRedirectPendingThisCycle.reset();
+    _dRedirectPendingThisCycle.reset();
+    _redirectAppliedThisCycle = true;
 }
 
 void

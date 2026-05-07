@@ -85,6 +85,8 @@ class Decode : public Stage
     void setEAcceptInput(Signal<bool> *s) { _eAcceptInput = s; }
     void setERedirectInput(Signal<std::optional<Addr>> *s)
     { _eRedirectInput = s; }
+    void setEFlagsInput(Signal<ForwardedFlags> *s)
+    { _eFlagsInput = s; }
 
     /* ---- Apply redirect from E (resets decoder & dSlot) ---- */
     void applyRedirect(Addr target);
@@ -141,12 +143,60 @@ class Decode : public Stage
     /* Bound by Pipeline ctor to Execute's e_redirect_to_f output. */
     Signal<std::optional<Addr>> *_eRedirectInput = nullptr;
 
+    /* Bound by Pipeline ctor to Execute's e_flags_to_d output.
+     * Pulse signal carrying post-commit NZCV; D reads it on
+     * settle re-fires triggered by E's commit so a same-cycle
+     * 16-bit T1 Bcond can resolve at D against just-committed
+     * flags instead of redirecting at E. */
+    Signal<ForwardedFlags> *_eFlagsInput = nullptr;
+
+    /* Address of an unresolved 16-bit T1 Bcond that D decoded
+     * this cycle but couldn't resolve because forwarded flags
+     * weren't valid yet (D fires at stageId=1 before E at
+     * stageId=2).  Set by tryDecodeOnlyResolveCondBranch when it
+     * defers; cleared on successful re-resolution, on
+     * applyRedirect, and at beginCycle.  When E pulses
+     * e_flags_to_d it re-queues D; D's settle then retries the
+     * resolve via retryPendingCondBranchResolve(). */
+    std::optional<Addr> _pendingCondBranchAddr;
+
+    /* Cached fall-through address for the pending cond branch.
+     * Used by retryPendingCondBranchResolve() to recover the
+     * full slot from dSlot.in() and re-apply resolution. */
+    Addr _pendingCondBranchFallThrough = 0;
+
+    /* Re-attempt resolution of a cond branch that was decoded
+     * earlier in this same cycle but couldn't resolve because
+     * forwarded flags hadn't arrived yet.  Called at the top of
+     * settle() when _pendingCondBranchAddr is set and the
+     * forwarded-flags signal has since pulsed. */
+    void retryPendingCondBranchResolve();
+
+    /* True iff dSlot.out() holds an instruction that writes
+     * MISCREG_CPSR — i.e. a flag-setter that E may commit this
+     * cycle.  Used to gate the CPSR misc-reg fallback in
+     * tryDecodeOnlyResolveCondBranch: when this returns true and
+     * forwarded flags aren't yet valid, the misc-reg holds
+     * pre-commit (stale) flags so we must defer resolution. */
+    bool dSlotOutHasPendingFlagSetter() const;
+
     /* Try to early-resolve a just-decoded direct unconditional
      * branch from its immediate offset.  Returns true if
      * resolution happened (slot marked earlyResolved, possibly
-     * d_redirect_to_f written).  Cortex-M4 has no D-side flag
-     * forwarding, so conditional and indirect branches go to E. */
+     * d_redirect_to_f written).  Indirect branches go to E
+     * (need register reads).  Conditional branches resolve via
+     * tryDecodeOnlyResolveCondBranch (16-bit T1 Bcond) or fall
+     * through to E (32-bit T3 B.W cond). */
     bool tryEarlyResolveBranch(DecodedSlot &ds);
+
+    /** Decode-only resolution for 16-bit T1 Bcond.  Reads cond
+     *  field + imm8 from the inst encoding, evaluates against
+     *  current NZCV from CPSR, computes target — no execute()
+     *  call, no thread-state mutation.  Returns true if the
+     *  branch was resolved (ds.earlyResolved set, possibly
+     *  d_redirect_to_f pulsed); false if the inst isn't a
+     *  16-bit T1 Bcond and should be resolved at E. */
+    bool tryDecodeOnlyResolveCondBranch(DecodedSlot &ds);
 
     /* ---- Macro-op micro-op expansion (Minor-style) -----------------
      *

@@ -31,6 +31,7 @@
 
 #include <sstream>
 
+#include "arch/arm/regs/cc.hh"
 #include "arch/generic/pcstate.hh"
 #include "base/logging.hh"
 #include "cpu/signal-3-stage-in-order-cpu/exec_context.hh"
@@ -39,6 +40,7 @@
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Signal3CPUExecute.hh"
+#include "debug/Signal3CPUFlagsFwd.hh"
 #include "sim/faults.hh"
 #include "sim/insttracer.hh"
 
@@ -54,6 +56,8 @@ Execute::Execute(SignalGraph &g, SignalCPU &cpu, Decode &decode,
                  /*pulse=*/false),
       e_redirect_to_f(g, "e_redirect_to_f", /*fromStage=*/this,
                       /*pulse=*/true),
+      e_flags_to_d(g, "e_flags_to_d", /*fromStage=*/this,
+                   /*pulse=*/true),
       _cpu(cpu),
       _decode(decode),
       _lsq(lsq),
@@ -150,6 +154,40 @@ Execute::commitOne()
                 "commit (early-resolved) pc=%#x nextPc=%#x\n",
                 e.addr, e.resolvedNpc);
         _cpu.signalStats().instsCommitted++;
+        // PFU stop-at-branch resolution.  Must be called for
+        // ANY committed 16-bit control inst, including the
+        // early-resolved ones — otherwise F's _branchesInFlight
+        // counter never decrements for not-taken cond branches
+        // resolved at D (squashStream() only zeroes it on
+        // redirect), and F stops fetching forever.  Mirrors the
+        // call in the regular commit path below.
+        if (e.staticInst && e.staticInst->isControl()
+                && e.instSize == 2) {
+            _cpu.pipeline().getFetch().noteBranchCommitted();
+        }
+        // Pulse forwarded flags so D's same-cycle dependent
+        // cond-branch sees a valid value on its refire.  The
+        // early-resolved fast path covers direct uncond branches
+        // (B/BL), which don't modify NZCV, plus decode-only
+        // resolved 16-bit T1 Bcond (also non-flag-modifying);
+        // the pulse just carries the unchanged flags.
+        //
+        // ARM keeps NZCV in dedicated CC regs (cc_reg::Nz / C / V),
+        // not in MISCREG_CPSR — flag-setting insts write the CC regs
+        // directly, so we read from them here.
+        {
+            ThreadContext *tc = thread.getTC();
+            ForwardedFlags ff{
+                (uint8_t) tc->getReg(ArmISA::cc_reg::Nz),
+                (bool)    tc->getReg(ArmISA::cc_reg::C),
+                (bool)    tc->getReg(ArmISA::cc_reg::V)
+            };
+            DPRINTF(Signal3CPUFlagsFwd,
+                    "fwd flags pulse [er] pc=%#x nz=%u c=%u v=%u\n",
+                    e.addr, (unsigned)ff.nz, (unsigned)ff.c,
+                    (unsigned)ff.v);
+            e_flags_to_d.write(ff);
+        }
         _eSlot.reset();
         _committedThisCycle = true;
         // Re-publish e_accept_d now that the slot is gone.
@@ -232,10 +270,26 @@ Execute::commitOne()
             return;
         }
         // FU is Complete this cycle — execute and retire.
+        const ThreadContext *_dbg_tc = thread.getTC();
+        const RegVal _pre_nz =
+            _dbg_tc->getReg(ArmISA::cc_reg::Nz);
+        const RegVal _pre_c  =
+            _dbg_tc->getReg(ArmISA::cc_reg::C);
         fault = inst->execute(&ctx, traceData);
         panic_if(fault != NoFault,
                  "Execute: ALU fault from execute(): %s",
                  fault->name());
+        const RegVal _post_nz =
+            _dbg_tc->getReg(ArmISA::cc_reg::Nz);
+        const RegVal _post_c  =
+            _dbg_tc->getReg(ArmISA::cc_reg::C);
+        DPRINTF(Signal3CPUFlagsFwd,
+                "ALU exec pc=%#x %s pre nz=%llu c=%llu post nz=%llu c=%llu\n",
+                e.addr, inst->getName().c_str(),
+                (unsigned long long)_pre_nz,
+                (unsigned long long)_pre_c,
+                (unsigned long long)_post_nz,
+                (unsigned long long)_post_c);
         _alu.release();
     } else {
         // Non-memory, non-ALU inst (control / floating-point /
@@ -285,6 +339,41 @@ Execute::commitOne()
 
     _cpu.pipeline().lineTraceEvent(
         inst->isMicroop() && !isLast ? "E.commit-uop" : "E.commit");
+
+    // PFU stop-at-branch resolution: when E commits a 16-bit
+    // control inst, F's predecode counter for that branch is
+    // decremented.  squashStream() handles the redirect case by
+    // clearing the counter wholesale; this is for the no-redirect
+    // path (not-taken 16-bit cond-branches).  Restricted to 16-bit
+    // because F's predecode only flags 16-bit branches (32-bit
+    // Thumb branches share encoding patterns with non-control
+    // 32-bit insts and aren't predecoded — see fetch.cc's
+    // isLikelyBranch16 / fetchWordContainsBranch comments).
+    if (isLast && inst->isControl() && e.instSize == 2) {
+        _cpu.pipeline().getFetch().noteBranchCommitted();
+    }
+
+    // Forward post-commit NZCV to D.  Pulsed on every commit
+    // (not just flag-setters) so that D's same-cycle re-fire on
+    // this pulse always observes a valid value; the equality
+    // guard suppresses redundant cascades when consecutive
+    // commits don't change the flags.
+    //
+    // ARM keeps NZCV in dedicated CC regs (cc_reg::Nz / C / V),
+    // not in MISCREG_CPSR — flag-setting insts write the CC regs
+    // directly, so we read from them here.
+    {
+        ThreadContext *tc = thread.getTC();
+        ForwardedFlags ff{
+            (uint8_t) tc->getReg(ArmISA::cc_reg::Nz),
+            (bool)    tc->getReg(ArmISA::cc_reg::C),
+            (bool)    tc->getReg(ArmISA::cc_reg::V)
+        };
+        DPRINTF(Signal3CPUFlagsFwd,
+                "fwd flags pulse pc=%#x nz=%u c=%u v=%u\n",
+                e.addr, (unsigned)ff.nz, (unsigned)ff.c, (unsigned)ff.v);
+        e_flags_to_d.write(ff);
+    }
 
     _eSlot.reset();
     _committedThisCycle = true;
