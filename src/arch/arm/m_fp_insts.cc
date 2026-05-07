@@ -44,6 +44,7 @@
 #include <sstream>
 
 #include "arch/arm/insts/fplib.hh"  // fplibMulAdd: bit-exact software FMA
+#include "arch/arm/insts/vfp.hh"    // vfp{S,U}FixedToFpS, vfpFpToFixed
 #include "arch/arm/m_faults.hh"
 #include "arch/arm/m_insts.hh"     // mProfilePredicateHolds (IT-block gate)
 #include "arch/arm/regs/int.hh"
@@ -957,6 +958,89 @@ MFpCvtS::generateDisassembly(Addr pc,
         ss << "vcvt." << (isSigned ? "s32" : "u32") << ".f32";
     }
     ss << " s" << dest << ", s" << op1;
+    return ss.str();
+}
+
+// =====================================================================
+// MFpCvtFixedS — VCVT (single-precision float ↔ fixed-point with #fbits)
+// =====================================================================
+
+Fault
+MFpCvtFixedS::doFpOp(ExecContext *xc,
+                     trace::InstRecord *traceData) const
+{
+    ThreadContext *tc = xc->tcBase();
+    FPSCR fpscr = tc->readMiscRegNoEffect(MISCREG_FPSCR);
+
+    uint32_t srcBits = (uint32_t)tc->getReg(vfpSRegId(op1));
+    uint32_t resultBits;
+
+    if (toFloat) {
+        // Fixed-point integer → float.  Reuse gem5's existing helpers
+        // so rounding / FZ / DN behaviour matches the A-profile path
+        // for the same encoding.  The helpers internally fesetround()
+        // and read FE flags; FPSCR exception bits are updated below.
+        float result;
+        if (isSigned) {
+            int32_t intVal;
+            std::memcpy(&intVal, &srcBits, 4);
+            result = vfpSFixedToFpS(fpscr.fz, fpscr.dn,
+                                    (int64_t)intVal, intWidth, fbits);
+        } else {
+            result = vfpUFixedToFpS(fpscr.fz, fpscr.dn,
+                                    (uint64_t)srcBits, intWidth, fbits);
+        }
+        resultBits = floatToBits32(result);
+    } else {
+        // Float → fixed-point integer (round-toward-zero per ARM spec).
+        float srcFloat = bitsToFloat32(srcBits);
+
+        // Flush denormal input if FPSCR.FZ; matches MFpCvtS handling.
+        if (fpscr.fz && isDenormal(srcFloat)) {
+            srcFloat = std::copysign(0.0f, srcFloat);
+            fpscr.idc = 1;
+        }
+
+        // vfpFpToFixed handles NaN / overflow saturation and updates
+        // host FE flags; we narrow to the encoded width below.
+        uint64_t fixedRaw = vfpFpToFixed<float>(
+            srcFloat, isSigned, intWidth, fbits);
+        if (intWidth == 16) {
+            resultBits = (uint32_t)(uint16_t)fixedRaw;
+        } else {
+            resultBits = (uint32_t)fixedRaw;
+        }
+    }
+
+    // Mirror MFpCvtS: only IXC is propagated from host FE flags here;
+    // the helpers leave the rest in a consistent state.
+    int excepts = std::fetestexcept(FE_ALL_EXCEPT);
+    if (excepts & FE_INEXACT) fpscr.ixc = 1;
+    if (excepts & FE_INVALID) fpscr.ioc = 1;
+
+    tc->setReg(vfpSRegId(dest), (RegVal)resultBits);
+    tc->setMiscRegNoEffect(MISCREG_FPSCR, fpscr);
+
+    if (traceData)
+        traceData->setData(vecElemClass, (RegVal)resultBits);
+
+    return NoFault;
+}
+
+std::string
+MFpCvtFixedS::generateDisassembly(Addr pc,
+    const loader::SymbolTable *symtab) const
+{
+    std::ostringstream ss;
+    const char *intTy = isSigned
+        ? (intWidth == 16 ? "s16" : "s32")
+        : (intWidth == 16 ? "u16" : "u32");
+    if (toFloat) {
+        ss << "vcvt.f32." << intTy;
+    } else {
+        ss << "vcvt." << intTy << ".f32";
+    }
+    ss << " s" << dest << ", s" << op1 << ", #" << (int)fbits;
     return ss.str();
 }
 

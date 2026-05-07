@@ -663,6 +663,70 @@ class MFpCvtS : public MFpOp
 };
 
 // =====================================================================
+// MFpCvtFixedS — VCVT between single-precision float and fixed-point.
+// Handles the four #imm-fbits encodings (Armv7-M ARM A7.7.219):
+//   VCVT.F32.S<w>   Sd, Sd, #fbits  (signed fixed → float)    opc2=0xa
+//   VCVT.F32.U<w>   Sd, Sd, #fbits  (unsigned fixed → float)  opc2=0xb
+//   VCVT.S<w>.F32   Sd, Sd, #fbits  (float → signed fixed)    opc2=0xf
+//   VCVT.U<w>.F32   Sd, Sd, #fbits  (float → unsigned fixed)  opc2=0xe
+// where w = intWidth ∈ {16, 32} (sx flag = bit 7).
+//
+// Replaces the A-profile VcvtSFixedFpS / VcvtUFixedFpS / VcvtFpSFixedS /
+// VcvtFpUFixedS path, which calls checkAdvSIMDOrFPEnabled32() and
+// segfaults on M-profile (ArmMSystem doesn't inherit from ArmSystem,
+// so getArmSystem() does a UB static_cast).  The MFpOp base wraps
+// doFpOp() with the M-profile FP-enable check (CPACR.cp10/cp11),
+// CONTROL.FPCA, and lazy stacking — none of which need ArmSystem.
+//
+// On the encoding, source and destination registers are the same Vd,
+// so we keep both fields for symmetry with MFpCvtS (and so the
+// dependency tracker sees a read-then-write on Sd).
+// =====================================================================
+
+class MFpCvtFixedS : public MFpOp
+{
+  private:
+    RegId srcRegIdxArr[2];
+    RegId destRegIdxArr[2];
+
+  protected:
+    RegIndex dest, op1;
+    bool toFloat;       // true: fixed → float, false: float → fixed
+    bool isSigned;      // true: S<w>, false: U<w>
+    uint8_t intWidth;   // 16 (sx=0) or 32 (sx=1)
+    uint8_t fbits;      // fractional bits, derived from sx and i:imm4
+
+    Fault doFpOp(ExecContext *xc,
+                 trace::InstRecord *traceData) const override;
+
+  public:
+    MFpCvtFixedS(ExtMachInst mach_inst, RegIndex _dest, RegIndex _op1,
+                 bool _toFloat, bool _isSigned,
+                 uint8_t _intWidth, uint8_t _fbits)
+        : MFpOp("vcvt", mach_inst, SimdFloatCvtOp),
+          dest(_dest), op1(_op1),
+          toFloat(_toFloat), isSigned(_isSigned),
+          intWidth(_intWidth), fbits(_fbits)
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        setSrcRegIdx(_numSrcRegs++, vfpSRegId(op1));
+        setSrcRegIdx(_numSrcRegs++, miscRegClass[MISCREG_FPSCR]);
+        setDestRegIdx(_numDestRegs++, vfpSRegId(dest));
+        _numTypedDestRegs[vecElemClass.type()]++;
+        setDestRegIdx(_numDestRegs++, miscRegClass[MISCREG_FPSCR]);
+        _numTypedDestRegs[miscRegClass.type()]++;
+    }
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+// =====================================================================
 // MFpCmpS — VCMP.F32, VCMPE.F32
 class MFpCmpS : public MFpOp
 {
