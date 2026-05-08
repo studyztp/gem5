@@ -20,6 +20,8 @@ ART::ART(const ARTCacheParams &p)
       artPrefetchOrder(0),
       artRequestorId(p.system->getRequestorId(this)),
       bufferHitLatency(p.buffer_hit_latency),
+      portAhbBufferSize(p.port_ahb_buffer_size),
+      portAhbBufferLatency(p.port_ahb_buffer_latency),
       flashStartAddr(p.flash_start_addr),
       flashEndAddr(p.flash_end_addr),
       arriveBufferSizeLimit(p.arrive_buffer_size),
@@ -37,6 +39,7 @@ ART::ART(const ARTCacheParams &p)
           name() + ".staleReturn"),
       prefetchBuffer(pfBlkSize),
       currentBuffer(pfBlkSize),
+      ahbBuffer(portAhbBufferSize ? portAhbBufferSize : 1),
       nextPfAddr(0),
       artPfEntry("ART Prefetch Entry", pfBlkSize),
       bypassCacheEntry("Bypass Cache Entry"),
@@ -52,12 +55,13 @@ ART::ART(const ARTCacheParams &p)
     DPRINTF(ARTCache,
             "ART created: directMemoryMode=%s, enablePrefetch=%s, "
             "enablePipeline=%s, prefetchOnCacheHit=%s, pfBlkSize=%u, "
-            "flash=[%#x, %#x]\n",
+            "ahbBufSize=%u, ahbBufLat=%lluTicks, flash=[%#x, %#x]\n",
             directMemoryMode ? "true" : "false",
             enablePrefetch ? "true" : "false",
             enablePipeline ? "true" : "false",
-            prefetchOnCacheHit ? "true" : "false", pfBlkSize, flashStartAddr,
-            flashEndAddr);
+            prefetchOnCacheHit ? "true" : "false", pfBlkSize,
+            portAhbBufferSize, (unsigned long long)portAhbBufferLatency,
+            flashStartAddr, flashEndAddr);
 }
 
 // -------------------------------------------------------------------
@@ -266,6 +270,61 @@ ART::serveFromBuffer(PacketPtr pkt, ARTPrefetchBuffer &buf)
     // this point, so the response is bound to that slot. In the
     // pipelined path, it is false (multiple buffer hits can be in
     // flight simultaneously, none binding the slot).
+    pushToOutputBuffer(pkt, readyTick,
+                       /*boundToInFlight=*/processingInFlight);
+    // Mirror the just-served line into the port AHB buffer so the
+    // next sequential access within the same line can serve at one
+    // AHB data-phase (portAhbBufferLatency) without re-traversing
+    // the buffer/cache lookup. No-op when AHB buffer is disabled.
+    updateAHBBufferFromLine(buf);
+}
+
+void
+ART::updateAHBBufferFromLine(const ARTPrefetchBuffer &src)
+{
+    if (portAhbBufferSize == 0 || !src.isValid())
+        return;
+    // The AHB buffer mirrors a line of size portAhbBufferSize. The
+    // source buffer (curBuf / pfBuf) is pfBlkSize bytes; we copy the
+    // entire line if sizes match, else just the portAhbBufferSize
+    // sub-block aligned to the line.
+    panic_if(portAhbBufferSize > pfBlkSize,
+             "port_ahb_buffer_size (%u) cannot exceed pf_blk_size (%u)",
+             portAhbBufferSize, pfBlkSize);
+    Addr line_addr = src.addr & ~(Addr(portAhbBufferSize) - 1);
+    // Copy the matching sub-block from src.data into ahbBuffer.
+    Addr offset = line_addr - src.addr;
+    ahbBuffer.storeData(line_addr,
+                        const_cast<ARTPrefetchBuffer&>(src).data.data()
+                            + offset);
+    DPRINTF(ARTCache, "updateAHBBufferFromLine: ahbBuffer <- addr=%s "
+            "(size=%u)\n", addrToString(line_addr), portAhbBufferSize);
+    lineTraceEvent("ahbBufFill", line_addr, "fromBuf");
+}
+
+void
+ART::updateAHBBufferFromRaw(Addr blk_addr, const uint8_t *src_data)
+{
+    if (portAhbBufferSize == 0 || src_data == nullptr)
+        return;
+    Addr line_addr = blk_addr & ~(Addr(portAhbBufferSize) - 1);
+    ahbBuffer.storeData(line_addr, src_data);
+    DPRINTF(ARTCache, "updateAHBBufferFromRaw: ahbBuffer <- addr=%s "
+            "(size=%u)\n", addrToString(line_addr), portAhbBufferSize);
+    lineTraceEvent("ahbBufFill", line_addr, "fromRaw");
+}
+
+void
+ART::serveFromAHBBuffer(PacketPtr pkt)
+{
+    pkt->setData(ahbBuffer.getData(pkt->getAddr(), pkt->getSize()));
+    pkt->makeTimingResponse();
+    // AHB-buffer hit pays only the AHB data-phase. The CPU-side port
+    // delivers it at +portAhbBufferLatency. processingInFlight is
+    // false in the pipelined path; the response is unbound (multiple
+    // AHB-buffer hits can pipeline back-to-back).
+    Tick readyTick = std::max(curTick() + portAhbBufferLatency + 1,
+                              clockEdge(Cycles(0)));
     pushToOutputBuffer(pkt, readyTick,
                        /*boundToInFlight=*/processingInFlight);
 }
@@ -545,6 +604,32 @@ ART::popArriveBufferPipelined()
     arriveBuffer.pop_front();
     maybeUnblockArriveBuffer();
     lineTraceEvent("popArr", pkt->getAddr());
+
+    // ---- Case 0: AHB buffer hit (port-side data-phase pipelining) ----
+    // The AHB buffer mirrors the most recently delivered line at the
+    // cpuSidePort. Sequential within-line accesses (e.g. the second
+    // 32-bit Thumb-2 instruction in an 8-byte ART line) hit here and
+    // pay only one AHB data-phase, pipelining with the next request's
+    // address phase. Per RM0440 Figure 3 (3 WS, with prefetch), the
+    // AHB protocol delivers consecutive within-line fetches at 1 HCLK
+    // pitch — this is what models that behavior.
+    if (portAhbBufferSize > 0 && !pkt->isSecure() &&
+        ahbBuffer.isHit(pkt->getAddr())) {
+        DPRINTF(ARTCache,
+                "popArriveBufferPipelined: AHB-buffer hit addr=%s\n",
+                addrToString(pkt->getAddr()));
+        ++stats.currentBufferHits;  // count as a buffer hit (no flash)
+        serveFromAHBBuffer(pkt);
+        lineTraceEvent("ahbBufHit", pkt->getAddr());
+        // Schedule next address phase (pipeline)
+        if (!arriveBuffer.empty() &&
+                !popArriveBufferEvent.scheduled()) {
+            Tick next = curTick() + addressPhaseLatency;
+            schedule(popArriveBufferEvent,
+                     std::max(next, curTick()));
+        }
+        return;
+    }
 
     // ---- Classify case (read-only on shared state) ----
     // Only buffer hits are pipelined. Cache hits go to NoncoherentCache
@@ -1027,6 +1112,9 @@ ART::recvTimingResp(PacketPtr pkt)
                 // bypassCacheEntry, so mark the response as bound.
                 pushToOutputBuffer(cpuPkt, clockEdge(Cycles(1)),
                                    /*boundToInFlight=*/true);
+                // Mirror the bypass-delivered line into the AHB buffer.
+                updateAHBBufferFromRaw(pkt->getAddr(),
+                                       pkt->getPtr<uint8_t>());
                 state->cpuPkt = nullptr;
                 delete state;
                 cachePktEntry = nullptr;
@@ -1035,6 +1123,8 @@ ART::recvTimingResp(PacketPtr pkt)
                 // No translate state — send response as-is
                 pushToOutputBuffer(pkt, clockEdge(Cycles(1)),
                                    /*boundToInFlight=*/true);
+                updateAHBBufferFromRaw(pkt->getAddr(),
+                                       pkt->getPtr<uint8_t>());
             }
 
             entry->deallocate();
@@ -1065,6 +1155,11 @@ ART::recvTimingResp(PacketPtr pkt)
 
             prefetchBuffer.storeData(
                 entry->blkAddr, pkt->getPtr<uint8_t>());
+            // The line just landed at the AHB port — mirror it into
+            // the AHB buffer so the next within-line CPU access can
+            // pipeline through the AHB data-phase path.
+            updateAHBBufferFromRaw(entry->blkAddr,
+                                   pkt->getPtr<uint8_t>());
 
             if (entry->ifCPUWaiting()) {
                 DPRINTF(ARTCache,
@@ -1190,6 +1285,9 @@ ART::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time)
     // that to determine whether this response drains the in-flight slot.
     pushToOutputBuffer(cpuPkt, request_time,
                        /*boundToInFlight=*/processingInFlight);
+    // Mirror the cache-hit line into the AHB buffer so subsequent
+    // within-line accesses can pipeline through the AHB data-phase.
+    updateAHBBufferFromRaw(pkt->getAddr(), pkt->getPtr<uint8_t>());
 
     state->cpuPkt = nullptr;
     delete state;
@@ -1278,6 +1376,12 @@ ART::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
             // serialized path (case 7). Mark response bound.
             pushToOutputBuffer(tgt_pkt, completion_time,
                                /*boundToInFlight=*/true);
+            // Mirror the MSHR-completed line into the AHB buffer so
+            // subsequent within-line accesses can pipeline through
+            // the AHB data-phase path.
+            if (pkt && pkt->getPtr<uint8_t>())
+                updateAHBBufferFromRaw(pkt->getAddr(),
+                                       pkt->getPtr<uint8_t>());
 
             if (cachePktToDelete)
                 delete cachePktToDelete;

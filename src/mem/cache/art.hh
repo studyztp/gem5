@@ -82,6 +82,16 @@ class ART : public NoncoherentCache
     /** Latency (in ticks) for serving from the ART prefetch/current buffer. */
     const Tick bufferHitLatency;
 
+    /**
+     * Size in bytes of the port-level AHB buffer. Mirrors the most
+     * recently delivered line at the cpuSidePort. 0 disables the
+     * AHB buffer entirely.
+     */
+    const unsigned portAhbBufferSize;
+
+    /** Latency (in ticks) for an AHB-buffer hit at the port. */
+    const Tick portAhbBufferLatency;
+
     /** Start of the flash memory region (prefetch bounds check). */
     const Addr flashStartAddr;
 
@@ -371,6 +381,21 @@ class ART : public NoncoherentCache
     /** Holds the previously prefetched line available for CPU hits. */
     ARTPrefetchBuffer currentBuffer;
 
+    /**
+     * Port-level AHB buffer.
+     *
+     * Mirrors the most recently delivered line at the cpuSidePort
+     * (via curBuf hit, pfBuf hit, cache hit, or flash response).
+     * Subsequent CPU requests whose address falls within this line
+     * are served at portAhbBufferLatency (one AHB-Lite data-phase),
+     * pipelining with the next request's address phase. This models
+     * the AHB-Lite back-to-back transfer behavior shown in
+     * RM0440 Figure 3 (sequential 16-bit + prefetch, 3 WS).
+     *
+     * Disabled when portAhbBufferSize == 0.
+     */
+    ARTPrefetchBuffer ahbBuffer;
+
     /** Next sequential address to prefetch. */
     Addr nextPfAddr;
 
@@ -384,6 +409,33 @@ class ART : public NoncoherentCache
      * @param buf  The prefetch buffer to serve from.
      */
     void serveFromBuffer(PacketPtr pkt, ARTPrefetchBuffer &buf);
+
+    /**
+     * Update the port-level AHB buffer with the line just delivered.
+     * Called after every successful serve path (curBuf, pfBuf, cache
+     * hit, prefetch response, bypass response). No-op when the AHB
+     * buffer is disabled (portAhbBufferSize == 0).
+     *
+     * @param src  The buffer whose data is being delivered to the CPU.
+     */
+    void updateAHBBufferFromLine(const ARTPrefetchBuffer &src);
+
+    /**
+     * Update the port-level AHB buffer from a raw response packet.
+     * Used when the line came from flash/cache (not from one of the
+     * ART buffers).
+     *
+     * @param blk_addr  Block-aligned source address.
+     * @param src_data  Pointer to at least portAhbBufferSize bytes.
+     */
+    void updateAHBBufferFromRaw(Addr blk_addr, const uint8_t *src_data);
+
+    /**
+     * Serve a CPU request from the AHB buffer. Pushes a response to
+     * outputBuffer at +portAhbBufferLatency (AHB data-phase). Caller
+     * has already verified ahbBuffer.isHit(pkt->getAddr()).
+     */
+    void serveFromAHBBuffer(PacketPtr pkt);
 
     // ---------------------------------------------------------------
     //  Prefetch queue entry

@@ -77,6 +77,8 @@ class STM32G474RETunableBoardART(STM32G474RETimingBoard):
         art_buffer_hit_latency: str = "0ns",
         art_enable_pipeline: bool = True,
         art_arrive_buffer_size: int = 1,
+        art_port_ahb_buffer_size: int = 8,
+        art_port_ahb_buffer_latency: str = "0ns",
         **kwargs,
     ):
         # Force ART on; that is the whole point of this tunable.
@@ -112,6 +114,10 @@ class STM32G474RETunableBoardART(STM32G474RETimingBoard):
                 cache.enable_pipeline = art_enable_pipeline
             if hasattr(cache, "arrive_buffer_size"):
                 cache.arrive_buffer_size = art_arrive_buffer_size
+            if hasattr(cache, "port_ahb_buffer_size"):
+                cache.port_ahb_buffer_size = art_port_ahb_buffer_size
+            if hasattr(cache, "port_ahb_buffer_latency"):
+                cache.port_ahb_buffer_latency = art_port_ahb_buffer_latency
             patched_cache.append(name)
 
         self._tunable_art_flash_latency = art_flash_latency
@@ -119,6 +125,8 @@ class STM32G474RETunableBoardART(STM32G474RETimingBoard):
         self._tunable_art_buffer_hit_latency = art_buffer_hit_latency
         self._tunable_art_enable_pipeline = art_enable_pipeline
         self._tunable_art_arrive_buffer_size = art_arrive_buffer_size
+        self._tunable_art_port_ahb_buffer_size = art_port_ahb_buffer_size
+        self._tunable_art_port_ahb_buffer_latency = art_port_ahb_buffer_latency
         self._tunable_art_patched_mem = tuple(patched_mem)
         self._tunable_art_patched_cache = tuple(patched_cache)
 
@@ -129,6 +137,8 @@ class STM32G474RETunableBoardART(STM32G474RETimingBoard):
             f"buf_hit={self._tunable_art_buffer_hit_latency}, "
             f"pipeline={self._tunable_art_enable_pipeline}, "
             f"arr_buf={self._tunable_art_arrive_buffer_size}, "
+            f"ahb_buf_sz={self._tunable_art_port_ahb_buffer_size}, "
+            f"ahb_buf_lat={self._tunable_art_port_ahb_buffer_latency}, "
             f"mem={list(self._tunable_art_patched_mem)}, "
             f"caches={list(self._tunable_art_patched_cache)}]"
         )

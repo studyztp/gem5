@@ -234,4 +234,24 @@ class ARTCache(NoncoherentCache):
         "to elapse before the next can be processed (legacy behavior).",
     )
 
+    port_ahb_buffer_size = Param.Unsigned(
+        8,
+        "Size in bytes of the port-level AHB buffer. Mirrors the most "
+        "recently delivered flash/cache/prefetch line at the AHB port. "
+        "When the next CPU request falls within the buffered line, it "
+        "is served at port_ahb_buffer_latency (one AHB data-phase) "
+        "instead of re-traversing the current/prefetch/cache lookup. "
+        "Models AHB-Lite back-to-back transfer pipelining: per RM0440 "
+        "Figure 3 (sequential 16-bit + prefetch, 3 WS), AHB delivers "
+        "consecutive instruction fetches at 1 HCLK pitch. "
+        "Set 0 to disable.",
+    )
+
+    port_ahb_buffer_latency = Param.Latency(
+        "0ns",
+        "Latency for an AHB-buffer hit at the port. Models the AHB-Lite "
+        "data-phase elapsed when the requested word is already buffered "
+        "from a recent transfer (~1 HCLK at 170 MHz).",
+    )
+
     blk_size = Self.cache_blk_size
