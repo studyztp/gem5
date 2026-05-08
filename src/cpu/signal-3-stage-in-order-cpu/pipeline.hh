@@ -65,7 +65,8 @@ class SignalCPU;
 class Pipeline : public Ticked
 {
   public:
-    Pipeline(SignalCPU &cpu, unsigned fifoCapacity);
+    Pipeline(SignalCPU &cpu, unsigned fifoCapacity,
+             unsigned maxOutstandingFetches);
 
     void evaluate() override;
 
@@ -132,7 +133,7 @@ class Pipeline : public Ticked
      *  pending issues, or staged async responses; D is mid-macro or
      *  has a latched output E hasn't accepted; E has a slot in
      *  flight; LSQ is non-idle; or an icache port retry is owed. */
-    bool computeNeedUpdate() const;
+    bool computeNeedUpdate();
 
     /** True only when it is safe to stop ticking right now: no Settle
      *  is mid-flight, LSQ is idle (no half-issued memref), and E has

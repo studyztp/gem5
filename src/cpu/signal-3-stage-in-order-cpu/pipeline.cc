@@ -55,13 +55,15 @@ namespace gem5
 namespace signal3
 {
 
-Pipeline::Pipeline(SignalCPU &cpu, unsigned fifoCapacity)
+Pipeline::Pipeline(SignalCPU &cpu, unsigned fifoCapacity,
+                   unsigned maxOutstandingFetches)
     : Ticked(cpu),
       _cpu(cpu),
       _graph()
 {
     _lsq = std::make_unique<LSQ>(_graph, _cpu);
-    _fetch = std::make_unique<Fetch>(_graph, _cpu, fifoCapacity);
+    _fetch = std::make_unique<Fetch>(_graph, _cpu, fifoCapacity,
+                                     maxOutstandingFetches);
     _decode = std::make_unique<Decode>(_graph, _cpu, *_fetch);
     _execute = std::make_unique<Execute>(_graph, _cpu, *_decode, *_lsq);
 
@@ -570,7 +572,7 @@ Pipeline::onAsyncResponse(const FetchWord &w, PortSide side)
 // signal_cpu.cc near the port callbacks.
 
 bool
-Pipeline::computeNeedUpdate() const
+Pipeline::computeNeedUpdate()
 {
     return _fetch->fifoSize() > 0
         || _fetch->inFlight() > 0
@@ -579,6 +581,7 @@ Pipeline::computeNeedUpdate() const
         || _fetch->hasPendingRedirect()
         || _decode->inMacroExpansion()
         || _decode->hasLatchedOutput()
+        || _decode->hasPendingInputSlot()
         || _execute->busy()
         || !_lsq->idle()
         || _sawIcacheRetry;

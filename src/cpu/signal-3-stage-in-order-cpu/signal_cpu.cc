@@ -74,7 +74,8 @@ SignalCPU::SignalCPU(const Params &params)
         threadContexts.push_back(t->getTC());
     }
 
-    _pipeline = std::make_unique<Pipeline>(*this, params.pfu_fifo_words);
+    _pipeline = std::make_unique<Pipeline>(*this, params.pfu_fifo_words,
+                                           params.pfu_max_outstanding_fetches);
 }
 
 SignalCPU::~SignalCPU()

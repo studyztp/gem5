@@ -75,7 +75,8 @@ class SignalCPU;
 class Fetch : public Stage
 {
   public:
-    Fetch(SignalGraph &g, SignalCPU &cpu, unsigned fifoCapacity);
+    Fetch(SignalGraph &g, SignalCPU &cpu, unsigned fifoCapacity,
+          unsigned maxOutstandingFetches);
 
     void settle() override;
 
@@ -186,6 +187,7 @@ class Fetch : public Stage
   private:
     SignalCPU &_cpu;
     const unsigned _fifoCapacity;
+    const unsigned _maxOutstandingFetches;
 
     /* Architectural F state (registered conceptually; we maintain
      * the invariant that these are mutated only inside settle() or

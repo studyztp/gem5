@@ -56,6 +56,17 @@ class SignalCPU(BaseCPU):
         3, "PFU prefetch FIFO depth (32-bit words). Cortex-M3 TRM §1.4."
     )
 
+    pfu_max_outstanding_fetches = Param.Unsigned(
+        2,
+        "Maximum simultaneously-outstanding fetches from F to the "
+        "icache port (in-flight + pending-to-issue).  Models AHB-Lite "
+        "back-pressure on the I-bus: at any HCLK at most 1 transfer "
+        "is in address phase + 1 in data phase, so a 3rd transfer "
+        "must wait for the 1st to complete before its address phase "
+        "can begin.  Default 2 = strict AHB-Lite.  Set to 0 to "
+        "disable the cap (only the FIFO depth gates new issues).",
+    )
+
     halt_addr = Param.Addr(
         0,
         "Architectural PC at which the CPU halts the simulation "

@@ -201,6 +201,16 @@ PipelinedSimpleMemory::MemoryPort::popReadyToFireBuffer() {
         // accesses don't set one — for those we fall back to
         // address-only matching, which preserves their existing
         // buffer-hit behaviour.
+        //
+        // Note: an earlier attempt removed the streamId gate to fix
+        // forward's +5 cy/iter gap.  That made tight / nested go too
+        // fast (sense-amp would hit on the bne-target line that was
+        // last read by the previous iteration's right-path).  Real
+        // silicon's sense-amp is overwritten by every read including
+        // wrong-path prefetches past the bne, so the bne target
+        // misses; the streamId gate matches that.  Forward's gap is
+        // a separate issue, NOT from this gate -- see
+        // branch_error_root_cause_2026-05-07.md.
         const bool pktHasStreamId = pkt->req->hasStreamId();
         DPRINTF(PipelinedMem, "port[%d] popReadyToFire: addr=%#x "
                 "hasStreamId=%d bufferBlock=%#x bufferStreamId=%u\n",

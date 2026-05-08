@@ -41,13 +41,15 @@ namespace gem5
 namespace signal3
 {
 
-Fetch::Fetch(SignalGraph &g, SignalCPU &cpu, unsigned fifoCapacity)
+Fetch::Fetch(SignalGraph &g, SignalCPU &cpu, unsigned fifoCapacity,
+             unsigned maxOutstandingFetches)
     : Stage(g, "fetch", /*stageId=*/0),
       f_word_out(g, "f_word_out", /*fromStage=*/this, /*pulse=*/false),
       f_can_accept(g, "f_can_accept", /*fromStage=*/this,
                    /*pulse=*/false),
       _cpu(cpu),
-      _fifoCapacity(fifoCapacity)
+      _fifoCapacity(fifoCapacity),
+      _maxOutstandingFetches(maxOutstandingFetches)
 {
     // Subscribers (D's d_pop_request, redirects from D/E) are wired
     // by Pipeline after all stages exist.
@@ -353,6 +355,22 @@ Fetch::shouldIssueFetch() const
     // fetch waits for it to drain — the +25 % over silicon on
     // forward / align / alternating in the calibration data.
     if (_branchesInFlight > 0)
+        return false;
+
+    // AHB-Lite back-pressure on the icache port: cap simultaneously-
+    // outstanding fetches.  Strict AHB-Lite allows at most 1 transfer
+    // in address phase + 1 in data phase = 2 outstanding; the 3rd
+    // transfer's address phase has to wait for the 1st transfer's
+    // data phase to complete (HREADY=0 stalls the master).  Without
+    // this gate F piles 3+ fetches into the Flash port; back-to-back
+    // redirects then queue the right-path fetch behind a wrong-path
+    // Flash array op, costing ~5 extra cy/iter on forward /
+    // alternating.  See branch_error_root_cause_2026-05-07.md.
+    //
+    // Tunable via SignalCPU.pfu_max_outstanding_fetches (default 2).
+    if (_maxOutstandingFetches > 0
+            && _inFlight + pendingIssueQueue.size()
+                   >= _maxOutstandingFetches)
         return false;
 
     // The only other gate is the FIFO capacity: don't oversubscribe.

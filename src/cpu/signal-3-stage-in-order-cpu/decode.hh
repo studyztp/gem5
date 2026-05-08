@@ -108,6 +108,22 @@ class Decode : public Stage
         return dSlot.out().valid() && dSlot.out().read().has_value();
     }
 
+    /** True if D has just written a slot to dSlot.in() that will
+     *  become visible to E at the NEXT clock edge.  Used by the
+     *  clock-gating heuristic so the pipeline doesn't idle between
+     *  the cycle D produces a slot and the cycle E commits it.
+     *  Without this gate, when F finishes a stop-at-branch fetch and
+     *  D decodes the second 16-bit inst of a same-word pair, the
+     *  pipeline would stop because dSlot.out() is still empty (the
+     *  new slot is only in dSlot.in() until the next edge).
+     *
+     *  Non-const because Latch::in() returns a non-const reference;
+     *  this is a read-only check on the input signal's value. */
+    bool hasPendingInputSlot()
+    {
+        return dSlot.in().valid() && dSlot.in().read().has_value();
+    }
+
     /** One-line printable state for the line-trace tables. */
     std::string snapshotString() const;
 
