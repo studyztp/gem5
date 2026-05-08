@@ -75,6 +75,8 @@ class STM32G474RETunableBoardART(STM32G474RETimingBoard):
         art_flash_latency: str = "23000ps",
         art_address_phase_latency: str = "500ps",
         art_buffer_hit_latency: str = "0ns",
+        art_enable_pipeline: bool = True,
+        art_arrive_buffer_size: int = 1,
         **kwargs,
     ):
         # Force ART on; that is the whole point of this tunable.
@@ -106,11 +108,17 @@ class STM32G474RETunableBoardART(STM32G474RETimingBoard):
                 cache.address_phase_latency = art_address_phase_latency
             if hasattr(cache, "buffer_hit_latency"):
                 cache.buffer_hit_latency = art_buffer_hit_latency
+            if hasattr(cache, "enable_pipeline"):
+                cache.enable_pipeline = art_enable_pipeline
+            if hasattr(cache, "arrive_buffer_size"):
+                cache.arrive_buffer_size = art_arrive_buffer_size
             patched_cache.append(name)
 
         self._tunable_art_flash_latency = art_flash_latency
         self._tunable_art_address_phase_latency = art_address_phase_latency
         self._tunable_art_buffer_hit_latency = art_buffer_hit_latency
+        self._tunable_art_enable_pipeline = art_enable_pipeline
+        self._tunable_art_arrive_buffer_size = art_arrive_buffer_size
         self._tunable_art_patched_mem = tuple(patched_mem)
         self._tunable_art_patched_cache = tuple(patched_cache)
 
@@ -119,6 +127,8 @@ class STM32G474RETunableBoardART(STM32G474RETimingBoard):
             f"art[flash_lat={self._tunable_art_flash_latency}, "
             f"addr_phase={self._tunable_art_address_phase_latency}, "
             f"buf_hit={self._tunable_art_buffer_hit_latency}, "
+            f"pipeline={self._tunable_art_enable_pipeline}, "
+            f"arr_buf={self._tunable_art_arrive_buffer_size}, "
             f"mem={list(self._tunable_art_patched_mem)}, "
             f"caches={list(self._tunable_art_patched_cache)}]"
         )

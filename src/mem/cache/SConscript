@@ -64,10 +64,13 @@ DebugFlag('MSHR')
 DebugFlag('HWPrefetchQueue')
 DebugFlag('PartitionPolicy')
 DebugFlag('ARTCache')
+DebugFlag('ARTCacheLineTrace',
+    'Per-event ART pipeline state table (one row per request stage)')
 
 # CacheTags is so outrageously verbose, printing the cache's entire tag
 # array on each timing access, that you should probably have to ask for
 # it explicitly even above and beyond CacheAll.
 CompoundFlag('CacheAll', ['Cache', 'CacheComp', 'CachePort', 'CacheRepl',
                           'CacheVerbose', 'HWPrefetch', 'MSHR',
-                          'PartitionPolicy', 'ARTCache'])
+                          'PartitionPolicy', 'ARTCache',
+                          'ARTCacheLineTrace'])

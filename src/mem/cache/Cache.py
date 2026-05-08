@@ -226,4 +226,12 @@ class ARTCache(NoncoherentCache):
         1, "Max entries in arrive buffer (0 = unlimited)"
     )
 
+    enable_pipeline = Param.Bool(
+        True,
+        "Pipeline buffer/cache hits at addressPhaseLatency cadence "
+        "instead of serializing on processingInFlight. When false, "
+        "every request waits for the previous one's bufferHitLatency "
+        "to elapse before the next can be processed (legacy behavior).",
+    )
+
     blk_size = Self.cache_blk_size

@@ -23,6 +23,7 @@ ART::ART(const ARTCacheParams &p)
       flashStartAddr(p.flash_start_addr),
       flashEndAddr(p.flash_end_addr),
       arriveBufferSizeLimit(p.arrive_buffer_size),
+      enablePipeline(p.enable_pipeline),
       addressPhaseLatency(p.address_phase_latency),
       lastStreamId(0),
       popArriveBufferEvent(
@@ -50,9 +51,11 @@ ART::ART(const ARTCacheParams &p)
 
     DPRINTF(ARTCache,
             "ART created: directMemoryMode=%s, enablePrefetch=%s, "
-            "prefetchOnCacheHit=%s, pfBlkSize=%u, flash=[%#x, %#x]\n",
+            "enablePipeline=%s, prefetchOnCacheHit=%s, pfBlkSize=%u, "
+            "flash=[%#x, %#x]\n",
             directMemoryMode ? "true" : "false",
             enablePrefetch ? "true" : "false",
+            enablePipeline ? "true" : "false",
             prefetchOnCacheHit ? "true" : "false", pfBlkSize, flashStartAddr,
             flashEndAddr);
 }
@@ -258,7 +261,13 @@ ART::serveFromBuffer(PacketPtr pkt, ARTPrefetchBuffer &buf)
     // retry assertions on long runs.
     Tick readyTick = std::max(curTick() + bufferHitLatency + 1,
                               clockEdge(Cycles(0)));
-    pushToOutputBuffer(pkt, readyTick);
+    // serveFromBuffer is called from both pipelined and serialized
+    // paths. In the serialized path, processingInFlight is true at
+    // this point, so the response is bound to that slot. In the
+    // pipelined path, it is false (multiple buffer hits can be in
+    // flight simultaneously, none binding the slot).
+    pushToOutputBuffer(pkt, readyTick,
+                       /*boundToInFlight=*/processingInFlight);
 }
 
 // -------------------------------------------------------------------
@@ -316,11 +325,25 @@ ART::scheduleNextArriveBuffer()
 // -------------------------------------------------------------------
 
 void
-ART::pushToOutputBuffer(PacketPtr pkt, Tick readyTick)
+ART::pushToOutputBuffer(PacketPtr pkt, Tick readyTick, bool boundToInFlight)
 {
-    DPRINTF(ARTCache, "pushToOutputBuffer: addr=%s readyTick=%d\n",
-            addrToString(pkt->getAddr()), readyTick);
-    outputBuffer.emplace_back(pkt, readyTick);
+    // Enforce monotonic ordering of response delivery: a later push must
+    // not drain before an earlier one. This matters when a pipelined
+    // cache hit (potentially fast) is enqueued behind a buffer hit
+    // (waiting bufferHitLatency).
+    Tick safeReadyTick = readyTick;
+    if (!outputBuffer.empty()) {
+        safeReadyTick = std::max(safeReadyTick,
+                                 outputBuffer.back().tick + 1);
+    }
+    DPRINTF(ARTCache,
+            "pushToOutputBuffer: addr=%s readyTick=%d (req=%d) "
+            "boundToInFlight=%d outBufLen=%lu\n",
+            addrToString(pkt->getAddr()), safeReadyTick, readyTick,
+            (int)boundToInFlight, outputBuffer.size());
+    outputBuffer.emplace_back(pkt, safeReadyTick, boundToInFlight);
+    lineTraceEvent("pushOut", pkt->getAddr(),
+                   boundToInFlight ? "bound" : "free");
     scheduleOutputDrain();
 }
 
@@ -342,16 +365,35 @@ ART::popOutputBuffer()
         return;
 
     DeferredPacket &dp = outputBuffer.front();
-    DPRINTF(ARTCache, "popOutputBuffer: sending response addr=%s\n",
-            addrToString(dp.pkt->getAddr()));
+    DPRINTF(ARTCache,
+            "popOutputBuffer: sending response addr=%s "
+            "boundToInFlight=%d\n",
+            addrToString(dp.pkt->getAddr()), (int)dp.boundToInFlight);
+    lineTraceEvent("respDeliver", dp.pkt->getAddr(),
+                   dp.boundToInFlight ? "bound" : "free");
     cpuSidePort.schedTimingResp(dp.pkt, curTick());
+
+    // Only clear processingInFlight when the response that owned the
+    // serializing slot drains. Pipelined buffer/cache hits never set
+    // the flag and never clear it here.
+    bool wasBound = dp.boundToInFlight;
     outputBuffer.pop_front();
 
-    processingInFlight = false;
-    DPRINTF(ARTCache, "popOutputBuffer: processingInFlight cleared\n");
-
-    // Advance the pipeline: process next arriveBuffer entry.
-    scheduleNextArriveBuffer();
+    if (wasBound) {
+        processingInFlight = false;
+        DPRINTF(ARTCache,
+                "popOutputBuffer: processingInFlight cleared (bound resp)\n");
+        // After a serializing barrier drains, kick popArriveBuffer to
+        // process whatever is queued behind it.
+        scheduleNextArriveBuffer();
+    } else if (!processingInFlight) {
+        // Pipelined response drained while no serializing op is in
+        // flight. Make sure the address-phase pipeline keeps moving if
+        // arriveBuffer still has entries (popArriveBuffer schedules
+        // itself when it dispatches a request, but a corner case exists
+        // where outputBuffer is the only pending state).
+        scheduleNextArriveBuffer();
+    }
 
     // If more responses queued, schedule for the next one.
     if (!outputBuffer.empty() && !popOutputBufferEvent.scheduled()) {
@@ -456,6 +498,119 @@ ART::recvTimingReq(PacketPtr pkt)
 void
 ART::popArriveBuffer()
 {
+    if (enablePipeline)
+        popArriveBufferPipelined();
+    else
+        popArriveBufferSerialized();
+}
+
+// -------------------------------------------------------------------
+//  Pipelined dispatch: pipelinable cases overlap their address phases
+//  at addressPhaseLatency cadence; serializing cases set
+//  processingInFlight and gate the next request via popOutputBuffer.
+// -------------------------------------------------------------------
+
+void
+ART::popArriveBufferPipelined()
+{
+    if (processingInFlight) {
+        DPRINTF(ARTCache,
+                "popArriveBufferPipelined: processingInFlight, deferring\n");
+        return;
+    }
+
+    // Flush stale stream packets from front (case 9 — pipelinable, free).
+    while (!arriveBuffer.empty()
+           && arriveBuffer.front().pkt->req->hasStreamId()
+           && arriveBuffer.front().pkt->req->streamId() != lastStreamId) {
+        PacketPtr stale = arriveBuffer.front().pkt;
+        DPRINTF(ARTCache,
+                "popArriveBufferPipelined: flushing stale pkt addr=%s\n",
+                addrToString(stale->getAddr()));
+        lineTraceEvent("staleDrop", stale->getAddr());
+        stale->makeResponse();
+        stale->setBadAddress();
+        arriveBuffer.pop_front();
+        staleReturnQueue.push_back(stale);
+    }
+    if (!staleReturnQueue.empty() && !staleReturnEvent.scheduled())
+        schedule(staleReturnEvent, curTick() + 1);
+
+    if (arriveBuffer.empty()) {
+        maybeUnblockArriveBuffer();
+        return;
+    }
+
+    PacketPtr pkt = arriveBuffer.front().pkt;
+    arriveBuffer.pop_front();
+    maybeUnblockArriveBuffer();
+    lineTraceEvent("popArr", pkt->getAddr());
+
+    // ---- Classify case (read-only on shared state) ----
+    // Only buffer hits are pipelined. Cache hits go to NoncoherentCache
+    // which has internal MSHR coordination — keep it on the serialized
+    // path so processingInFlight gates correctly until the cache responds.
+    bool curHit = enablePrefetch && !pkt->isSecure() &&
+                  currentBuffer.isHit(pkt->getAddr());
+    bool pfHit = !curHit && enablePrefetch && !pkt->isSecure() &&
+                 prefetchBuffer.isHit(pkt->getAddr());
+
+    DPRINTF(ARTCache,
+            "popArriveBufferPipelined: addr=%s curHit=%d pfHit=%d\n",
+            addrToString(pkt->getAddr()), (int)curHit, (int)pfHit);
+
+    if (curHit) {
+        // Case 1: currentBuffer hit
+        ++stats.currentBufferHits;
+        serveFromBuffer(pkt, currentBuffer);
+        lineTraceEvent("serveCurBuf", pkt->getAddr());
+        maybeIssueNextPrefetch(pkt->getAddr(), /*prefetchHit=*/true,
+                               /*schedImmediate=*/true);
+    } else if (pfHit) {
+        // Case 2: prefetchBuffer hit. Atomically promote pf→cur BEFORE
+        // serving so the next pipelined request sees the new currentBuffer.
+        ++stats.prefetchBufferHits;
+        currentBuffer.invalidate();
+        currentBuffer.copyFrom(prefetchBuffer);
+        prefetchBuffer.invalidate();
+        DPRINTF(ARTCache,
+                "popArriveBufferPipelined: promote prefetchBuffer to "
+                "currentBuffer (pipelined)\n");
+        serveFromBuffer(pkt, currentBuffer);
+        lineTraceEvent("servePfBuf", pkt->getAddr());
+        maybeIssueNextPrefetch(pkt->getAddr(), /*prefetchHit=*/true,
+                               /*schedImmediate=*/true);
+    } else {
+        // Cases 4/5/6/7/8: serializing. Put the request back at front
+        // of arriveBuffer and run the serialized handler, which will
+        // set processingInFlight=true and dispatch correctly.
+        arriveBuffer.emplace_front(pkt, curTick());
+        DPRINTF(ARTCache,
+                "popArriveBufferPipelined: addr=%s falls into serializing "
+                "path\n", addrToString(pkt->getAddr()));
+        lineTraceEvent("serFallback", pkt->getAddr());
+        popArriveBufferSerialized();
+        return; // serialized path handles its own continuation
+    }
+
+    // Pipelined success path: schedule next address phase.
+    if (!arriveBuffer.empty() && !popArriveBufferEvent.scheduled()) {
+        Tick next = curTick() + addressPhaseLatency;
+        DPRINTF(ARTCache,
+                "popArriveBufferPipelined: scheduling next popArriveBuffer "
+                "at tick %d (+%d)\n", next, (int)addressPhaseLatency);
+        schedule(popArriveBufferEvent, std::max(next, curTick()));
+    }
+}
+
+// -------------------------------------------------------------------
+//  Serialized dispatch (legacy behavior, used when enablePipeline=false
+//  and as fallback for serializing cases from the pipelined path).
+// -------------------------------------------------------------------
+
+void
+ART::popArriveBufferSerialized()
+{
     // Strictly serialized: only process when previous request is done.
     if (processingInFlight) {
         DPRINTF(ARTCache, "popArriveBuffer: processingInFlight, "
@@ -488,6 +643,7 @@ ART::popArriveBuffer()
     PacketPtr pkt = arriveBuffer.front().pkt;
     arriveBuffer.pop_front();
     processingInFlight = true;
+    lineTraceEvent("popArrSer", pkt->getAddr());
 
     maybeUnblockArriveBuffer();
 
@@ -734,6 +890,98 @@ ART::popArriveBuffer()
 }
 
 // -------------------------------------------------------------------
+//  maybeIssueNextPrefetch: extracted prefetch-allocation logic.
+//  Used by both pipelined and serialized paths.  Mirrors the
+//  prefetch-allocation block at the end of popArriveBufferSerialized
+//  but does not invalidate buffers or set processingInFlight.
+// -------------------------------------------------------------------
+
+void
+ART::maybeIssueNextPrefetch(Addr reqAddr, bool prefetchHit,
+                            bool schedImmediate)
+{
+    if (!enablePrefetch)
+        return;
+
+    nextPfAddr = convertAddrToPfBlockAddr(reqAddr);
+    nextPfAddr = getNextSequentialAddr(nextPfAddr);
+    DPRINTF(ARTCache,
+            "maybeIssueNextPrefetch: candidate next prefetch addr=%s\n",
+            addrToString(nextPfAddr));
+
+    // Skip if we still have a valid prefetchBuffer (no need to refill).
+    if (prefetchHit && prefetchBuffer.isValid())
+        return;
+
+    if (artPfEntry.ifInService())
+        return;
+
+    if (artPfEntry.ifHasTarget()) {
+        DPRINTF(ARTCache,
+                "maybeIssueNextPrefetch: discarding stale prefetch "
+                "target addr=%s\n",
+                addrToString(artPfEntry.getTarget()->pkt->getAddr()));
+        delete artPfEntry.getTarget()->pkt;
+        artPfEntry.deallocate();
+        artPfEntry.clearCPUWaiting();
+        artPfEntry.clearRetrying();
+    }
+
+    if (!isInFlashRange(nextPfAddr)) {
+        DPRINTF(ARTCache,
+                "maybeIssueNextPrefetch: addr=%s outside flash range, "
+                "skipping\n", addrToString(nextPfAddr));
+        return;
+    }
+
+    RequestPtr req = makeARTPrefetchRequest(nextPfAddr, pfBlkSize);
+    PacketPtr pfPkt = makeARTPrefetchPacket(req, &artPfEntry);
+    panic_if(!pfPkt,
+             "Failed to create prefetch packet in maybeIssueNextPrefetch.");
+
+    artPfEntry.allocate(nextPfAddr, pfPkt, clockEdge(Cycles(1)),
+                        artPrefetchOrder++);
+    ++stats.prefetchesAllocated;
+    DPRINTF(ARTCache,
+            "maybeIssueNextPrefetch: allocated prefetch for addr=%s "
+            "(allocated=%d)\n",
+            addrToString(nextPfAddr),
+            stats.prefetchesAllocated.value());
+    lineTraceEvent("pfAlloc", nextPfAddr);
+
+    if (schedImmediate) {
+        DPRINTF(ARTCache,
+                "maybeIssueNextPrefetch: scheduling prefetch immediately\n");
+        schedMemSideSendEvent(clockEdge());
+    }
+
+    panic_if(!artPfEntry.ready(),
+             "Prefetch entry not ready after allocation.");
+}
+
+// -------------------------------------------------------------------
+//  ARTCacheLineTrace emission
+//  One row per pipeline event. Format mirrors PipelinedMemLineTrace
+//  for visual diff against the no-ART path.
+// -------------------------------------------------------------------
+
+void
+ART::lineTraceEvent(const char *event, Addr addr, const char *cls)
+{
+    DPRINTF(ARTCacheLineTrace,
+            "[ART] event=%-12s addr=%#010x arrBuf=%lu outBuf=%lu "
+            "inFlight=%d pfState=%s curBuf=%s pfBuf=%s cls=%s\n",
+            event, addr,
+            arriveBuffer.size(), outputBuffer.size(),
+            (int)processingInFlight,
+            artPfEntry.ifInService() ? "INSVC"
+                : (artPfEntry.ifHasTarget() ? "ALLOC" : "EMPTY"),
+            currentBuffer.isValid() ? "v" : "-",
+            prefetchBuffer.isValid() ? "v" : "-",
+            cls);
+}
+
+// -------------------------------------------------------------------
 //  Timing response path
 // -------------------------------------------------------------------
 
@@ -775,14 +1023,18 @@ ART::recvTimingResp(PacketPtr pkt)
                         "addr=%s\n",
                         pkt->getSize(), cpuPkt->getSize(),
                         addrToString(cpuPkt->getAddr()));
-                pushToOutputBuffer(cpuPkt, clockEdge(Cycles(1)));
+                // Bypass path is serialized; this drains the in-flight
+                // bypassCacheEntry, so mark the response as bound.
+                pushToOutputBuffer(cpuPkt, clockEdge(Cycles(1)),
+                                   /*boundToInFlight=*/true);
                 state->cpuPkt = nullptr;
                 delete state;
                 cachePktEntry = nullptr;
                 delete pkt;
             } else {
                 // No translate state — send response as-is
-                pushToOutputBuffer(pkt, clockEdge(Cycles(1)));
+                pushToOutputBuffer(pkt, clockEdge(Cycles(1)),
+                                   /*boundToInFlight=*/true);
             }
 
             entry->deallocate();
@@ -823,7 +1075,10 @@ ART::recvTimingResp(PacketPtr pkt)
                 Tick readyTick = std::max(
                     curTick() + bufferHitLatency + 1,
                     clockEdge(Cycles(0)));
-                pushToOutputBuffer(entry->cpuPtr, readyTick);
+                // CPU was waiting for this in-flight prefetch (case 4).
+                // Always serialized — mark response bound.
+                pushToOutputBuffer(entry->cpuPtr, readyTick,
+                                   /*boundToInFlight=*/true);
                 entry->clearCPUWaiting();
 
                 // Per RM0440 Section 3.3.4: on a miss (CPU missed
@@ -930,7 +1185,11 @@ ART::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time)
     cpuPkt->makeTimingResponse();
 
     cpuPkt->headerDelay = cpuPkt->payloadDelay = 0;
-    pushToOutputBuffer(cpuPkt, request_time);
+    // Cache hits called from the pipelined path leave processingInFlight
+    // false; called from the serialized (legacy) path it is true. Use
+    // that to determine whether this response drains the in-flight slot.
+    pushToOutputBuffer(cpuPkt, request_time,
+                       /*boundToInFlight=*/processingInFlight);
 
     state->cpuPkt = nullptr;
     delete state;
@@ -1015,7 +1274,10 @@ ART::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                 tgt_pkt->copyError(pkt);
 
             tgt_pkt->headerDelay = tgt_pkt->payloadDelay = 0;
-            pushToOutputBuffer(tgt_pkt, completion_time);
+            // MSHR completion of a prefetch / cache miss is part of the
+            // serialized path (case 7). Mark response bound.
+            pushToOutputBuffer(tgt_pkt, completion_time,
+                               /*boundToInFlight=*/true);
 
             if (cachePktToDelete)
                 delete cachePktToDelete;

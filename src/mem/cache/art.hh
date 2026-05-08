@@ -39,6 +39,7 @@
 #include "base/trace.hh"
 #include "base/types.hh"
 #include "debug/ARTCache.hh"
+#include "debug/ARTCacheLineTrace.hh"
 #include "debug/Cache.hh"
 #include "mem/cache/noncoherent_cache.hh"
 #include "mem/cache/queue_entry.hh"
@@ -96,8 +97,16 @@ class ART : public NoncoherentCache
     {
         PacketPtr pkt;
         Tick tick;
-        DeferredPacket(PacketPtr _pkt, Tick _tick)
-            : pkt(_pkt), tick(_tick) {}
+        /**
+         * True if this packet is bound to the serializing in-flight
+         * slot (artPfEntry / bypassCacheEntry). When this packet drains
+         * from outputBuffer, processingInFlight is cleared. Pipelined
+         * buffer/cache hits set this false and never gate the flag.
+         */
+        bool boundToInFlight;
+        DeferredPacket(PacketPtr _pkt, Tick _tick,
+                       bool _bound = false)
+            : pkt(_pkt), tick(_tick), boundToInFlight(_bound) {}
     };
 
     /** Incoming requests waiting for address-phase processing. */
@@ -110,11 +119,18 @@ class ART : public NoncoherentCache
     std::list<DeferredPacket> outputBuffer;
 
     /**
-     * Strictly one request in flight at a time.
-     * Set true when popArriveBuffer processes a request.
-     * Cleared when popOutputBuffer sends the response.
+     * Set when a serializing request (cases 4/5/7/8 in the design doc:
+     * artPfEntry alloc, CPU-waiting, direct-memory bypass) is in flight.
+     * Cleared when the bound response drains from outputBuffer.
+     * Pipelined buffer/cache hits do NOT set this flag.
      */
     bool processingInFlight = false;
+
+    /**
+     * Pipeline buffer/cache hits at addressPhaseLatency cadence
+     * instead of serializing on processingInFlight.
+     */
+    const bool enablePipeline;
 
     /** AHB address phase duration (in ticks). */
     const Tick addressPhaseLatency;
@@ -132,12 +148,41 @@ class ART : public NoncoherentCache
     void popArriveBuffer();
     EventFunctionWrapper popArriveBufferEvent;
 
+    /** Legacy (serialized) request handler: one request at a time. */
+    void popArriveBufferSerialized();
+
+    /** New pipelined request handler: see design plan. */
+    void popArriveBufferPipelined();
+
+    /**
+     * Update nextPfAddr based on @p reqAddr and, if needed, allocate
+     * the artPfEntry to issue a sequential prefetch. Extracted from
+     * the original popArriveBuffer for reuse by both serialized and
+     * pipelined paths.
+     *
+     * @param reqAddr        The address of the just-served request.
+     * @param prefetchHit    Whether the request was served from a buffer.
+     * @param schedImmediate When true, schedule the prefetch send event
+     *                       at clockEdge() (used when the cache won't
+     *                       trigger it later).
+     */
+    void maybeIssueNextPrefetch(Addr reqAddr, bool prefetchHit,
+                                bool schedImmediate);
+
     /** Drain outputBuffer: send responses to upstream. */
     void popOutputBuffer();
     EventFunctionWrapper popOutputBufferEvent;
 
-    /** Queue a response for sending from the output stage. */
-    void pushToOutputBuffer(PacketPtr pkt, Tick readyTick);
+    /**
+     * Queue a response for sending from the output stage.
+     * @param boundToInFlight  See DeferredPacket::boundToInFlight.
+     */
+    void pushToOutputBuffer(PacketPtr pkt, Tick readyTick,
+                            bool boundToInFlight = false);
+
+    /** Emit one row of the ARTCacheLineTrace table for @p event. */
+    void lineTraceEvent(const char *event, Addr addr,
+                        const char *cls = "");
 
     /** Schedule popOutputBufferEvent if outputBuffer has entries. */
     void scheduleOutputDrain();
