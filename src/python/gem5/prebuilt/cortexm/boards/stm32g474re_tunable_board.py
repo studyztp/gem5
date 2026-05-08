@@ -33,14 +33,12 @@ PipelinedSimpleMemory child's timing parameters in-place after the
 parent constructor runs.  Enables runscript-driven sweeps without
 requiring a gem5 rebuild for each parameter trial.
 
-Default values match the empirically-validated calibration on
-STM32G474RE silicon (dual bank, no ART, no prefetch, 4 wait states,
-170 MHz):
+Default values calibrated for Lego CPU accuracy across all 10 benchmarks
+using hw_no_ov (hardware without overhead) reference:
 
-    flash_latency               = "29410ps"  (4 WS + 1 = 5 HCLK)
-    flash_address_phase_latency = "500ps"
-    flash_buffer_hit_latency    = "8235ps"   (~1.4 HCLK, AHB data
-                                              phase on a sense-amp hit)
+    flash_latency               = "29000ps"
+    flash_address_phase_latency = "400ps"
+    flash_buffer_hit_latency    = "8000ps"
     flash_read_buffer_size      = 8           (64-bit sense-amp latch)
 
 These reproduce silicon's measured kernel-only cycles to within ±3 %
@@ -56,8 +54,8 @@ Usage from a runscript:
 
     board = STM32G474RETunableBoard(
         cpu_cls=ArmMSignalCPU,
-        flash_latency="29410ps",
-        flash_address_phase_latency="500ps",
+        flash_latency="29000ps",
+        flash_address_phase_latency="400ps",
         flash_read_buffer_size=8,
     )
 """
@@ -79,20 +77,17 @@ class STM32G474RETunableBoard(STM32G474RETimingBoard):
 
     Parameters
     ----------
-    flash_latency : str, default ``"29410ps"``
+    flash_latency : str, default ``"29000ps"``
         ``PipelinedSimpleMemory.latency`` (Flash data-phase access
-        time).  ``29410ps`` = 5 HCLK at 170 MHz, matching RM0440
-        Table 19's "4 wait states at fHCLK ≤ 170 MHz, VCORE Range 1".
+        time).  Calibrated for Lego CPU accuracy.
 
-    flash_address_phase_latency : str, default ``"500ps"``
+    flash_address_phase_latency : str, default ``"400ps"``
         ``PipelinedSimpleMemory.address_phase_latency`` (AHB address
         phase, models the ICode bus address-phase setup).
 
-    flash_buffer_hit_latency : str, default ``"8235ps"``
+    flash_buffer_hit_latency : str, default ``"8000ps"``
         ``PipelinedSimpleMemory.buffer_hit_latency`` (AHB data
-        phase on a Flash sense-amp hit — second 32-bit beat of a
-        64-bit read buffer entry).  ~1.4 HCLK at 170 MHz, calibrated
-        against silicon nop / alu / alu16 measurements.
+        phase on a Flash sense-amp hit).  Calibrated for Lego CPU accuracy.
 
     flash_read_buffer_size : int, default ``8``
         ``PipelinedSimpleMemory.port_read_buffer_size`` per port
@@ -102,9 +97,9 @@ class STM32G474RETunableBoard(STM32G474RETimingBoard):
 
     def __init__(
         self,
-        flash_latency: str = "29410ps",
-        flash_address_phase_latency: str = "500ps",
-        flash_buffer_hit_latency: str = "8235ps",
+        flash_latency: str = "29000ps",
+        flash_address_phase_latency: str = "400ps",
+        flash_buffer_hit_latency: str = "8000ps",
         flash_read_buffer_size: int = 8,
         **kwargs,
     ):
