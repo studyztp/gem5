@@ -30,5 +30,12 @@ from gem5.prebuilt.cortexm.boards.stm32g474re_board import (
 from gem5.prebuilt.cortexm.boards.stm32g474re_tunable_board import (
     STM32G474RETunableBoard,
 )
+from gem5.prebuilt.cortexm.boards.stm32g474re_tunable_board_art import (
+    STM32G474RETunableBoardART,
+)
 
-__all__ = ["STM32G474RETimingBoard", "STM32G474RETunableBoard"]
+__all__ = [
+    "STM32G474RETimingBoard",
+    "STM32G474RETunableBoard",
+    "STM32G474RETunableBoardART",
+]
