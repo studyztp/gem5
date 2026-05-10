@@ -1,39 +1,53 @@
 #!/usr/bin/env python3
 """
-Run a microbenchmark with m5ops ROI (work_begin/work_end) on STM32G474RE.
+Run a microbenchmark with m5ops ROI (work_begin/work_end) on STM32G474RE
+using the signal-driven 3-stage Cortex-M4 CPU (SignalCPU) and the latest
+calibrated memory timings.
+
+CPU: ArmMSignalCPU (signal-driven 3-stage in-order; commit e09b461cb &
+     671629f89 — E->D flag fwd, D-side T1 Bcond resolve).
+Boards (commit 6afcb46d4 + 1b682373b):
+  --no-art : STM32G474RETunableBoard
+             flash 29000ps / addr_phase 400ps / buf_hit 8000ps / rbuf 8
+  default  : STM32G474RETunableBoardART
+             flash 23000ps / addr_phase 500ps / buf_hit 0ns,
+             pipelined ART buffer hits, AHB-port buffer size 8.
 
 The benchmark firmware uses gem5 m5ops via semihosting:
-  - m5_work_begin()  → enables debug flags, resets stats
-  - m5_work_end()    → disables debug flags, dumps stats
+  - m5_work_begin()  -> enables debug flags, resets stats
+  - m5_work_end()    -> disables debug flags, dumps stats
 
 Usage:
-    ./gem5/build/ARM/gem5.opt -re --outdir=m5out_bench \
-        microbenchmarks/run_m5op_bench.py \
-        --firmware path/to/bench.elf \
-        [--no-art] \
-        [--debug-flags MinorExecute,MinorMem] \
+    ./gem5/build/ARM/gem5.opt -re --outdir=m5out_bench \\
+        gem5/run_m5op_bench.py \\
+        --firmware path/to/bench.elf \\
+        [--no-art] \\
+        [--debug-flags Signal3CPUExecute,Signal3CPUFetch] \\
         [--tick-limit 10000000000000]
 """
 
 import argparse
 import os
 import re
-import sys
 
 import m5
 from m5 import debug as m5_debug
 from m5.objects import Root
+from m5.objects.ArmMCPU import ArmMSignalCPU
 from m5.objects.ArmSemihosting import ArmSemihosting
 from m5.stats import dump as stats_dump
 from m5.stats import reset as stats_reset
 
-from gem5.prebuilt.cortexm.boards import STM32G474RETimingBoard
+from gem5.prebuilt.cortexm.boards import (
+    STM32G474RETunableBoard,
+    STM32G474RETunableBoardART,
+)
 
 CLK_FREQ_HZ = 170_000_000
 TICK_PER_SEC = 1_000_000_000_000  # gem5 ticks = picoseconds
 
 parser = argparse.ArgumentParser(
-    description="Run STM32G474RE benchmark with m5ops ROI"
+    description="Run STM32G474RE benchmark with m5ops ROI on SignalCPU"
 )
 parser.add_argument("--firmware", required=True, help="Path to benchmark .elf")
 parser.add_argument(
@@ -45,26 +59,28 @@ parser.add_argument(
 parser.add_argument(
     "--no-art",
     action="store_true",
-    help="Disable ART caches (raw flash latency on every access)",
+    help="Disable ART caches (use STM32G474RETunableBoard with raw "
+    "flash latency on every access). Default: ART enabled via "
+    "STM32G474RETunableBoardART.",
 )
 parser.add_argument(
     "--debug-flags",
     type=str,
     default="",
     help="Comma-separated debug flags to enable during ROI "
-    "(e.g., MinorExecute,MinorMem)",
+    "(e.g., Signal3CPUExecute,Signal3CPUFetch)",
 )
 parser.add_argument(
     "--inner-reps",
     type=int,
-    default=10,
+    default=1,
     help="Number of inner repetitions in the kernel loop "
     "(for computing per-call cycles)",
 )
 parser.add_argument(
     "--debug-from-start",
     action="store_true",
-    help="If start printing debug info from start",
+    help="If set, start printing debug info from start",
 )
 parser.add_argument(
     "--progress-interval",
@@ -73,29 +89,16 @@ parser.add_argument(
     help="Print progress every N ticks (0 = disabled). "
     "E.g., 1000000000 for every 1M ticks (~170 cycles).",
 )
-# --run-to-exit:
-#   By default this script exits at the first m5_work_end so it can
-#   collect the cycle delta cheaply. EntoBench's Harness, however,
-#   prints its result signature (the "ENTO_RESULT name=... bytes=..."
-#   line consumed by the verification harness) AFTER work_end via a
-#   second semihosting call. Stopping at work_end means that line
-#   never reaches simout.txt, and the differential test harness has
-#   nothing to diff. When --run-to-exit is set, keep simulating past
-#   work_end — fall through to the natural "Stopped"/"exit" handler
-#   below — so the firmware can finish, print ENTO_RESULT, and exit
-#   cleanly. The Exec trace flag is already disabled at work_end so
-#   the post-ROI tail does not bloat simout.
 parser.add_argument(
     "--roi-counter",
     type=int,
-    default=0,
+    default=1,
     help="Initial value of the internal roi_counter. The script "
-    "treats the (N+1)-th m5_work_begin as the measured ROI (i.e. "
-    "the one that enables --debug-flags trace + records "
-    "roi_start_tick); the first N work_begin events are skipped. "
-    "Default 0 matches the diff-test harness configuration "
-    "(do_warmup=false). For benchmarks with one warmup iteration "
-    "before the measured ROI, pass --roi-counter 1.",
+    "measures the (N+1)-th m5_work_begin / work_end pair; the "
+    "first N events are skipped. Default 1 = treat Rep 0 as warmup "
+    "and measure Rep 1 (matches the cycle-benchmark REPS=2 "
+    "convention used by stm32-board-microbenchmarks). Pass 0 for "
+    "single-ROI binaries (DO_WARMUP=0 + REPS=1 diff-style tests).",
 )
 parser.add_argument(
     "--run-to-exit",
@@ -104,12 +107,114 @@ parser.add_argument(
     "firmware exits naturally. Required when the firmware prints "
     "data (e.g. EntoBench ENTO_RESULT lines) after the ROI.",
 )
+
+# --- No-ART (TunableBoard) flash timing knobs ---
+no_art = parser.add_argument_group(
+    "no-ART flash timing (only used with --no-art)",
+    "STM32G474RETunableBoard parameters; defaults are the Lego CPU "
+    "calibrated values from commit 6afcb46d4.",
+)
+no_art.add_argument(
+    "--flash-latency",
+    default="29000ps",
+    help="PipelinedSimpleMemory.latency for flash (default 29000ps).",
+)
+no_art.add_argument(
+    "--flash-address-phase-latency",
+    default="400ps",
+    help="PipelinedSimpleMemory.address_phase_latency (default 400ps).",
+)
+no_art.add_argument(
+    "--flash-buffer-hit-latency",
+    default="8000ps",
+    help="PipelinedSimpleMemory.buffer_hit_latency (default 8000ps).",
+)
+no_art.add_argument(
+    "--flash-read-buffer-size",
+    type=int,
+    default=8,
+    help="PipelinedSimpleMemory.port_read_buffer_size per port "
+    "(default 8 = 64-bit Flash sense-amp latch).",
+)
+
+# --- ART (TunableBoardART) timing knobs ---
+art = parser.add_argument_group(
+    "ART timing (default, omit --no-art)",
+    "STM32G474RETunableBoardART parameters.",
+)
+art.add_argument(
+    "--art-flash-latency",
+    default="23000ps",
+    help="SimpleMemory.latency for flash behind ART (default 23000ps).",
+)
+art.add_argument(
+    "--art-address-phase-latency",
+    default="500ps",
+    help="ARTCache.address_phase_latency (default 500ps).",
+)
+art.add_argument(
+    "--art-buffer-hit-latency",
+    default="0ns",
+    help="ARTCache.buffer_hit_latency (default 0ns; matches real HW 0WS).",
+)
+art.add_argument(
+    "--no-art-pipeline",
+    dest="art_enable_pipeline",
+    action="store_false",
+    help="Disable pipelined ART buffer hits (default: enabled).",
+)
+parser.set_defaults(art_enable_pipeline=True)
+art.add_argument(
+    "--art-arrive-buffer-size",
+    type=int,
+    default=1,
+    help="ARTCache.arrive_buffer_size (default 1).",
+)
+art.add_argument(
+    "--art-port-ahb-buffer-size",
+    type=int,
+    default=8,
+    help="ARTCache.port_ahb_buffer_size (default 8).",
+)
+art.add_argument(
+    "--art-port-ahb-buffer-latency",
+    default="0ns",
+    help="ARTCache.port_ahb_buffer_latency (default 0ns).",
+)
+
 args = parser.parse_args()
 
 debug_from_start = args.debug_from_start
 
 # --- Board setup ---
-board = STM32G474RETimingBoard(enable_art=not args.no_art)
+if args.no_art:
+    board = STM32G474RETunableBoard(
+        cpu_cls=ArmMSignalCPU,
+        flash_latency=args.flash_latency,
+        flash_address_phase_latency=args.flash_address_phase_latency,
+        flash_buffer_hit_latency=args.flash_buffer_hit_latency,
+        flash_read_buffer_size=args.flash_read_buffer_size,
+    )
+    print(
+        f"Board: STM32G474RETunableBoard (no-ART) "
+        f"+ ArmMSignalCPU\n  {board.tunable_flash_summary()}"
+    )
+else:
+    board = STM32G474RETunableBoardART(
+        cpu_cls=ArmMSignalCPU,
+        art_flash_latency=args.art_flash_latency,
+        art_address_phase_latency=args.art_address_phase_latency,
+        art_buffer_hit_latency=args.art_buffer_hit_latency,
+        art_enable_pipeline=args.art_enable_pipeline,
+        art_arrive_buffer_size=args.art_arrive_buffer_size,
+        art_port_ahb_buffer_size=args.art_port_ahb_buffer_size,
+        art_port_ahb_buffer_latency=args.art_port_ahb_buffer_latency,
+    )
+    print(
+        f"Board: STM32G474RETunableBoardART (ART on) "
+        f"+ ArmMSignalCPU\n  {board.tunable_art_summary()}"
+    )
+
 board.semihosting = ArmSemihosting(
     mem_reserve="0B",  # Don't reserve memory — firmware manages its own heap
     stack_size="0B",  # Don't reserve stack — firmware sets SP from vector table
@@ -230,11 +335,11 @@ while True:
 # M5OP_WORK_END argument) which starts the work_end call chain.
 #
 # Pattern in trace:
-#   bkpt #0xab ; semihosting    ← work_begin returns
-#   bx lr                       ← return from m5_semi_call
-#   <kernel instructions>       ← MEASURE THIS
-#   movs r0, #91                ← work_end arg setup (EXCLUDE)
-#   bl.w <m5_semi_call>         ← work_end call
+#   bkpt #0xab ; semihosting    <- work_begin returns
+#   bx lr                       <- return from m5_semi_call
+#   <kernel instructions>       <- MEASURE THIS
+#   movs r0, #91                <- work_end arg setup (EXCLUDE)
+#   bl.w <m5_semi_call>         <- work_end call
 
 precise_start_tick = None
 precise_end_tick = None
@@ -249,7 +354,6 @@ _RE_EXEC = re.compile(
 
 try:
     in_roi = False
-    prev_tick = None
     prev_main_tick = None
 
     with open(simout_path) as f:

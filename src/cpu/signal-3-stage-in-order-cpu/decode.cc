@@ -108,7 +108,18 @@ Decode::applyRedirect(Addr target)
     _macroPC.reset();
     // Drop the speculatively-latched dSlot — it's wrong-path.  Mark
     // consumed so a fresh decode can proceed once F refills the FIFO.
+    //
+    // We must clear BOTH the input (next-cycle's latched output) and
+    // the current-cycle output. Without clearing out(), a redirect that
+    // arrives mid-cycle (via Pipeline::checkAndTakeInterrupts → invoke
+    // → applyRedirect, before _graph.settle) leaves the
+    // already-latched bx/branch in dSlot.out() visible to E.settle,
+    // which then commits the wrong-path instruction with post-invoke
+    // architectural state (e.g., lr = EXC_RETURN). For an indirect
+    // branch this triggers a spurious EXC_RETURN unstack reading a
+    // half-written exception frame and corrupting PC.
     dSlot.in().write(std::optional<DecodedSlot>{});
+    dSlot.out().write(std::optional<DecodedSlot>{});
     _slotDecidedConsumed = true;
     _slotDecisionMadeThisCycle = true;
     // Reset the gem5 generic decoder.  It carries internal state
