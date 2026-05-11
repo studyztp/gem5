@@ -66,6 +66,20 @@ DebugFlag('PartitionPolicy')
 DebugFlag('ARTCache')
 DebugFlag('ARTCacheLineTrace',
     'Per-event ART pipeline state table (one row per request stage)')
+DebugFlag('ARTPipeline',
+    'Per-stage state transitions: arriveBuffer / readyToFireBuffer / '
+    'outputBuffer push+pop, slot acquire+release, address-phase / '
+    'data-phase boundaries.  Use to debug throughput / serialization.')
+DebugFlag('ARTBuffers',
+    'Buffer-level events: AHB-port buffer hit/miss/fill/invalidate, '
+    'currentBuffer hit/miss/fill, prefetchBuffer hit/miss/fill/promote.  '
+    'Use to debug wrong-data delivery and cache-fill ordering.')
+DebugFlag('ARTPrefetch',
+    'Prefetcher decisions: allocate, issue, complete, drop, suppress.  '
+    'Use to debug prefetcher mis-timing.')
+DebugFlag('ARTBypass',
+    'Bypass / direct-memory-mode dispatches: which case (E/F) fired '
+    'and why.  Use to confirm cache-on/off and prefetch-on/off paths.')
 
 # CacheTags is so outrageously verbose, printing the cache's entire tag
 # array on each timing access, that you should probably have to ask for
@@ -73,4 +87,8 @@ DebugFlag('ARTCacheLineTrace',
 CompoundFlag('CacheAll', ['Cache', 'CacheComp', 'CachePort', 'CacheRepl',
                           'CacheVerbose', 'HWPrefetch', 'MSHR',
                           'PartitionPolicy', 'ARTCache',
-                          'ARTCacheLineTrace'])
+                          'ARTCacheLineTrace', 'ARTPipeline',
+                          'ARTBuffers', 'ARTPrefetch', 'ARTBypass'])
+# Convenience: all ART debug flags in one switch.
+CompoundFlag('ARTAll', ['ARTCache', 'ARTCacheLineTrace', 'ARTPipeline',
+                        'ARTBuffers', 'ARTPrefetch', 'ARTBypass'])

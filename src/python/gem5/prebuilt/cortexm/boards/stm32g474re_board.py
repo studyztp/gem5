@@ -145,10 +145,22 @@ def _make_flash_bus():
         frontend_latency=0,
         forward_latency=0,
         response_latency=0,
-        width=4,
+        # Width = 8 bytes to match the 64-bit silicon flash read interface
+        # (RM0440 §4.2).
+        width=8,
         header_latency=0,
+        # clk_period = 1 ps (= 1 tick) so the XBar's clockEdge() rounding
+        # adds at most 1 tick of latency.  Previously 10 GHz (= 100 ticks/cy)
+        # caused the XBar to round response delivery to the next 100-tick
+        # boundary, adding 0–99 ticks per ART flash response.  Over a
+        # bench-alu inner_rep (~37 fetches), this drift accumulated to
+        # ~296 cy/inner_rep, causing the +3 cy/call gap vs no_art.  PSM
+        # is unaffected because it manages its own scheduling internally
+        # (doesn't go through this XBar for the response path).  See
+        # issue 2026-05-10-art-bypass-vs-no-art-divergence line-trace
+        # analysis.
         clk_domain=SrcClockDomain(
-            clock="10GHz",
+            clock="1THz",
             voltage_domain=VoltageDomain(voltage="1.0V"),
         ),
     )
@@ -379,7 +391,7 @@ class STM32G474RETimingBoard(ArmMSystem):
                 pf_blk_size=8,
                 enable_prefetch=True,
                 prefetch_on_cache_hit=True,
-                buffer_hit_latency="0ns",  # real HW = 0 WS
+                prefetch_buffer_hit_latency="0ns",  # real HW = 0 WS
                 flash_start_addr=flash_ranges[0].start,
                 flash_end_addr=flash_ranges[-1].end,
                 address_phase_latency="500ps",
@@ -388,7 +400,20 @@ class STM32G474RETimingBoard(ArmMSystem):
             )
 
             # -- ART D-Cache: 256B, 8 lines x 4x8B sectors, 2-way --
-            self.art_dcache = NoncoherentCache(
+            # Per RM0440 §3.3.4 the data cache shares the same
+            # AHB-Lite flash interface timing as the I-cache, so we
+            # model it as an ARTCache too — both go to the same
+            # SimpleMemory backend through flash_bus.  Differences
+            # from art_icache:
+            #   - smaller geometry (256B vs 1KiB)
+            #   - **no prefetcher**: the STM32G4 ART has only one
+            #     prefetch buffer, fed by sequential instruction
+            #     fetches.  Data accesses (PC-relative literals,
+            #     loads) never trigger prefetch, so we pin
+            #     ``enable_prefetch=False`` here and prevent the
+            #     runtime knob in stm32g474re_tunable_board_art.py
+            #     from overriding it.
+            self.art_dcache = ARTCache(
                 size="256B",
                 assoc=2,
                 tag_latency=0,
@@ -402,7 +427,15 @@ class STM32G474RETimingBoard(ArmMSystem):
                 tags=SectorTags(num_blocks_per_sector=4),
                 replacement_policy=LRURP(),
                 addr_ranges=flash_ranges,
-                blk_size=8,
+                cache_blk_size=8,
+                pf_blk_size=8,
+                enable_prefetch=False,
+                prefetch_on_cache_hit=False,
+                prefetch_buffer_hit_latency="0ns",
+                flash_start_addr=flash_ranges[0].start,
+                flash_end_addr=flash_ranges[-1].end,
+                address_phase_latency="500ps",
+                arrive_buffer_size=0,
             )
 
         self._connect_cpu()

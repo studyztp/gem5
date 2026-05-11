@@ -53,6 +53,22 @@ class SimpleMemory(AbstractMemory):
     bandwidth = Param.MemoryBandwidth(
         "12.8GiB/s", "Combined read and write bandwidth"
     )
+    # When True (default), the response is delayed by
+    #   pkt->headerDelay + pkt->payloadDelay (the bus delays
+    # accumulated between requestor and memory) on top of `latency`.
+    # When False, the response time is `curTick() + latency` only.
+    # Set False for memories that are reached via a model that
+    # already accounts for AHB / interconnect phase internally
+    # (e.g. an ARTCache fronting flash; the AHB phase is modeled
+    # inside ARTCache and the flash interface is direct).
+    # Added 2026-05-10 (issue 2026-05-10-art-bypass-vs-no-art-divergence).
+    include_receive_delay = Param.Bool(
+        True,
+        "Include pkt->headerDelay + payloadDelay in the response "
+        "time.  Default True for backward compatibility.  Set False "
+        "for memories whose upstream already models AHB phase, so "
+        "the bus delays aren't double-counted.",
+    )
 
     def controller(self):
         # Simple memory doesn't use a MemCtrl

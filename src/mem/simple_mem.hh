@@ -104,6 +104,17 @@ class SimpleMemory : public AbstractMemory
     const Tick latency_var;
 
     /**
+     * If True, response time = curTick() + receive_delay + latency,
+     * where receive_delay is the upstream bus's (headerDelay +
+     * payloadDelay) accumulated traversal time.  If False, response
+     * time = curTick() + latency only — the upstream is assumed to
+     * already model bus phase itself (e.g. an ARTCache fronting
+     * flash).  Default True for backward compatibility.
+     * Added 2026-05-10 (issue 2026-05-10-art-bypass-vs-no-art-divergence).
+     */
+    const bool includeReceiveDelay;
+
+    /**
      * Bandwidth in ticks per byte. The regulation affects the
      * acceptance rate of requests and the queueing takes place after
      * the regulation.

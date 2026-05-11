@@ -53,7 +53,9 @@ namespace memory
 SimpleMemory::SimpleMemory(const SimpleMemoryParams &p) :
     AbstractMemory(p),
     port(name() + ".port", *this), latency(p.latency),
-    latency_var(p.latency_var), bandwidth(p.bandwidth), isBusy(false),
+    latency_var(p.latency_var),
+    includeReceiveDelay(p.include_receive_delay),
+    bandwidth(p.bandwidth), isBusy(false),
     retryReq(false), retryResp(false),
     releaseEvent([this]{ release(); }, name()),
     dequeueEvent([this]{ dequeue(); }, name())
@@ -140,8 +142,17 @@ SimpleMemory::recvTimingReq(PacketPtr pkt)
 
     // technically the packet only reaches us after the header delay,
     // and since this is a memory controller we also need to
-    // deserialise the payload before performing any write operation
-    Tick receive_delay = pkt->headerDelay + pkt->payloadDelay;
+    // deserialise the payload before performing any write operation.
+    //
+    // includeReceiveDelay: when True (default; backward-compat), this
+    // delay is added to the response time to model the bus traversal
+    // from requestor to memory.  When False, set it to zero — used
+    // by callers whose upstream already models bus phase (e.g. an
+    // ARTCache fronting flash).  Issue
+    // 2026-05-10-art-bypass-vs-no-art-divergence.
+    Tick receive_delay = includeReceiveDelay
+                       ? (pkt->headerDelay + pkt->payloadDelay)
+                       : 0;
     pkt->headerDelay = pkt->payloadDelay = 0;
 
     // update the release time according to the bandwidth limit, and

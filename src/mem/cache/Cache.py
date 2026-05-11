@@ -208,10 +208,30 @@ class ARTCache(NoncoherentCache):
         "issue the allocated prefetch instead of waiting for the next request",
     )
 
-    buffer_hit_latency = Param.Latency(
+    prefetch_buffer_hit_latency = Param.Latency(
         "0ns",
-        "Latency for serving from the ART prefetch/current buffer. "
-        "Real STM32 achieves 0 WS.",
+        "Latency for serving from the ART prefetch/current buffer (the "
+        "two per-bank prefetch sense-amp buffers fed by the sequential "
+        "prefetcher).  Distinct from ``port_ahb_buffer_latency``, which "
+        "covers the port-level AHB-Lite back-to-back pipeline buffer.  "
+        "This latency is ONLY used in cases B1/B2 (curBuf/pfBuf hit) "
+        "and the prefetch-response CPU-waiting path; it MUST NOT be "
+        "used when ``enable_prefetch=False``.  Real STM32 achieves 0 WS.",
+    )
+
+    flash_response_latency = Param.Latency(
+        "29000ps",
+        "Flash access latency in ART's case-F (cache off + prefetch off + "
+        "psm_compatible_bypass) direct dispatch path.  ART models the "
+        "flash access internally (functional read of flash data + scheduled "
+        "internal response) to avoid the timing overhead of going through "
+        "the standard memSidePort → flash_bus XBar → SimpleMemory event "
+        "machinery; the latter accumulates ~118 ticks of per-fetch "
+        "overhead that causes art_bypass to diverge from PSM (no_art) by "
+        "small per-event amounts which compound into interrupt-firing "
+        "alignment shifts.  This value MUST match the connected flash "
+        "memory's ``latency`` parameter (typically 29000ps for STM32G4 "
+        "flash at 170MHz with 4 wait states).",
     )
 
     flash_start_addr = Param.Addr(
@@ -252,6 +272,35 @@ class ARTCache(NoncoherentCache):
         "Latency for an AHB-buffer hit at the port. Models the AHB-Lite "
         "data-phase elapsed when the requested word is already buffered "
         "from a recent transfer (~1 HCLK at 170 MHz).",
+    )
+
+    # ---- AHB-Lite pipeline depth (added 2026-05-10 for the ART
+    # refactor: see issues/2026-05-10-art-bypass-vs-no-art-divergence/).
+    max_outstanding_requests = Param.Unsigned(
+        2,
+        "AHB-Lite back-to-back depth: how many requests can be in "
+        "flight simultaneously inside the ART, modeling 1 in address "
+        "phase + 1 in data phase per AHB-Lite spec.  Set to 1 for "
+        "strict serialization (legacy behavior; matches "
+        "processingInFlight gating); 2 for AHB-Lite back-to-back "
+        "(default; matches Cortex-M4 ICode behavior); higher values "
+        "are speculative / not physical.",
+    )
+
+    # ---- Bypass-mode routing knob (added 2026-05-10).  When True,
+    # direct_memory_mode=True AND enable_prefetch=False makes the ART
+    # behave identically to PipelinedSimpleMemory: AHB-port-buffer
+    # check on top of a direct flash read; no cache fill, no
+    # currentBuffer/prefetchBuffer touches, no prefetch issue.  Set
+    # False to keep the legacy bypassCacheEntry path (for A/B
+    # testing during the refactor; will be removed in Stage 5).
+    psm_compatible_bypass = Param.Bool(
+        True,
+        "When direct_memory_mode=True AND enable_prefetch=False, "
+        "route requests through the PSM-style fast path (AHB-port "
+        "buffer hit check + direct flash read; no cache fill, no "
+        "buffer ops on response, no prefetch).  Set False to keep "
+        "the legacy bypassCacheEntry path (A/B testing).",
     )
 
     blk_size = Self.cache_blk_size

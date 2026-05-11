@@ -289,14 +289,32 @@ class STM32G474REPlatform(ArmMPlatform):
         if enable_art:
             # ART cache sits between CPU and Flash, handling address
             # phase and buffering.  Flash just needs raw access latency.
+            #
+            # IMPORTANT: ART does NOT talk to flash via the AHB bus —
+            # it has a direct flash interface.  So we cannot use
+            # PipelinedSimpleMemory here (that models AHB);
+            # SimpleMemory is the right backing.  The AHB-Lite
+            # back-to-back / address-phase semantics belong inside
+            # the ARTCache itself, not the flash backend.
+            #
+            # include_receive_delay=False (added 2026-05-10): the
+            # default SimpleMemory behavior adds pkt->headerDelay +
+            # payloadDelay to the response time, modeling bus
+            # traversal.  But the ART has a DIRECT flash interface
+            # (no bus); the AHB-Lite phase is modeled inside ARTCache.
+            # Setting this to False prevents double-counting bus
+            # delay that real silicon doesn't have between ART and
+            # flash.
             flash_memories = [
                 SimpleMemory(
                     range=AddrRange(0x08000000, size="256KiB"),
                     latency="23000ps",
+                    include_receive_delay=False,
                 ),
                 SimpleMemory(
                     range=AddrRange(0x08040000, size="256KiB"),
                     latency="23000ps",
+                    include_receive_delay=False,
                 ),
             ]
         else:

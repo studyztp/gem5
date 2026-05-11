@@ -38,8 +38,12 @@
 #include "base/statistics.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "debug/ARTBuffers.hh"
+#include "debug/ARTBypass.hh"
 #include "debug/ARTCache.hh"
 #include "debug/ARTCacheLineTrace.hh"
+#include "debug/ARTPipeline.hh"
+#include "debug/ARTPrefetch.hh"
 #include "debug/Cache.hh"
 #include "mem/cache/noncoherent_cache.hh"
 #include "mem/cache/queue_entry.hh"
@@ -79,8 +83,27 @@ class ART : public NoncoherentCache
     /** Requestor ID registered for ART prefetch traffic. */
     RequestorID artRequestorId;
 
-    /** Latency (in ticks) for serving from the ART prefetch/current buffer. */
-    const Tick bufferHitLatency;
+    /**
+     * Latency (in ticks) for serving from the ART prefetch / current
+     * buffer (Cases B1 and B2 in the dispatch table).  Distinct from
+     * ``portAhbBufferLatency``, which covers the port-level AHB-Lite
+     * back-to-back pipeline buffer (Case A).
+     *
+     * This latency is ONLY used when ``enablePrefetch`` is true.  It
+     * MUST NOT appear on any path active in the bypass mode
+     * (``directMemoryMode && !enablePrefetch``).
+     */
+    const Tick prefetchBufferHitLatency;
+
+    /**
+     * Flash access latency for ART's case-F direct dispatch path.
+     * ART models the flash access internally — functional read of
+     * flash data + scheduled internal response — to avoid the timing
+     * overhead of going through the standard memSidePort → flash_bus
+     * XBar → SimpleMemory event machinery.  See ``issueFlashRead``.
+     * Must match the connected flash memory's latency parameter.
+     */
+    const Tick flashResponseLatency;
 
     /**
      * Size in bytes of the port-level AHB buffer. Mirrors the most
@@ -114,6 +137,25 @@ class ART : public NoncoherentCache
          * buffer/cache hits set this false and never gate the flag.
          */
         bool boundToInFlight;
+
+        /**
+         * Case-F deferred AHB-buffer update.  In the PSM-internal
+         * dispatch path (``issueFlashRead``), the AHB-port buffer
+         * must be filled at the response-delivery tick (in
+         * ``popOutputBuffer``), NOT at the dispatch tick — otherwise
+         * within-line follow-up requests AHB-HIT before the flash
+         * response is even delivered, producing PSM-incompatible
+         * timing (ART would dispatch the next miss 5000 ticks before
+         * PSM does).  These fields carry the line data from
+         * ``issueFlashRead`` to ``popOutputBuffer`` for that fill.
+         * ``hasLineData`` is left false for all other entries (Case A
+         * AHB-hit serve, Cases B/C/D/E responses).
+         */
+        bool hasLineData = false;
+        Addr lineBlockAddr = 0;
+        uint32_t lineStreamId = ~uint32_t(0);
+        std::vector<uint8_t> lineData;
+
         DeferredPacket(PacketPtr _pkt, Tick _tick,
                        bool _bound = false)
             : pkt(_pkt), tick(_tick), boundToInFlight(_bound) {}
@@ -124,6 +166,25 @@ class ART : public NoncoherentCache
 
     /** Max entries in arriveBuffer (0 = unlimited). */
     size_t arriveBufferSizeLimit;
+
+    /**
+     * Requests promoted past the address phase, awaiting buffer/cache/
+     * flash dispatch.  Stage 2 of the PSM-equivalence refactor introduces
+     * this buffer between arriveBuffer and the dispatcher — popArriveBuffer
+     * moves one entry from arriveBuffer to readyToFireBuffer, then
+     * popReadyToFireBuffer chooses Case A (AHB-port buffer hit), Case
+     * B1/B2 (curBuf/pfBuf hit), or falls through to the serializing
+     * cache/bypass dispatch.  Stage 3+ raises the size limit to enable
+     * AHB-Lite back-to-back pipelining.
+     */
+    std::deque<DeferredPacket> readyToFireBuffer;
+
+    /**
+     * Max entries in readyToFireBuffer (0 = unlimited).  Stage 2 keeps
+     * this at 1 so behavior matches the legacy single-slot pipeline;
+     * Stage 3+ raises it.
+     */
+    size_t readyToFireBufferSizeLimit;
 
     /** Responses ready to be sent to upstream. */
     std::list<DeferredPacket> outputBuffer;
@@ -136,17 +197,102 @@ class ART : public NoncoherentCache
      */
     bool processingInFlight = false;
 
+    // ---- Stage-1 (issue 2026-05-10-art-bypass-vs-no-art-divergence)
+    // pipeline-slot scaffolding -------------------------------------
+    /**
+     * Stage of an in-flight request.  Used by inFlightSlots to track
+     * progress of multiple concurrent requests (AHB-Lite back-to-back).
+     * Stage 1 only uses Empty / DataPhase as a parallel counter to
+     * processingInFlight; later stages will use the full enum.
+     */
+    enum class InFlightStage : uint8_t
+    {
+        Empty = 0,
+        Admitted,        // queued in arriveBuffer
+        AddressPhase,    // address-phase event scheduled
+        DataPhase,       // dispatched downstream (memory / cache)
+        Response,        // waiting in outputBuffer for delivery
+    };
+
+    /** A single in-flight request slot.  See inFlightSlots. */
+    struct InFlightSlot
+    {
+        PacketPtr pkt = nullptr;     // owning packet (or nullptr if free)
+        Tick admitTick = 0;          // when admitted (DPRINTFs)
+        uint32_t streamId = 0;       // for streamId flush bookkeeping
+        InFlightStage stage = InFlightStage::Empty;
+    };
+
+    /**
+     * In-flight request slots.  Capacity = maxOutstandingRequests.
+     * Stage 1 wires this in parallel with processingInFlight (1:1 when
+     * max_outstanding_requests == 1, the default-on-Stage-1 setting);
+     * Stage 2+ shifts dispatch gating from processingInFlight to the
+     * per-slot tracking.
+     */
+    std::vector<InFlightSlot> inFlightSlots;
+
+    /** Acquire a free slot (returns slot index, or -1 if none free). */
+    int slotAcquire(PacketPtr pkt, InFlightStage stage);
+
+    /** Release the slot at the given index. */
+    void slotRelease(int idx);
+
+    /** Number of unallocated slots. */
+    unsigned slotsAvailable() const;
+
+    /** Find the slot index whose pkt matches; -1 if none. */
+    int slotFindByPkt(PacketPtr pkt) const;
+
+    /** Find the lowest-index slot in DataPhase (FIFO release order). */
+    int slotFirstInDataPhase() const;
+
+    /** Compact one-line slot state dump, for ARTPipeline DPRINTFs. */
+    std::string slotsSnapshot() const;
+    // ---- end Stage-1 scaffolding ---------------------------------
+
     /**
      * Pipeline buffer/cache hits at addressPhaseLatency cadence
      * instead of serializing on processingInFlight.
      */
     const bool enablePipeline;
 
+    /**
+     * Max number of in-flight requests (AHB-Lite back-to-back depth).
+     * 1 = strict serialization; 2 = address-phase / data-phase
+     * pipelining (the AHB-Lite spec).  Stage 0 wires this in but
+     * does not yet act on it; Stage 3+ uses it.
+     */
+    const unsigned maxOutstandingRequests;
+
+    /**
+     * If true, when direct_memory_mode AND !enable_prefetch, route
+     * via the PSM-equivalent fast path (no cache fill, no buffer
+     * touches, no prefetch).  Stage 0 wires this in but does not
+     * yet act on it; Stage 3 uses it.
+     */
+    const bool psmCompatibleBypass;
+
     /** AHB address phase duration (in ticks). */
     const Tick addressPhaseLatency;
 
     /** Last stream ID seen (for AHB transfer retraction). */
     uint32_t lastStreamId;
+
+    /**
+     * Stream ID tagged onto the AHB-port buffer's currently-held line.
+     * Mirrors PSM's ``portBufferedStreamId``: when the next CPU request
+     * carries a streamId, the AHB-buffer hit check requires both the
+     * block address AND the streamId to match.  This models the silicon
+     * behaviour where a taken-branch redirect (which bumps streamId in
+     * the F-stage) invalidates the AHB sense-amp buffer for the new
+     * stream.
+     *
+     * ``~0u`` means "no streamId tagged" — falls back to address-only
+     * matching for untagged requests (e.g. DCode loads, system-port
+     * functional accesses).
+     */
+    uint32_t ahbBufferedStreamId = ~uint32_t(0);
 
     /** Stale packets to return as BadAddress on stream change. */
     std::list<PacketPtr> staleReturnQueue;
@@ -163,6 +309,18 @@ class ART : public NoncoherentCache
 
     /** New pipelined request handler: see design plan. */
     void popArriveBufferPipelined();
+
+    /**
+     * Drain the readyToFireBuffer at the dispatch point.  Mirrors PSM's
+     * popReadyToFireBuffer (gem5/src/mem/pipelined_simple_mem.cc).
+     * Order: stream-id flush (Case G), Case A (AHB-port buffer hit
+     * fast path; never falls through to cache/prefetch), Case B1/B2
+     * (curBuf/pfBuf hit), then AHB-miss fallback to the serializing
+     * dispatch (Case C/D/E/F).  Stage 2 introduces the structural
+     * separation; Stage 3 will replace the AHB-miss fallback with the
+     * PSM-equivalent direct flash path.
+     */
+    void popReadyToFireBuffer();
 
     /**
      * Update nextPfAddr based on @p reqAddr and, if needed, allocate
@@ -416,9 +574,12 @@ class ART : public NoncoherentCache
      * hit, prefetch response, bypass response). No-op when the AHB
      * buffer is disabled (portAhbBufferSize == 0).
      *
-     * @param src  The buffer whose data is being delivered to the CPU.
+     * @param src       The buffer whose data is being delivered to the CPU.
+     * @param streamId  Stream ID to tag onto the AHB buffer
+     *                  (``~0u`` = no streamId / untagged).
      */
-    void updateAHBBufferFromLine(const ARTPrefetchBuffer &src);
+    void updateAHBBufferFromLine(const ARTPrefetchBuffer &src,
+                                 uint32_t streamId = ~uint32_t(0));
 
     /**
      * Update the port-level AHB buffer from a raw response packet.
@@ -427,8 +588,11 @@ class ART : public NoncoherentCache
      *
      * @param blk_addr  Block-aligned source address.
      * @param src_data  Pointer to at least portAhbBufferSize bytes.
+     * @param streamId  Stream ID to tag onto the AHB buffer
+     *                  (``~0u`` = no streamId / untagged).
      */
-    void updateAHBBufferFromRaw(Addr blk_addr, const uint8_t *src_data);
+    void updateAHBBufferFromRaw(Addr blk_addr, const uint8_t *src_data,
+                                uint32_t streamId = ~uint32_t(0));
 
     /**
      * Serve a CPU request from the AHB buffer. Pushes a response to
@@ -752,6 +916,41 @@ class ART : public NoncoherentCache
     };
 
     ARTTranslateState *cachePktEntry = nullptr;
+
+    /**
+     * Stage-3 PSM-equivalent bypass sender state (issue
+     * 2026-05-10-art-bypass-vs-no-art-divergence).  Carries the
+     * original CPU packet and the in-flight-slot index through the
+     * flash round-trip so ``recvTimingResp`` can recover them and
+     * release the slot.
+     *
+     * This sender state replaces the bypassCacheEntry queue path for
+     * case F (``directMemoryMode && !enablePrefetch &&
+     * psmCompatibleBypass``): the packet goes straight from
+     * ``popReadyToFireBuffer`` to ``memSidePort.sendTimingReq`` with
+     * no ``schedMemSideSendEvent`` indirection, and the response is
+     * delivered at ``curTick()`` with no ``clockEdge(Cycles(1))``
+     * realignment.  Eliminating both clockEdge realignments closes
+     * the 2-cycle/miss gap vs PSM.
+     */
+    class ARTPSMBypassState : public Packet::SenderState
+    {
+    public:
+        PacketPtr cpuPkt;
+        int slotIdx;
+        ARTPSMBypassState(PacketPtr p, int idx)
+            : cpuPkt(p), slotIdx(idx) {}
+    };
+
+    /**
+     * Stage 3: direct flash dispatch for case F.  Builds a
+     * pfBlkSize-aligned read packet, tags it with
+     * ``ARTPSMBypassState``, and calls
+     * ``memSidePort.sendTimingReq`` directly.  Caller has already
+     * called ``slotAcquire``; this method transitions the slot to
+     * ``DataPhase``.
+     */
+    void issueFlashRead(PacketPtr pkt, int slotIdx);
 
     // ---------------------------------------------------------------
     //  Statistics

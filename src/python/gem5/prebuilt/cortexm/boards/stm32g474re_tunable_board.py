@@ -33,18 +33,18 @@ PipelinedSimpleMemory child's timing parameters in-place after the
 parent constructor runs.  Enables runscript-driven sweeps without
 requiring a gem5 rebuild for each parameter trial.
 
-Default values calibrated for Lego CPU accuracy across all 10 benchmarks
-using hw_no_ov (hardware without overhead) reference:
+Default values, recalibrated 2026-05-10 against the gem5-vs-board-microbench-cycles
+no-ART reference for bench-alu / bench-alu16 / bench-branch:
 
     flash_latency               = "29000ps"
-    flash_address_phase_latency = "400ps"
-    flash_buffer_hit_latency    = "8000ps"
+    flash_address_phase_latency = "600ps"
+    flash_buffer_hit_latency    = "5000ps"
     flash_read_buffer_size      = 8           (64-bit sense-amp latch)
 
-These reproduce silicon's measured kernel-only cycles to within ±3 %
-on nop / alu / alu16 / branch / tight / longbody / nested.  See
-experiments/raw-data/gem5-stm32g4-verification/buffer_hit_sweep.md
-for the calibration sweep.
+These reproduce silicon's no-ART kernel-only cycles to mean |err| ≈ 1.14 %
+on the three target benches (was ≈ 5.87 % under the prior 400 ps / 8000 ps
+defaults).  See experiments/gem5-vs-board-microbench-cycles/data/
+sweep_no_art_fine_score.csv for the calibration sweep.
 
 Usage from a runscript:
 
@@ -81,13 +81,13 @@ class STM32G474RETunableBoard(STM32G474RETimingBoard):
         ``PipelinedSimpleMemory.latency`` (Flash data-phase access
         time).  Calibrated for Lego CPU accuracy.
 
-    flash_address_phase_latency : str, default ``"400ps"``
+    flash_address_phase_latency : str, default ``"600ps"``
         ``PipelinedSimpleMemory.address_phase_latency`` (AHB address
         phase, models the ICode bus address-phase setup).
 
-    flash_buffer_hit_latency : str, default ``"8000ps"``
+    flash_buffer_hit_latency : str, default ``"5000ps"``
         ``PipelinedSimpleMemory.buffer_hit_latency`` (AHB data
-        phase on a Flash sense-amp hit).  Calibrated for Lego CPU accuracy.
+        phase on a Flash sense-amp hit).
 
     flash_read_buffer_size : int, default ``8``
         ``PipelinedSimpleMemory.port_read_buffer_size`` per port
@@ -98,8 +98,8 @@ class STM32G474RETunableBoard(STM32G474RETimingBoard):
     def __init__(
         self,
         flash_latency: str = "29000ps",
-        flash_address_phase_latency: str = "400ps",
-        flash_buffer_hit_latency: str = "8000ps",
+        flash_address_phase_latency: str = "600ps",
+        flash_buffer_hit_latency: str = "5000ps",
         flash_read_buffer_size: int = 8,
         **kwargs,
     ):

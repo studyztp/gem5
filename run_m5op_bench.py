@@ -6,12 +6,17 @@ calibrated memory timings.
 
 CPU: ArmMSignalCPU (signal-driven 3-stage in-order; commit e09b461cb &
      671629f89 — E->D flag fwd, D-side T1 Bcond resolve).
-Boards (commit 6afcb46d4 + 1b682373b):
+Boards (defaults recalibrated 2026-05-10 from sweep_no_art_fine):
   --no-art : STM32G474RETunableBoard
-             flash 29000ps / addr_phase 400ps / buf_hit 8000ps / rbuf 8
+             flash 29000ps / addr_phase 600ps / buf_hit 5000ps / rbuf 8
   default  : STM32G474RETunableBoardART
-             flash 23000ps / addr_phase 500ps / buf_hit 0ns,
+             flash 29000ps / addr_phase 600ps / buf_hit 5000ps,
              pipelined ART buffer hits, AHB-port buffer size 8.
+             flash latency now matches the no-ART board's value
+             (the silicon flash is the same regardless of whether
+             ART is enabled).
+             ART cache + prefetch can be toggled independently via
+             --no-art-cache / --no-art-prefetch (each defaults on).
 
 The benchmark firmware uses gem5 m5ops via semihosting:
   - m5_work_begin()  -> enables debug flags, resets stats
@@ -121,13 +126,13 @@ no_art.add_argument(
 )
 no_art.add_argument(
     "--flash-address-phase-latency",
-    default="400ps",
-    help="PipelinedSimpleMemory.address_phase_latency (default 400ps).",
+    default="600ps",
+    help="PipelinedSimpleMemory.address_phase_latency (default 600ps).",
 )
 no_art.add_argument(
     "--flash-buffer-hit-latency",
-    default="8000ps",
-    help="PipelinedSimpleMemory.buffer_hit_latency (default 8000ps).",
+    default="5000ps",
+    help="PipelinedSimpleMemory.buffer_hit_latency (default 5000ps).",
 )
 no_art.add_argument(
     "--flash-read-buffer-size",
@@ -144,18 +149,26 @@ art = parser.add_argument_group(
 )
 art.add_argument(
     "--art-flash-latency",
-    default="23000ps",
-    help="SimpleMemory.latency for flash behind ART (default 23000ps).",
+    default="29000ps",
+    help="SimpleMemory.latency for flash behind ART (default 29000ps; "
+    "matches no-ART board's flash_latency since the underlying "
+    "silicon flash takes the same time regardless of whether ART is "
+    "enabled — RM0440 §4 Table 19, 4 wait states + 1 access cycle = "
+    "5 HCLK at 170 MHz).",
 )
 art.add_argument(
     "--art-address-phase-latency",
-    default="500ps",
-    help="ARTCache.address_phase_latency (default 500ps).",
+    default="600ps",
+    help="ARTCache.address_phase_latency (default 600ps).",
 )
 art.add_argument(
-    "--art-buffer-hit-latency",
-    default="0ns",
-    help="ARTCache.buffer_hit_latency (default 0ns; matches real HW 0WS).",
+    "--art-prefetch-buffer-hit-latency",
+    "--art-buffer-hit-latency",  # legacy alias
+    dest="art_prefetch_buffer_hit_latency",
+    default="5000ps",
+    help="ARTCache.prefetch_buffer_hit_latency — latency for serving "
+    "from the ART current/prefetch buffer (Cases B1/B2).  Distinct "
+    "from --art-port-ahb-buffer-latency (Case A).  Default 5000ps.",
 )
 art.add_argument(
     "--no-art-pipeline",
@@ -181,6 +194,44 @@ art.add_argument(
     default="0ns",
     help="ARTCache.port_ahb_buffer_latency (default 0ns).",
 )
+art.add_argument(
+    "--no-art-cache",
+    dest="art_enable_cache",
+    action="store_false",
+    help="Disable the ART data cache "
+    "(ARTCache.direct_memory_mode=True).  Demand misses bypass the "
+    "underlying cache and go straight to flash; cache fills are "
+    "skipped.  Per-bank prefetch buffers still serve hits unless "
+    "--no-art-prefetch is also passed.  Default: cache enabled.",
+)
+parser.set_defaults(art_enable_cache=True)
+art.add_argument(
+    "--no-art-prefetch",
+    dest="art_enable_prefetch",
+    action="store_false",
+    help="Disable ART sequential instruction prefetching "
+    "(ARTCache.enable_prefetch=False).  The cache still fills/hits "
+    "unless --no-art-cache is also passed.  Default: prefetch "
+    "enabled.",
+)
+parser.set_defaults(art_enable_prefetch=True)
+art.add_argument(
+    "--art-max-outstanding-requests",
+    type=int,
+    default=2,
+    help="ARTCache.max_outstanding_requests (AHB-Lite back-to-back "
+    "depth: 1 = strict serialization, 2 = address-phase / data-phase "
+    "pipelining, default 2).",
+)
+art.add_argument(
+    "--no-art-psm-compatible-bypass",
+    dest="art_psm_compatible_bypass",
+    action="store_false",
+    help="When ART cache+prefetch are both off, skip the PSM-style "
+    "fast path and use the legacy bypassCacheEntry path.  For A/B "
+    "testing during the refactor.  Default: PSM-compatible (faster).",
+)
+parser.set_defaults(art_psm_compatible_bypass=True)
 
 args = parser.parse_args()
 
@@ -204,11 +255,15 @@ else:
         cpu_cls=ArmMSignalCPU,
         art_flash_latency=args.art_flash_latency,
         art_address_phase_latency=args.art_address_phase_latency,
-        art_buffer_hit_latency=args.art_buffer_hit_latency,
+        art_prefetch_buffer_hit_latency=args.art_prefetch_buffer_hit_latency,
         art_enable_pipeline=args.art_enable_pipeline,
         art_arrive_buffer_size=args.art_arrive_buffer_size,
         art_port_ahb_buffer_size=args.art_port_ahb_buffer_size,
         art_port_ahb_buffer_latency=args.art_port_ahb_buffer_latency,
+        art_enable_cache=args.art_enable_cache,
+        art_enable_prefetch=args.art_enable_prefetch,
+        art_max_outstanding_requests=args.art_max_outstanding_requests,
+        art_psm_compatible_bypass=args.art_psm_compatible_bypass,
     )
     print(
         f"Board: STM32G474RETunableBoardART (ART on) "
@@ -280,8 +335,14 @@ while True:
         roi_start_tick = m5.curTick()
         print(f"\n*** ROI BEGIN at tick {roi_start_tick} ***")
         stats_reset()
-        # Enable Exec trace during ROI for cycle-level analysis
-        m5_debug.flags["Exec"].enable()
+        # Enable Exec trace during ROI for cycle-level analysis,
+        # but NOT if "Exec" is already in roi_flags (allows the user to
+        # opt out by passing --debug-flags=NoExec or by running with a
+        # set that intentionally excludes Exec).
+        if "NoExec" not in roi_flags:
+            m5_debug.flags["Exec"].enable()
+        else:
+            print("  Skipping Exec auto-enable (NoExec sentinel in flags)")
         for flag_name in roi_flags:
             if flag_name in m5_debug.flags:
                 m5_debug.flags[flag_name].enable()
