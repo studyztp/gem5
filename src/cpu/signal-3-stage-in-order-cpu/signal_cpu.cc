@@ -76,6 +76,22 @@ SignalCPU::SignalCPU(const Params &params)
 
     _pipeline = std::make_unique<Pipeline>(*this, params.pfu_fifo_words,
                                            params.pfu_max_outstanding_fetches);
+
+    // Per-OpClass execute-latency table.  Default every entry to
+    // 1 cycle (matches the prior hardcoded behavior in
+    // AluFunctionUnit).  Override via the Python `opclass_latencies`
+    // param — empty list keeps all defaults; non-empty must have
+    // length exactly `enums::Num_OpClass` (see SignalCPU.py and the
+    // ArmMSignalCPU M-profile overrides in arch/arm/ArmMCPU.py).
+    _opClassLatency.fill(Cycles(1));
+    if (!params.opclass_latencies.empty()) {
+        panic_if(params.opclass_latencies.size() != enums::Num_OpClass,
+                 "opclass_latencies size %u != Num_OpClass %u",
+                 (unsigned) params.opclass_latencies.size(),
+                 (unsigned) enums::Num_OpClass);
+        for (size_t i = 0; i < enums::Num_OpClass; ++i)
+            _opClassLatency[i] = params.opclass_latencies[i];
+    }
 }
 
 SignalCPU::~SignalCPU()

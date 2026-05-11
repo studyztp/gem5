@@ -262,15 +262,21 @@ Execute::commitOne()
         }
         // initiateAcc didn't push (predicate failed); fall through.
     } else if (AluFunctionUnit::accepts(inst)) {
-        // Integer-ALU op routed through the ALU function unit.
+        // Integer-ALU OR floating-point-ALU op routed through the
+        // ALU function unit.  Per-op latency comes from the
+        // SignalCPU's per-OpClass latency table — default 1 cy
+        // for every OpClass, with M-profile overrides for SDIV/UDIV
+        // (dynamic 2-12 cy via DynamicLatencyIntDiv formula) and
+        // VDIV/VSQRT (fixed 14 cy per TRM Table 3-1, configured in
+        // ArmMSignalCPU in arch/arm/ArmMCPU.py).
+        //
         // For 1-cy ops the FU completes in the same cycle as issue,
         // so we run inst->execute() and retire immediately
-        // (preserving the current nop/mov/add timing).  Multi-cycle
-        // ops (UDIV/SDIV per TRM Table 3-1) issue this cycle and
-        // schedule a single completion event at clockEdge(lat - 1);
-        // E stalls (e_accept_d=false, early return) on subsequent
-        // cycles until the event fires and the state becomes
-        // Complete.
+        // (preserving the original nop/mov/add timing).  Multi-cycle
+        // ops issue this cycle and schedule a single completion
+        // event at clockEdge(lat - 1); E stalls (e_accept_d=false,
+        // early return) on subsequent cycles until the event fires
+        // and the state becomes Complete.
         if (_alu.idle()) {
             _alu.issue(inst, thread.getTC());
         }
@@ -306,9 +312,13 @@ Execute::commitOne()
                 (unsigned long long)_post_c);
         _alu.release();
     } else {
-        // Non-memory, non-ALU inst (control / floating-point /
-        // miscellaneous): full execute in one cycle on the legacy
-        // direct path.
+        // Non-memory, non-ALU, non-FP inst (control + any other
+        // miscellaneous opclass not handled by the FU): full execute
+        // in one cycle on the legacy direct path.  Floating-point
+        // ALU ops are now routed through the AluFunctionUnit above
+        // (per-OpClass latency table); this branch handles only
+        // residual cases like bx_lr / b / bcond and any inst whose
+        // `accepts()` returns false for non-FP reasons.
         fault = inst->execute(&ctx, traceData);
         panic_if(fault != NoFault,
                  "Execute: fault from execute(): %s",

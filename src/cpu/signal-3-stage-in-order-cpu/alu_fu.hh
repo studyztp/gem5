@@ -66,12 +66,13 @@ class SignalCPU;
  *   Complete  — op finished this cycle; E should commit and release.
  *
  * Supported instruction class (`accepts()`):
- *   - StaticInst::isInteger()  AND
+ *   - (StaticInst::isInteger() OR StaticInst::isFloating()) AND
  *   - !StaticInst::isMemRef()  AND
- *   - !StaticInst::isControl() AND
- *   - !StaticInst::isFloating()
- * Branches go through E's direct path, memrefs through the LSQ,
- * floating-point ops through the legacy 1-cy direct path.
+ *   - !StaticInst::isControl()
+ * Branches go through E's direct path, memrefs through the LSQ.
+ * Floating-point ALU ops are routed through this FU; their per-op
+ * latency comes from the SignalCPU's per-OpClass table (see
+ * signal_cpu.hh `opClassLatency()`).
  */
 class AluFunctionUnit
 {

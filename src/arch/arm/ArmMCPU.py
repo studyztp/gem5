@@ -68,3 +68,24 @@ class ArmMSimple3CycleCPU(Simple3CycleCPU, ArmMCPU):
 
 class ArmMSignalCPU(SignalCPU, ArmMCPU):
     mmu = ArmMMMU()
+
+    # Cortex-M4 FPv4-SP per-OpClass latency overrides (DDI0439B
+    # Table 3-1).  VDIV.F32 (SimdFloatDiv) and VSQRT.F32
+    # (SimdFloatSqrt) are documented as fixed 14 cycles — NOT
+    # data-dependent like SDIV.  Calibration sweep at
+    # `issues/2026-05-11-fpu-calibration/findings.md` confirms
+    # silicon = 13.87 / 13.81 cy/inst at fixed operand points.
+    #
+    # All other OpClasses default to 1 cycle (handled by the empty
+    # base default in SignalCPU.py).
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from m5.objects.FuncUnit import OpClass
+        from m5.objects.SignalCPU import build_opclass_latencies
+
+        self.opclass_latencies = build_opclass_latencies(
+            {
+                OpClass("SimdFloatDiv"): 14,
+                OpClass("SimdFloatSqrt"): 14,
+            }
+        )

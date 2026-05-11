@@ -65,25 +65,40 @@ AluFunctionUnit::accepts(const StaticInstPtr &inst)
         return false;
     // Memory ops go through the LSQ; control ops (branches) are
     // resolved directly in E because the redirect path is structural
-    // (e_redirect_to_f / d_redirect_to_f).  Floating-point ops aren't
-    // ALU and aren't modeled here yet.
+    // (e_redirect_to_f / d_redirect_to_f).  Everything else — int
+    // ALU, FP ALU, miscellaneous — goes through this FU, with
+    // per-op latency from the SignalCPU's per-OpClass table
+    // (default 1 cy, with M-profile overrides for VDIV/VSQRT in
+    // ArmMSignalCPU).
+    //
+    // Note: gem5's ARM M-profile FP insts (MFpOp and subclasses in
+    // arch/arm/m_fp_insts.hh) set `flags[IsVectorElem]` but DO NOT
+    // set `IsFloating` or `IsInteger`.  So we can't gate on those
+    // flags; we route by exclusion (not memref, not control)
+    // instead, and rely on the OpClass enum to differentiate per-op
+    // latency via `_cpu.opClassLatency()`.
     if (inst->isMemRef())
         return false;
     if (inst->isControl())
         return false;
-    if (inst->isFloating())
-        return false;
-    return inst->isInteger();
+    return true;
 }
 
 unsigned
 AluFunctionUnit::latencyFor(const StaticInstPtr &inst,
                             ThreadContext *tc) const
 {
-    // Every accepted op except IntDivOp is 1-cy on Cortex-M4 — this
-    // FU stays a same-cycle pass-through for the common case.
-    if (inst->opClass() != IntDivOp)
-        return 1;
+    OpClass op = inst->opClass();
+
+    // SDIV / UDIV keep their operand-dependent 2-12 cy formula
+    // (TRM-documented variable latency on Cortex-M4 via early
+    // termination on leading ones/zeroes).  Every other OpClass
+    // uses the per-OpClass table on the SignalCPU (see
+    // signal_cpu.hh and SignalCPU.py).  VDIV/VSQRT in particular
+    // get 14 cy via the ArmMSignalCPU override — they are not
+    // operand-dependent on M4, just fixed 14 per TRM Table 3-1.
+    if (op != IntDivOp)
+        return (unsigned) _cpu.opClassLatency(op);
 
     // Find the maximum-magnitude integer source operand.  ARM SDIV /
     // UDIV take two int sources (dividend Rn, divisor Rm); we read

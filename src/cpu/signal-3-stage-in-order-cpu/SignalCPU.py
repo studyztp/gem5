@@ -30,6 +30,54 @@ from m5.params import *
 from m5.proxy import Self
 
 
+def build_opclass_latencies(overrides):
+    """Build the full Num_OpClass-length latency vector from a
+    sparse dict of overrides.  Unspecified OpClasses default to 1.
+
+    Args:
+        overrides: dict mapping `m5.objects.FuncUnit.OpClass` enum
+            values (or their string names) to integer cycle counts.
+
+    Returns:
+        A list of integers of length `Num_OpClass`, suitable for
+        assignment to `SignalCPU.opclass_latencies`.
+
+    Example:
+        from m5.objects.FuncUnit import OpClass
+        from m5.objects.SignalCPU import build_opclass_latencies
+        cpu.opclass_latencies = build_opclass_latencies({
+            OpClass("SimdFloatDiv"):  14,
+            OpClass("SimdFloatSqrt"): 14,
+        })
+
+    Helper lives at module scope (not class scope) because the
+    gem5 SimObject metaclass treats class-level non-classmethod
+    attributes as Param declarations.
+    """
+    from m5.objects.FuncUnit import OpClass
+
+    # `OpClass.map` is a {name_str: int_index} dict (see
+    # m5/params/enum_params.py MetaEnum), and `OpClass(...).value`
+    # is the string name.  Build the latency vector indexed by
+    # that integer.
+    n = len(OpClass.map)
+    out = [1] * n
+    for op, lat in overrides.items():
+        if isinstance(op, str):
+            name = op
+        elif hasattr(op, "value"):
+            name = op.value
+        else:
+            name = str(op)
+        if name not in OpClass.map:
+            raise ValueError(
+                f"build_opclass_latencies: unknown OpClass '{name}' "
+                f"(expected one of {sorted(OpClass.map.keys())[:5]}...)"
+            )
+        out[OpClass.map[name]] = lat
+    return out
+
+
 class SignalCPU(BaseCPU):
     """Signal-driven 3-stage in-order CPU.
 
@@ -76,6 +124,22 @@ class SignalCPU(BaseCPU):
 
     icache_port = RequestPort("Instruction-side cache/AHB port")
     dcache_port = RequestPort("Data-side cache/AHB port")
+
+    # Per-OpClass execute latency in cycles.  Empty default keeps
+    # the C++ side at all-1s; non-empty must have length
+    # `enums::Num_OpClass` (see gem5/src/cpu/op_class.hh).  Use the
+    # `build_opclass_latencies()` helper at module scope to
+    # construct the full vector from a sparse {OpClass: cycles}
+    # dict.  ARM M-profile overrides (SimdFloatDiv = 14,
+    # SimdFloatSqrt = 14, per DDI0439B Table 3-1) are applied in
+    # ArmMSignalCPU in arch/arm/ArmMCPU.py.
+    opclass_latencies = VectorParam.Cycles(
+        [],
+        "Per-OpClass execute latency in cycles.  Empty -> all 1.  "
+        "When non-empty, must be length enums::Num_OpClass; entries "
+        "indexed by the OpClass enum.  Looked up by "
+        "AluFunctionUnit::latencyFor() to pick per-inst cycle counts.",
+    )
 
     @classmethod
     def require_caches(cls):

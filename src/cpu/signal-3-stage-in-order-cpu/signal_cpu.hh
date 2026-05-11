@@ -30,12 +30,14 @@
 #ifndef __CPU_SIGNAL_3_STAGE_IN_ORDER_CPU_SIGNAL_CPU_HH__
 #define __CPU_SIGNAL_3_STAGE_IN_ORDER_CPU_SIGNAL_CPU_HH__
 
+#include <array>
 #include <memory>
 #include <vector>
 
 #include "cpu/base.hh"
 #include "cpu/signal-3-stage-in-order-cpu/stats.hh"
 #include "cpu/simple_thread.hh"
+#include "enums/OpClass.hh"
 #include "params/SignalCPU.hh"
 
 namespace gem5
@@ -122,11 +124,24 @@ class SignalCPU : public BaseCPU
     /** Used by ports' recvTimingResp to forward to Pipeline. */
     Pipeline &pipeline() { return *_pipeline; }
 
+    /** Per-OpClass execute-latency table.  Default = 1 cycle for
+     *  every OpClass; specific entries are overridden from
+     *  `params.opclass_latencies` at construction.  Looked up by
+     *  `AluFunctionUnit::latencyFor()` to pick a per-inst cycle
+     *  count.  See SignalCPU.py for the override mechanism and
+     *  ArmMSignalCPU in arch/arm/ArmMCPU.py for the M4 overrides
+     *  (SimdFloatDiv = 14, SimdFloatSqrt = 14). */
+    Cycles opClassLatency(enums::OpClass op) const
+    {
+        return _opClassLatency[(unsigned) op];
+    }
+
   private:
     Addr _haltAddr;
     uint32_t _currentStreamId = 1;
     std::unique_ptr<Pipeline> _pipeline;
     SignalCPUStats _stats;
+    std::array<Cycles, enums::Num_OpClass> _opClassLatency;
 };
 
 } // namespace signal3
