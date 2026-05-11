@@ -87,6 +87,7 @@ Decode::beginCycle()
     _slotDecisionMadeThisCycle = false;
     _pendingCondBranchAddr.reset();
     _pendingCondBranchFallThrough = 0;
+    _pendingBxLrAddr.reset();
 }
 
 void
@@ -102,6 +103,7 @@ Decode::applyRedirect(Addr target)
     // wrong-path now — drop the pending state.
     _pendingCondBranchAddr.reset();
     _pendingCondBranchFallThrough = 0;
+    _pendingBxLrAddr.reset();
     // Drop any in-flight macro-op expansion — wrong-path.
     _curMacro = nullptr;
     _microPC = 0;
@@ -404,7 +406,11 @@ Decode::settle()
 bool
 Decode::tryEarlyResolveBranch(DecodedSlot &ds)
 {
-    if (!ds.staticInst->isControl())
+    // Note: ARM M-profile `BxMProfile` (gem5/src/arch/arm/m_insts.hh)
+    // sets IsIndirectControl + IsUncondControl but NOT IsControl, so
+    // `isControl()` returns false for `bx lr`.  Accept both flags
+    // here so the indirect-control path below can fire for bx_lr.
+    if (!ds.staticInst->isControl() && !ds.staticInst->isIndirectCtrl())
         return false;
 
     // Conditional branches: 16-bit T1 Bcond resolves at D using
@@ -418,10 +424,15 @@ Decode::tryEarlyResolveBranch(DecodedSlot &ds)
     if (ds.staticInst->isCondCtrl())
         return tryDecodeOnlyResolveCondBranch(ds);
 
-    // Indirect branches need register reads via the
-    // operand-forwarding path which is E-side.
+    // Indirect uncond branches: try `bx lr`-style decode-time
+    // resolution by reading the source register (LR) via
+    // ThreadContext.  Gated on EXC_RETURN magic-value range, Thumb
+    // bit, and absence of in-flight LR-writer.  See
+    // tryDecodeOnlyResolveBxLr for the full pattern.  Returns false
+    // for non-bx_lr cases (BLX register, anything with >1 src reg)
+    // — those fall through to E-side resolve.
     if (ds.staticInst->isIndirectCtrl())
-        return false;
+        return tryDecodeOnlyResolveBxLr(ds);
 
     // Speculatively run the unconditional branch's execute()
     // against the current thread context.  Save/restore
@@ -618,6 +629,118 @@ Decode::dSlotOutHasPendingFlagSetter() const
         }
     }
     return false;
+}
+
+namespace {
+
+// Helper: true iff `inst` writes the integer register at index `idx`.
+// Walks the inst's dest-reg array and matches IntRegClass + idx.
+bool
+instWritesIntReg(const StaticInstPtr &inst, RegIndex idx)
+{
+    if (!inst)
+        return false;
+    const uint8_t n = inst->numDestRegs();
+    for (uint8_t i = 0; i < n; ++i) {
+        const RegId &dest = inst->destRegIdx(i);
+        if (dest.is(IntRegClass) && dest.index() == idx)
+            return true;
+    }
+    return false;
+}
+
+} // namespace
+
+bool
+Decode::dSlotOutWritesIntReg(RegIndex idx) const
+{
+    if (!dSlot.out().valid() || !dSlot.out().read().has_value())
+        return false;
+    return instWritesIntReg(dSlot.out().read()->staticInst, idx);
+}
+
+bool
+Decode::eSlotInstWritesIntReg(RegIndex idx) const
+{
+    // Reach across stages via the Pipeline.  Execute exposes a
+    // read-only eSlotInst() accessor; returns nullptr if E is empty.
+    return instWritesIntReg(
+        _cpu.pipeline().getExecute().eSlotInst(), idx);
+}
+
+bool
+Decode::tryDecodeOnlyResolveBxLr(DecodedSlot &ds)
+{
+    // Only handle indirect uncond branches with exactly one int-reg
+    // source.  BxMProfile (gem5/src/arch/arm/m_insts.hh:263) is the
+    // M-profile decode shape we target — it has flags
+    // {IsIndirectControl, IsUncondControl} and a single source =
+    // intRegClass[op1] (typically LR).
+    if (!ds.staticInst->isIndirectCtrl()) return false;
+    if (!ds.staticInst->isUncondCtrl())  return false;
+    // BLX Rm (isCall + indirect) also writes LR as a side effect.
+    // Decode-time resolution skips execute(), so the LR write would
+    // be lost.  Defer to E for now; future work could mimic the
+    // direct-uncond speculative-execute pattern.
+    if (ds.staticInst->isCall())         return false;
+    if (ds.staticInst->numSrcRegs() != 1) return false;
+    const RegId &src = ds.staticInst->srcRegIdx(0);
+    if (!src.is(IntRegClass))             return false;
+
+    // Defer if an in-flight inst is about to write the source reg
+    // (LR for bx_lr).  D fires at stageId=1 before E at stageId=2,
+    // so when E commits an LR-writer this same cycle, our `tc->getReg`
+    // would see pre-commit (stale) value.  This deferral mirrors the
+    // cond-branch path's dSlotOutHasPendingFlagSetter pattern.
+    const RegIndex srcIdx = src.index();
+    if (dSlotOutWritesIntReg(srcIdx) || eSlotInstWritesIntReg(srcIdx)) {
+        DPRINTF(Signal3CPUDecode,
+                "defer bx-lr resolve pc=%#x — in-flight writer of "
+                "intReg[%u]\n", ds.addr, (unsigned)srcIdx);
+        _pendingBxLrAddr = ds.addr;
+        return false;
+    }
+
+    ThreadContext *tc = _cpu.thread(0)->getTC();
+    RegVal lr = tc->getReg(src);
+
+    // EXC_RETURN: only fires when LR is in 0xFFFFFFF0..0xFFFFFFFF.
+    // Defer to E so BxMProfile::execute() takes the MProfile IRQ
+    // unstack path (gem5/src/arch/arm/m_insts.cc:353-367).
+    if ((lr & 0xFFFFFFF0) == 0xFFFFFFF0) {
+        DPRINTF(Signal3CPUDecode,
+                "skip bx-lr resolve pc=%#x — EXC_RETURN (lr=%#x)\n",
+                ds.addr, (uint32_t)lr);
+        return false;
+    }
+
+    // M-profile must keep Thumb bit set.  If LR has bit[0]=0 the
+    // E-side execute() will raise MPEXC_USAGEFAULT (INVSTATE).
+    // Defer to E so that fault is delivered correctly.
+    if (!(lr & 1)) {
+        DPRINTF(Signal3CPUDecode,
+                "skip bx-lr resolve pc=%#x — INVSTATE (lr=%#x)\n",
+                ds.addr, (uint32_t)lr);
+        return false;
+    }
+
+    const Addr target = (Addr)(lr & ~(RegVal)1);
+    ds.earlyResolved = true;
+    ds.resolvedNpc   = target;
+    _pendingBxLrAddr.reset();
+
+    DPRINTF(Signal3CPUDecode,
+            "decode-only resolve bx-lr pc=%#x lr=%#x -> %#x\n",
+            ds.addr, (uint32_t)lr, target);
+    _cpu.pipeline().lineTraceEvent("D.earlyRes-bxlr");
+    d_redirect_to_f.write(std::optional<Addr>{target});
+    // D's own internal stream redirects: future decodes start at the
+    // resolved target, and the decoder cache is invalidated since the
+    // target word's bytes are different.
+    _nextInstrAddrToDeliver = target;
+    _haveLoadedWord = false;
+    _lastFetchPc = 0;
+    return true;
 }
 
 void

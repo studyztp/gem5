@@ -97,6 +97,16 @@ class Execute : public Stage
     bool slotValid() const { return _eSlot.has_value(); }
     Addr slotPc() const { return _eSlot.has_value() ? _eSlot->addr : 0; }
 
+    /** Read-only accessor for the StaticInst currently in `_eSlot`,
+     *  or nullptr if E is empty.  Used by D's
+     *  `eSlotInstWritesIntReg()` to detect an in-flight writer of LR
+     *  before speculatively reading LR for `bx lr` decode-time
+     *  resolution.  See decode.cc:tryDecodeOnlyResolveBxLr. */
+    StaticInstPtr eSlotInst() const
+    {
+        return _eSlot.has_value() ? _eSlot->staticInst : nullptr;
+    }
+
     /** True if E most recently committed a non-last micro-op of a
      *  macro and has not yet committed the macro's last uop.  The
      *  macro is "half-committed": SP / regs may have been advanced

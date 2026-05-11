@@ -214,6 +214,41 @@ class Decode : public Stage
      *  16-bit T1 Bcond and should be resolved at E. */
     bool tryDecodeOnlyResolveCondBranch(DecodedSlot &ds);
 
+    /** Decode-only resolution for `bx lr` (M-profile BxMProfile).
+     *  Reads LR via `tc->getReg(srcRegIdx(0))`, checks the EXC_RETURN
+     *  magic-value gate and the Thumb-bit gate, then on success
+     *  marks the slot earlyResolved and pulses `d_redirect_to_f`
+     *  with `target = lr & ~1`.  No execute() call, no
+     *  thread-state mutation.  Falls through to E (return false)
+     *  on:
+     *    - non-bx_lr indirect branches (not one int-reg source),
+     *    - EXC_RETURN magic LR value (`(lr & 0xFFFFFFF0) == 0xFFFFFFF0`),
+     *    - Thumb-bit fault case (`(lr & 1) == 0`),
+     *    - in-flight writer of LR at D or E this cycle.
+     *  Skips `isCall()` indirect branches (BLX Rm) — those write LR
+     *  as a side-effect, which the earlyResolved fast-path skips. */
+    bool tryDecodeOnlyResolveBxLr(DecodedSlot &ds);
+
+    /** True iff `dSlot.out()` holds an inst that writes the given
+     *  integer register (by `intRegClass` index).  Used by the
+     *  `bx lr` decode-time resolve to defer when a same-cycle
+     *  D->E inst will write LR before bx_lr commits.  Mirrors
+     *  `dSlotOutHasPendingFlagSetter` but scoped to int regs. */
+    bool dSlotOutWritesIntReg(RegIndex idx) const;
+
+    /** True iff `Execute::_eSlot` holds an inst that writes the
+     *  given integer register.  Used by the `bx lr` decode-time
+     *  resolve to defer when E is about to commit an LR-writer
+     *  this cycle (D's `tc->getReg` would see pre-commit value). */
+    bool eSlotInstWritesIntReg(RegIndex idx) const;
+
+    /** Pending-resolution state for a deferred `bx lr`.  Set when
+     *  `tryDecodeOnlyResolveBxLr` defers because of an in-flight
+     *  LR writer; cleared on successful resolution / applyRedirect /
+     *  beginCycle.  Today only used for tracing; D's slot stays in
+     *  `dSlot.in()` and naturally re-resolves on the next cycle. */
+    std::optional<Addr> _pendingBxLrAddr;
+
     /* ---- Macro-op micro-op expansion (Minor-style) -----------------
      *
      * ARM Thumb-2 LDM/STM/PUSH/POP and predicated multi-reg ops are
