@@ -97,6 +97,21 @@ class Execute : public Stage
     bool slotValid() const { return _eSlot.has_value(); }
     Addr slotPc() const { return _eSlot.has_value() ? _eSlot->addr : 0; }
 
+    /** True if E most recently committed a non-last micro-op of a
+     *  macro and has not yet committed the macro's last uop.  The
+     *  macro is "half-committed": SP / regs may have been advanced
+     *  by the already-committed uops, but the last uop (which
+     *  typically does the indirect branch / SP writeback) hasn't
+     *  fired yet.  Taking an IRQ here would drop the in-flight last
+     *  uop via applyRedirect; on EXC_RETURN the macro re-runs from
+     *  uop 0 with the partial state already applied, reading from
+     *  wrong stack addresses (see issues/2026-05-10-pushpop_v2-irq-race/).
+     *  Real Cortex-M4 silicon defers IRQ entry on `pop {…, pc}` for
+     *  the same reason — the architecture cannot encode mid-pop SP
+     *  state into EPSR.ICI.  Used by the Pipeline IRQ gate.  Cleared
+     *  on resetTo()/applyRedirect for safety. */
+    bool inMidMacro() const { return _midMacro; }
+
     /** One-line printable state for the line-trace tables. */
     std::string snapshotString() const;
 
@@ -109,6 +124,13 @@ class Execute : public Stage
      * and the value is observed only by E itself across cycles, so a
      * Latch would be redundant. */
     std::optional<DecodedSlot> _eSlot;
+
+    /* Set true on commit of a uop with isLastInMacro=false; cleared
+     * on commit of a uop with isLastInMacro=true (or on
+     * resetTo()/applyRedirect).  Read by Pipeline::checkAndTakeInterrupts
+     * to defer IRQs while a macro is half-committed.  See
+     * inMidMacro() comment above. */
+    bool _midMacro = false;
 
     /* Basic ALU function unit.  Handles integer-ALU ops (nop, mov,
      * add, sub, cmp, mul, ...) with a per-op latency.  For 1-cy

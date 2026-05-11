@@ -76,6 +76,10 @@ Execute::resetTo(Addr /*entryPc*/)
 {
     _eSlot.reset();
     _committedThisCycle = false;
+    // Clear half-committed-macro tracking: the redirect that brought
+    // us here invalidated any in-flight macro state.  Whatever the
+    // new PC stream is, it starts at an instruction boundary.
+    _midMacro = false;
     _alu.reset();
 }
 
@@ -188,6 +192,14 @@ Execute::commitOne()
                     (unsigned)ff.v);
             e_flags_to_d.write(ff);
         }
+        // Track half-committed-macro state for the IRQ gate.  The
+        // early-resolved fast path only fires for direct branches
+        // and decode-only resolved cond branches — all non-macro,
+        // so this clears _midMacro (a no-op unless a prior macro
+        // committed a non-last uop and somehow this insn slipped in
+        // before the last uop, which shouldn't happen but is the
+        // safe value).
+        _midMacro = !e.isLastInMacro;
         _eSlot.reset();
         _committedThisCycle = true;
         // Re-publish e_accept_d now that the slot is gone.
@@ -374,6 +386,15 @@ Execute::commitOne()
                 e.addr, (unsigned)ff.nz, (unsigned)ff.c, (unsigned)ff.v);
         e_flags_to_d.write(ff);
     }
+
+    // Track half-committed macro state for the Pipeline IRQ gate.
+    // Set when we just committed a non-last uop of a macro (more
+    // uops still due before the macro is architecturally complete);
+    // cleared when we commit the last uop (or any non-macro inst).
+    // Pipeline::checkAndTakeInterrupts uses this to defer IRQs while
+    // a multi-uop macro is partway through committing — see
+    // issues/2026-05-10-pushpop_v2-irq-race/ for the failure mode.
+    _midMacro = !isLast;
 
     _eSlot.reset();
     _committedThisCycle = true;

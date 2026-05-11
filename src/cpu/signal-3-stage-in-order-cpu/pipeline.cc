@@ -195,6 +195,16 @@ Pipeline::checkAndTakeInterrupts()
     // finishes the macro expansion.
     if (_decode->inMacroExpansion())
         return;
+    // The above check covers "D is still emitting".  This second
+    // check covers "E has committed some but not all uops":
+    // _curMacro is cleared the moment D *emits* the last uop, even
+    // though E hasn't committed it yet.  Real Cortex-M4 silicon
+    // defers IRQ entry the same way for `pop {…, pc}` (EPSR.ICI
+    // can't encode mid-pop SP state, so the architecture treats
+    // it as non-interruptible).  See
+    // issues/2026-05-10-pushpop_v2-irq-race/ for the trace.
+    if (_execute->inMidMacro())
+        return;
 
     auto *intr = _cpu.getInterruptController(0);
     Fault fault = intr->getInterrupt();
