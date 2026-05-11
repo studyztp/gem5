@@ -132,11 +132,11 @@ class Execute : public Stage
      * inMidMacro() comment above. */
     bool _midMacro = false;
 
-    /* Basic ALU function unit.  Handles integer-ALU ops (nop, mov,
-     * add, sub, cmp, mul, ...) with a per-op latency.  For 1-cy
-     * ops the FU is a same-cycle pass-through so existing timing is
-     * preserved; multi-cycle ops (UDIV/SDIV per TRM Table 3-1) are
-     * the future calibration target. */
+    /* Integer-ALU function unit.  1-cy ops (nop/mov/add/sub/cmp/mul)
+     * take the same-cycle pass-through path; SDIV/UDIV get a dynamic
+     * 2-12 cy latency via a scheduled completion event (see alu_fu.cc
+     * latencyFor()).  Floating-point ops fall through to the legacy
+     * direct-execute path in commitOne(). */
     AluFunctionUnit _alu;
 
     /* Single-issue throttle: at most one commit per cycle. */
@@ -144,9 +144,9 @@ class Execute : public Stage
     void beginCycleHook()
     {
         _committedThisCycle = false;
-        // Advance any in-flight ALU op toward Complete before
-        // settle() looks at the FU state this cycle.
-        _alu.tick();
+        // ALU FU is event-driven: a multi-cy op's completion fires
+        // before this cycle's settle (event priority < CPU_Tick_Pri),
+        // so the FU state is current without a per-cycle tick.
     }
 
     friend class Pipeline;   // for beginCycleHook()

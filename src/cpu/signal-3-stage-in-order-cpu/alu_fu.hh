@@ -34,9 +34,13 @@
 #include <string>
 
 #include "cpu/static_inst.hh"
+#include "sim/eventq.hh"
 
 namespace gem5
 {
+
+class ThreadContext;
+
 namespace signal3
 {
 
@@ -45,34 +49,29 @@ class SignalCPU;
 /**
  * Basic ALU function unit.
  *
- * Encapsulates integer/branch ALU op execution.  Today every op is
- * 1-cycle (matches Cortex-M4 TRM Table 3-1 for `nop`, `mov`, `add`,
- * `subs`, `cmp`, etc.) so issue and complete happen in the same
- * cycle and the FU is structurally a no-op pass-through.  The shape
- * is the scaffolding for multi-cycle ALU ops (UDIV/SDIV = 2-12 cy
- * per TRM Table 3-1) without changing the existing 1-cy fast path.
+ * Encapsulates integer-ALU op execution with per-op latency.
  *
- * State machine (mirrors LSQ's three-state pattern):
+ * Most ARM Cortex-M4 integer ops are 1-cy (nop, mov, add, sub, cmp,
+ * mul, ...) and take the same-cycle fast path: `issue()` transitions
+ * Idle -> Complete in one call so E commits in the same cycle as
+ * issue.  SDIV/UDIV are 2-12 cy keyed on the dividend's significant
+ * bits (DDI0439D Table 3-1); those go Idle -> Pending and schedule
+ * a single completion event at `clockEdge(Cycles(lat - 1))`.  E
+ * stalls (writes e_accept_d=false) while Pending, then commits on
+ * the cycle the event fires.
+ *
+ * State machine:
  *   Idle      — no op in flight; ready to accept a new issue.
- *   Pending   — op issued, latency cycles still to elapse.
+ *   Pending   — op issued, completion event scheduled, cycles to go.
  *   Complete  — op finished this cycle; E should commit and release.
- *
- * For 1-cycle ops the FU goes Idle -> Complete inside `issue()` so
- * E sees `complete()` return true immediately (no cycle delay).
  *
  * Supported instruction class (`accepts()`):
  *   - StaticInst::isInteger()  AND
  *   - !StaticInst::isMemRef()  AND
- *   - !StaticInst::isControl()
- * Branches and memrefs are explicitly rejected — Branch resolution
- * lives in E (per TRM Table 3-1's separate "1+P" branch path) and
- * memrefs go through the LSQ.
- *
- * Latency override:
- *   `setLatency(unsigned cycles)` overrides the default 1-cycle path
- *   for testing.  Future calibration may inspect the inst's opcode
- *   to pick a per-op latency (mul=1, udiv=2..12, etc.) — the API is
- *   intentionally minimal for now.
+ *   - !StaticInst::isControl() AND
+ *   - !StaticInst::isFloating()
+ * Branches go through E's direct path, memrefs through the LSQ,
+ * floating-point ops through the legacy 1-cy direct path.
  */
 class AluFunctionUnit
 {
@@ -85,31 +84,23 @@ class AluFunctionUnit
      *  between the FU path and the legacy direct-execute path. */
     static bool accepts(const StaticInstPtr &inst);
 
-    /** Hand `inst` to the FU.  May complete immediately (1-cy ops)
-     *  or move to Pending (multi-cy).  Caller must ensure
-     *  `idle()` was true before calling. */
-    void issue(const StaticInstPtr &inst);
-
-    /** Per-cycle tick — advances Pending toward Complete.  Called
-     *  exactly once per CPU cycle from Pipeline::evaluate before
-     *  Settle so `complete()` reflects the current cycle's state. */
-    void tick();
+    /** Hand `inst` to the FU.  Reads `inst`'s source register values
+     *  via `tc` to compute per-op latency.  May complete immediately
+     *  (1-cy ops) or move to Pending (multi-cy: SDIV/UDIV).  Caller
+     *  must ensure `idle()` was true before calling. */
+    void issue(const StaticInstPtr &inst, ThreadContext *tc);
 
     /** Release the result and return the FU to Idle.  Called by E
      *  after it commits the result.  No-op if already Idle. */
     void release();
 
-    /** Reset to Idle (called by Execute::resetTo / IRQ entry). */
+    /** Reset to Idle (called by Execute::resetTo / IRQ entry).
+     *  Deschedules any pending completion event. */
     void reset();
 
     bool idle() const { return _state == State::Idle; }
     bool pending() const { return _state == State::Pending; }
     bool complete() const { return _state == State::Complete; }
-
-    /** Default per-op latency in CPU cycles (1 = 1-cy ALU, the
-     *  Cortex-M4 default).  May be overridden for testing. */
-    void setLatency(unsigned cycles) { _latency = cycles; }
-    unsigned latency() const { return _latency; }
 
     /** One-line printable state for the line-trace tables. */
     std::string snapshotString() const;
@@ -118,9 +109,29 @@ class AluFunctionUnit
     SignalCPU &_cpu;
 
     State _state = State::Idle;
-    unsigned _latency = 1;
-    unsigned _cyclesLeft = 0;
-    StaticInstPtr _inFlight;   // null when Idle/Complete
+    StaticInstPtr _inFlight;        // null when Idle/Complete
+
+    /** Single-shot completion event scheduled at issue time of a
+     *  multi-cy op.  Same instance is reused across ops because
+     *  `issue()` only fires when `_state == Idle` (panic otherwise),
+     *  which guarantees the event is not already scheduled. */
+    EventFunctionWrapper _completeEvent;
+
+    /** Cycle count selected at the most recent multi-cy issue.
+     *  Pure logging aid for `snapshotString()` and trace output —
+     *  the cycle-by-cycle state is owned by the gem5 event queue. */
+    unsigned _scheduledLatency = 0;
+
+    /** Compute the per-inst cycle latency.  Returns 1 for every
+     *  accepted op except `IntDivOp`, which gets the Cortex-M4 TRM
+     *  Table 3-1 formula `clamp(4 + ceil(sigBits/4), 2, 12)` keyed on
+     *  the dividend's significant bits. */
+    unsigned latencyFor(const StaticInstPtr &inst,
+                        ThreadContext *tc) const;
+
+    /** Body of `_completeEvent`: Pending -> Complete + wake the
+     *  pipeline so E commits this cycle. */
+    void onComplete();
 };
 
 } // namespace signal3

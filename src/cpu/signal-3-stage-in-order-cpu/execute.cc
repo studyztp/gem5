@@ -263,14 +263,16 @@ Execute::commitOne()
         // initiateAcc didn't push (predicate failed); fall through.
     } else if (AluFunctionUnit::accepts(inst)) {
         // Integer-ALU op routed through the ALU function unit.
-        // For 1-cy ops the FU completes in the same cycle as
-        // issue, so we run inst->execute() and retire immediately
-        // (preserving the current nop/mov/add timing).  Multi-
-        // cycle ops (UDIV/SDIV per TRM Table 3-1) would issue this
-        // cycle, leave the FU Pending, and stall E until tick()
-        // advances it to Complete on a future cycle.
+        // For 1-cy ops the FU completes in the same cycle as issue,
+        // so we run inst->execute() and retire immediately
+        // (preserving the current nop/mov/add timing).  Multi-cycle
+        // ops (UDIV/SDIV per TRM Table 3-1) issue this cycle and
+        // schedule a single completion event at clockEdge(lat - 1);
+        // E stalls (e_accept_d=false, early return) on subsequent
+        // cycles until the event fires and the state becomes
+        // Complete.
         if (_alu.idle()) {
-            _alu.issue(inst);
+            _alu.issue(inst, thread.getTC());
         }
         if (_alu.pending()) {
             DPRINTF(Signal3CPUExecute,

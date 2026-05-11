@@ -83,6 +83,10 @@ if env['CONF']['BUILD_ISA']:
               'E->D NZCV forwarding (e_flags_to_d) and D-side cond '
               'branch resolution: pre/post ALU exec CC regs, fwd flags '
               'pulse values, decode-only resolve checks.')
+    DebugFlag('Signal3CPUAluFU',
+              'ALU FU state transitions and per-inst dynamic latency '
+              'selection (opclass, src reg values, sigBits, chosen '
+              'cycles, completion event schedule / fire / deschedule).')
 
     CompoundFlag('Signal3CPUAll',
                  ['Signal3CPU', 'Signal3CPUPipeline',
@@ -90,4 +94,4 @@ if env['CONF']['BUILD_ISA']:
                   'Signal3CPUExecute', 'Signal3CPUSignal',
                   'Signal3CPULatch', 'Signal3CPUMem',
                   'Signal3CPULineTrace', 'Signal3CPULineTraceDetail',
-                  'Signal3CPUFlagsFwd'])
+                  'Signal3CPUFlagsFwd', 'Signal3CPUAluFU'])
