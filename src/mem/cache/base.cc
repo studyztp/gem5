@@ -1165,6 +1165,13 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
     // Read requestor(s) to have buffered the ReadEx snoop and to
     // invalidate their blocks after receiving them.
     // assert(!pkt->needsWritable() || blk->isSet(CacheBlk::WritableBit));
+    // pkt must fit inside this cache block. CPU models are responsible
+    // for splitting any access that crosses a cache-line boundary into
+    // per-line sub-requests *before* they reach the cache (see e.g.
+    // gem5/src/cpu/signal-3-stage-in-order-cpu/lsq.cc's split path,
+    // which mirrors the Cortex-M4 AHB-Lite implementation of LDRD as
+    // two 32-bit transactions). A request that hits this assert is an
+    // upstream-CPU bug, not a cache bug.
     assert(pkt->getOffset(blkSize) + pkt->getSize() <= blkSize);
 
     // Check RMW operations first since both isRead() and
