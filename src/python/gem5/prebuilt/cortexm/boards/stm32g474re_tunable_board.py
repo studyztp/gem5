@@ -33,18 +33,25 @@ PipelinedSimpleMemory child's timing parameters in-place after the
 parent constructor runs.  Enables runscript-driven sweeps without
 requiring a gem5 rebuild for each parameter trial.
 
-Default values, recalibrated 2026-05-10 against the gem5-vs-board-microbench-cycles
-no-ART reference for bench-alu / bench-alu16 / bench-branch:
+Default values, recalibrated 2026-05-13 against the gem5-vs-board-microbench-cycles
+nop16 sweep (slope target: 1.5 cy/NOP for `none` config — see
+issues/2026-05-13-nop16-none-front-end-rate/):
 
-    flash_latency               = "29000ps"
+    flash_latency               = "29411ps"   (5 HCLK = 4 wait states + 1 access cycle, RM0440 §3.3.3)
     flash_address_phase_latency = "600ps"
-    flash_buffer_hit_latency    = "5000ps"
+    flash_buffer_hit_latency    = "5882ps"    (1 HCLK = AHB address phase after sense-amp hit)
     flash_read_buffer_size      = 8           (64-bit sense-amp latch)
 
-These reproduce silicon's no-ART kernel-only cycles to mean |err| ≈ 1.14 %
-on the three target benches (was ≈ 5.87 % under the prior 400 ps / 8000 ps
-defaults).  See experiments/gem5-vs-board-microbench-cycles/data/
-sweep_no_art_fine_score.csv for the calibration sweep.
+The new sum (flash_latency + flash_buffer_hit_latency = 35293ps) equals
+6 HCLK at 170 MHz — the empirically-measured silicon period for one
+sequential 64-bit line in the no-ART path. This matches HW slope of
+1.5 cy/NOP exactly across the full nop16_{8,16,…,80,100} sweep.
+
+Prior calibration (29000ps + 5000ps = 34000ps) was tuned for
+bench-alu / bench-alu16 / bench-branch, which don't exercise the
+flash steady-state rate the way nop16 does — they were within ~1.14 %
+of silicon. The 1294ps shortfall (≈ 0.22 HCLK) only became visible
+once the nop16 scaling sweep landed.
 
 Usage from a runscript:
 
@@ -77,17 +84,20 @@ class STM32G474RETunableBoard(STM32G474RETimingBoard):
 
     Parameters
     ----------
-    flash_latency : str, default ``"29000ps"``
+    flash_latency : str, default ``"29411ps"``
         ``PipelinedSimpleMemory.latency`` (Flash data-phase access
-        time).  Calibrated for Lego CPU accuracy.
+        time). 5 HCLK at 170 MHz = 4 wait states + 1 access cycle
+        (RM0440 §3.3.3 Table 17).
 
     flash_address_phase_latency : str, default ``"600ps"``
         ``PipelinedSimpleMemory.address_phase_latency`` (AHB address
         phase, models the ICode bus address-phase setup).
 
-    flash_buffer_hit_latency : str, default ``"5000ps"``
-        ``PipelinedSimpleMemory.buffer_hit_latency`` (AHB data
-        phase on a Flash sense-amp hit).
+    flash_buffer_hit_latency : str, default ``"5882ps"``
+        ``PipelinedSimpleMemory.buffer_hit_latency`` (AHB address-phase
+        cycle after a Flash sense-amp hit; 1 HCLK at 170 MHz).
+        Combined with flash_latency this yields 6 HCLK total per
+        64-bit line, matching silicon's no-ART steady-state rate.
 
     flash_read_buffer_size : int, default ``8``
         ``PipelinedSimpleMemory.port_read_buffer_size`` per port
@@ -97,9 +107,9 @@ class STM32G474RETunableBoard(STM32G474RETimingBoard):
 
     def __init__(
         self,
-        flash_latency: str = "29000ps",
+        flash_latency: str = "29411ps",
         flash_address_phase_latency: str = "600ps",
-        flash_buffer_hit_latency: str = "5000ps",
+        flash_buffer_hit_latency: str = "5882ps",
         flash_read_buffer_size: int = 8,
         **kwargs,
     ):
