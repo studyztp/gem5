@@ -122,8 +122,11 @@ class Execute : public Stage
      *  on resetTo()/applyRedirect for safety. */
     bool inMidMacro() const { return _midMacro; }
 
-    /** One-line printable state for the line-trace tables. */
-    std::string snapshotString() const;
+    /** One-line printable state for the line-trace tables.  When
+     *  `detailed=true` (Signal3CPULineTraceDetail), appends the
+     *  full `staticInst->disassemble(pc)` text after the commit /
+     *  held inst's mnemonic. */
+    std::string snapshotString(bool detailed = false) const;
 
   private:
     SignalCPU &_cpu;
@@ -151,9 +154,36 @@ class Execute : public Stage
 
     /* Single-issue throttle: at most one commit per cycle. */
     bool _committedThisCycle = false;
+    /* When `_committedThisCycle` is set, these hold the address +
+     * size of the instruction that committed this cycle. Used by
+     * `snapshotString()` so the Signal3CPULineTrace summary table's
+     * execute column shows `slot=v(0x<pc> sz=<N>)` on commit cycles
+     * (eSlot itself is reset on commit and would otherwise read
+     * `slot=empty` for the end-of-cycle snapshot). */
+    Addr _committedAddrThisCycle = 0;
+    uint8_t _committedSizeThisCycle = 0;
+    /* StaticInst of the committed inst (for snapshotString mnemonic).
+     * Cleared each beginCycleHook; set in commitOne(). */
+    StaticInstPtr _committedInstThisCycle;
+
+    /* Redirect attribution for the line trace.  Set in commitOne()
+     * at the same site as `e_redirect_to_f.write()`; lets the
+     * trace show BOTH the branch PC that caused the redirect AND
+     * the target.  Cleared each beginCycleHook. */
+    struct RedirectInfo
+    {
+        Addr branchPc;
+        Addr target;
+    };
+    std::optional<RedirectInfo> _redirectThisCycle;
+
     void beginCycleHook()
     {
         _committedThisCycle = false;
+        _committedAddrThisCycle = 0;
+        _committedSizeThisCycle = 0;
+        _committedInstThisCycle = nullptr;
+        _redirectThisCycle.reset();
         // ALU FU is event-driven: a multi-cy op's completion fires
         // before this cycle's settle (event priority < CPU_Tick_Pri),
         // so the FU state is current without a per-cycle tick.

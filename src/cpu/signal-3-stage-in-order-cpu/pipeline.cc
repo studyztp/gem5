@@ -324,14 +324,16 @@ Pipeline::evaluate()
     }
 }
 
-// Column widths for the line-trace tables.  Picked so the combined
-// row fits in ~200 chars — wide for terminal but parseable.
+// Column widths for the line-trace tables.  Sized so a representative
+// per-cycle row fits in ~280 chars under the named-sub-field schema
+// (see DESIGN.md / the legend block below).  Anything longer is
+// truncated with a trailing '~' — widen here if you see clipping.
 namespace {
 constexpr unsigned kCycCol = 5;     // cycle number
-constexpr unsigned kUpdCol = 16;    // "update" event tag
-constexpr unsigned kFCol   = 70;    // fetch state
-constexpr unsigned kDCol   = 56;    // decode state
-constexpr unsigned kECol   = 64;    // execute state
+constexpr unsigned kUpdCol = 16;    // "update" event tag (detail only)
+constexpr unsigned kFCol   = 110;   // fetch  (next/req/arr/hold/i/q)
+constexpr unsigned kDCol   = 70;    // decode (in/mnem/redir)
+constexpr unsigned kECol   = 80;    // execute (in/commit/lsq/alu/redir)
 
 std::string padLeft(const std::string &s, unsigned w)
 {
@@ -340,8 +342,10 @@ std::string padLeft(const std::string &s, unsigned w)
 }
 std::string padRight(const std::string &s, unsigned w)
 {
-    if (s.size() >= w) return s.substr(0, w);
-    return s + std::string(w - s.size(), ' ');
+    if (s.size() <= w) return s + std::string(w - s.size(), ' ');
+    if (w == 0) return "";
+    // Trailing '~' marks that the field was clipped — see legend block.
+    return s.substr(0, w - 1) + "~";
 }
 
 std::string sepBar(bool withUpdate)
@@ -354,6 +358,38 @@ std::string sepBar(bool withUpdate)
     b += "-" + std::string(kECol, '-') + "-+";
     return b;
 }
+
+const char *lineTraceLegend()
+{
+    return
+"Signal3CPU line trace legend (named-sub-field schema, 2026-05-13).\n"
+"  Columns: cycle | fetch | decode | execute  (detail adds 'update')\n"
+"  Fetch  : next=<pc>     next sequential PC F intends to fetch\n"
+"           req=<pc>|.    addr ISSUED to icache this cycle\n"
+"           arr=[...]|.   word addrs DELIVERED into FIFO this cycle\n"
+"           hold=[...]|.  current FIFO contents (addresses).  An\n"
+"                         entry tagged ':s<N>' is a stale-stream word.\n"
+"           i=<N>         in-flight icache requests\n"
+"           q=<N>         pending-issue queue depth (omitted if 0)\n"
+"  Decode : in=<pc>/<sz>|. PC decoded into dSlot.in() this cycle\n"
+"           mnem=<name>   mnemonic (only when in=<pc>); detail flag\n"
+"                         also appends disasm='<full text>'\n"
+"           L             flag, only when slot is last uop of macro\n"
+"           redir=<...>|. <tag>@0x<branchPc>>0x<tgt> where tag is\n"
+"                         eR (direct uncond early-resolve),\n"
+"                         cR (cond-branch decode-only resolve), or\n"
+"                         bxlr (bx-lr decode-only resolve)\n"
+"  Execute: in=<pc>/<sz>/<mnem>|. inst HELD in eSlot (stalled)\n"
+"           commit=<pc>/<sz>/<mnem>|. inst COMMITTED this cycle.\n"
+"                                    detail flag also appends\n"
+"                                    disasm='<full text>'\n"
+"           lsq=P|C       LSQ state, omitted when idle\n"
+"           alu=<state>   ALU FU state, omitted when idle\n"
+"           redir=<...>|. 0x<branchPc>>0x<tgt> for execute redirect\n"
+"  Trunc  : a trailing '~' on any column means it was clipped to fit;\n"
+"           widen kFCol/kDCol/kECol in pipeline.cc to see the full\n"
+"           string.\n";
+}
 } // anonymous namespace
 
 void
@@ -364,9 +400,9 @@ Pipeline::lineTraceEvent(const std::string &ev)
     LineTraceEvent e;
     e.tag = ev;
     if (debug::Signal3CPULineTraceDetail) {
-        e.fSnap = _fetch->snapshotString();
-        e.dSnap = _decode->snapshotString();
-        e.eSnap = _execute->snapshotString();
+        e.fSnap = _fetch->snapshotString(/*detailed=*/true);
+        e.dSnap = _decode->snapshotString(/*detailed=*/true);
+        e.eSnap = _execute->snapshotString(/*detailed=*/true);
     }
     _lineTraceEvents.push_back(std::move(e));
 }
@@ -389,6 +425,7 @@ Pipeline::emitLineTrace()
         // every cycle, but a per-CPU "_emittedHeader" flag would be
         // better; for now a comment-banner each cycle is acceptable.)
         if (cyc_n == 1) {
+            DPRINTF(Signal3CPULineTrace, "%s", lineTraceLegend());
             std::string bar = sepBar(/*withUpdate=*/false);
             DPRINTF(Signal3CPULineTrace, "%s\n", bar.c_str());
             DPRINTF(Signal3CPULineTrace,
@@ -402,9 +439,12 @@ Pipeline::emitLineTrace()
         DPRINTF(Signal3CPULineTrace,
                 "| %s | %s | %s | %s |\n",
                 padLeft(cyc_s, kCycCol).c_str(),
-                padRight(_fetch->snapshotString(),   kFCol).c_str(),
-                padRight(_decode->snapshotString(),  kDCol).c_str(),
-                padRight(_execute->snapshotString(), kECol).c_str());
+                padRight(_fetch->snapshotString(/*detailed=*/false),
+                         kFCol).c_str(),
+                padRight(_decode->snapshotString(/*detailed=*/false),
+                         kDCol).c_str(),
+                padRight(_execute->snapshotString(/*detailed=*/false),
+                         kECol).c_str());
     }
 
     // ---- Detail table: rows per within-cycle update -----------------
@@ -413,6 +453,8 @@ Pipeline::emitLineTrace()
     // the order they fired during settle/onAsyncResponse.
     if (wantDetail) {
         if (cyc_n == 1) {
+            DPRINTF(Signal3CPULineTraceDetail, "%s",
+                    lineTraceLegend());
             std::string bar = sepBar(/*withUpdate=*/true);
             DPRINTF(Signal3CPULineTraceDetail, "%s\n", bar.c_str());
             DPRINTF(Signal3CPULineTraceDetail,
@@ -446,9 +488,12 @@ Pipeline::emitLineTrace()
                 "| %s | %s | %s | %s | %s |\n",
                 padLeft(cyc_print, kCycCol).c_str(),
                 padRight("(eoc)", kUpdCol).c_str(),
-                padRight(_fetch->snapshotString(),   kFCol).c_str(),
-                padRight(_decode->snapshotString(),  kDCol).c_str(),
-                padRight(_execute->snapshotString(), kECol).c_str());
+                padRight(_fetch->snapshotString(/*detailed=*/true),
+                         kFCol).c_str(),
+                padRight(_decode->snapshotString(/*detailed=*/true),
+                         kDCol).c_str(),
+                padRight(_execute->snapshotString(/*detailed=*/true),
+                         kECol).c_str());
         DPRINTF(Signal3CPULineTraceDetail, "%s\n",
                 sepBar(true).c_str());
     }

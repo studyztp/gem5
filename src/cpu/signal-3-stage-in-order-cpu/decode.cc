@@ -88,6 +88,8 @@ Decode::beginCycle()
     _pendingCondBranchAddr.reset();
     _pendingCondBranchFallThrough = 0;
     _pendingBxLrAddr.reset();
+    _decodedThisCycleInfo.reset();
+    _redirectThisCycle.reset();
 }
 
 void
@@ -255,6 +257,8 @@ Decode::settle()
 
         dSlot.in().write(std::optional<DecodedSlot>{ds});
         _decodedThisCycle = true;
+        _decodedThisCycleInfo = DecodedThisCycle{
+            ds.addr, ds.instSize, ds.staticInst, ds.isLastInMacro};
         return;
     }
 
@@ -398,6 +402,8 @@ Decode::settle()
     tryEarlyResolveBranch(ds);
 
     dSlot.in().write(std::optional<DecodedSlot>{ds});
+    _decodedThisCycleInfo = DecodedThisCycle{
+        ds.addr, ds.instSize, ds.staticInst, ds.isLastInMacro};
     // instsCommitted is bumped by Execute when an inst retires.  D
     // used it as a proxy in S2; with E in place that double-counts,
     // so we remove the bump here.
@@ -462,6 +468,8 @@ Decode::tryEarlyResolveBranch(DecodedSlot &ds)
                 ds.addr, resolvedNpc);
         _cpu.pipeline().lineTraceEvent("D.earlyRes-T");
         d_redirect_to_f.write(std::optional<Addr>{resolvedNpc});
+        _redirectThisCycle = DecodeRedirectInfo{
+            "eR", ds.addr, resolvedNpc};
         // D's own internal stream redirects: future decodes start
         // at the new target.  The decoder cache must be invalidated
         // since the target word's bytes are different.
@@ -589,6 +597,8 @@ Decode::tryDecodeOnlyResolveCondBranch(DecodedSlot &ds)
                 "(%s)\n", ds.addr, cond, target, src);
         _cpu.pipeline().lineTraceEvent("D.earlyRes-T");
         d_redirect_to_f.write(std::optional<Addr>{target});
+        _redirectThisCycle = DecodeRedirectInfo{
+            "cR", ds.addr, target};
         // D's own internal stream redirects: future decodes start
         // at the new target.  The decoder cache must be invalidated.
         _nextInstrAddrToDeliver = target;
@@ -734,6 +744,8 @@ Decode::tryDecodeOnlyResolveBxLr(DecodedSlot &ds)
             ds.addr, (uint32_t)lr, target);
     _cpu.pipeline().lineTraceEvent("D.earlyRes-bxlr");
     d_redirect_to_f.write(std::optional<Addr>{target});
+    _redirectThisCycle = DecodeRedirectInfo{
+        "bxlr", ds.addr, target};
     // D's own internal stream redirects: future decodes start at the
     // resolved target, and the decoder cache is invalidated since the
     // target word's bytes are different.
@@ -790,25 +802,46 @@ Decode::retryPendingCondBranchResolve()
 }
 
 std::string
-Decode::snapshotString() const
+Decode::snapshotString(bool detailed) const
 {
+    // Named-sub-field schema:
+    //   in=    : PC decoded into dSlot.in() this cycle, with `/sz`
+    //   mnem=  : mnemonic of the just-decoded inst (suppressed when
+    //            in=.)
+    //   L      : flag, only when the decoded slot is the last uop of
+    //            a macro expansion
+    //   redir= : `.` or `<tag>@0x<branchPc>>0x<tgt>` where tag is
+    //            eR  (direct uncond early-resolve), cR (cond-branch
+    //            decode-only resolve), or bxlr (bx-lr early-resolve)
     std::ostringstream os;
-    os << "next=0x" << std::hex << _nextInstrAddrToDeliver
-       << " slot=";
-    if (dSlot.out().valid() && dSlot.out().read().has_value()) {
-        const auto &s = *dSlot.out().read();
-        os << "v(0x" << std::hex << s.addr
-           << " sz=" << std::dec << (unsigned)s.instSize
-           << " last=" << (int)s.isLastInMacro;
-        if (s.earlyResolved) {
-            os << " eR->0x" << std::hex << s.resolvedNpc;
+
+    os << "in=";
+    if (_decodedThisCycleInfo.has_value()) {
+        const auto &d = *_decodedThisCycleInfo;
+        os << "0x" << std::hex << d.addr
+           << "/" << std::dec << (unsigned)d.instSize;
+        if (d.staticInst) {
+            os << " mnem=" << d.staticInst->getName();
+            if (detailed)
+                os << " disasm='" << d.staticInst->disassemble(d.addr)
+                   << "'";
         }
-        os << ")";
+        // L flag: only meaningful when we just emitted a uop and
+        // it's the macro's last; sourced from the recorded slot info
+        // (avoids touching dSlot.in() which is non-const).
+        if (d.isLastInMacro && _curMacro)
+            os << " L";
     } else {
-        os << "empty";
+        os << ".";
     }
-    if (_curMacro) {
-        os << " macro@uop" << std::dec << (unsigned)currentMicroPC();
+
+    os << " redir=";
+    if (_redirectThisCycle.has_value()) {
+        const auto &r = *_redirectThisCycle;
+        os << r.tag << "@0x" << std::hex << r.branchPc
+           << ">0x" << r.target;
+    } else {
+        os << ".";
     }
     return os.str();
 }

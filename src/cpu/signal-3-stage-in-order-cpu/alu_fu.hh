@@ -106,6 +106,11 @@ class AluFunctionUnit
     /** One-line printable state for the line-trace tables. */
     std::string snapshotString() const;
 
+    /** Compact form for the action-led execute line-trace column.
+     *  Returns "I" / "P(k/L)" / "C" where k is cycles-left and L is
+     *  the scheduled latency. */
+    std::string compactStateString() const;
+
   private:
     SignalCPU &_cpu;
 

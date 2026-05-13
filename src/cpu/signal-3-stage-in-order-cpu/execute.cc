@@ -200,6 +200,8 @@ Execute::commitOne()
         // before the last uop, which shouldn't happen but is the
         // safe value).
         _midMacro = !e.isLastInMacro;
+        _committedAddrThisCycle = e.addr;
+        _committedSizeThisCycle = e.instSize;
         _eSlot.reset();
         _committedThisCycle = true;
         // Re-publish e_accept_d now that the slot is gone.
@@ -356,6 +358,7 @@ Execute::commitOne()
 
     if (needRedirect) {
         e_redirect_to_f.write(std::optional<Addr>{actualNextPc});
+        _redirectThisCycle = RedirectInfo{e.addr, actualNextPc};
         _cpu.signalStats().mispredicts++;
         _cpu.pipeline().lineTraceEvent(
             inst->isIndirectCtrl() ? "E.redir-indir" : "E.redir");
@@ -408,33 +411,77 @@ Execute::commitOne()
     // issues/2026-05-10-pushpop_v2-irq-race/ for the failure mode.
     _midMacro = !isLast;
 
+    _committedAddrThisCycle = e.addr;
+    _committedSizeThisCycle = e.instSize;
+    _committedInstThisCycle = e.staticInst;
     _eSlot.reset();
     _committedThisCycle = true;
     e_accept_d.write(!_lsq.pending());
 }
 
 std::string
-Execute::snapshotString() const
+Execute::snapshotString(bool detailed) const
 {
+    // Named-sub-field schema:
+    //   in=     : PC held in eSlot at snapshot time (stalled inst
+    //             not yet committed), or `.` when commit fired this
+    //             cycle (commit= carries the PC) or E is idle.
+    //   commit= : 0x<pc>/<sz>/<mnem> if a commit fired this cycle,
+    //             else `.`.  The "0x<pc>/<sz>" anchor inside this
+    //             field is the extractor's regex hook — must stay
+    //             stable across format changes.
+    //   lsq=    : LSQ state P/C, suppressed when idle.
+    //   alu=    : ALU FU state, suppressed when idle.
+    //   redir=  : 0x<branchPc>>0x<tgt> when E asserted a redirect
+    //             this cycle, else `.`.
     std::ostringstream os;
-    const char *lsq_st = _lsq.idle()      ? "Idle"
-                        : _lsq.pending()  ? "Pending"
-                        : _lsq.complete() ? "Complete"
-                                          : "?";
-    os << "lsq=" << lsq_st << " slot=";
-    if (_eSlot.has_value()) {
-        os << "v(0x" << std::hex << _eSlot->addr
-           << " sz=" << std::dec << (unsigned)_eSlot->instSize << ")";
+
+    os << "in=";
+    if (!_committedThisCycle && _eSlot.has_value()) {
+        os << "0x" << std::hex << _eSlot->addr
+           << "/" << std::dec << (unsigned)_eSlot->instSize;
+        if (_eSlot->staticInst) {
+            os << "/" << _eSlot->staticInst->getName();
+            if (detailed)
+                os << " disasm='"
+                   << _eSlot->staticInst->disassemble(_eSlot->addr)
+                   << "'";
+        }
     } else {
-        os << "empty";
+        os << ".";
     }
+
+    os << " commit=";
+    if (_committedThisCycle) {
+        os << "0x" << std::hex << _committedAddrThisCycle
+           << "/" << std::dec << (unsigned)_committedSizeThisCycle;
+        if (_committedInstThisCycle) {
+            os << "/" << _committedInstThisCycle->getName();
+            if (detailed)
+                os << " disasm='"
+                   << _committedInstThisCycle->disassemble(
+                          _committedAddrThisCycle)
+                   << "'";
+        }
+    } else {
+        os << ".";
+    }
+
+    if (!_lsq.idle()) {
+        const char *st = _lsq.pending()  ? "P"
+                        : _lsq.complete() ? "C" : "?";
+        os << " lsq=" << st;
+    }
+    if (!_alu.idle())
+        os << " alu=" << _alu.compactStateString();
+
     os << " redir=";
-    if (e_redirect_to_f.valid() && e_redirect_to_f.read().has_value()) {
-        os << "0x" << std::hex << *e_redirect_to_f.read();
+    if (_redirectThisCycle.has_value()) {
+        os << "0x" << std::hex << _redirectThisCycle->branchPc
+           << ">0x" << _redirectThisCycle->target;
     } else {
-        os << "-";
+        os << ".";
     }
-    os << " " << _alu.snapshotString();
     return os.str();
 }
 

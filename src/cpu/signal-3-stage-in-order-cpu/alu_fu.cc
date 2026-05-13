@@ -256,5 +256,30 @@ AluFunctionUnit::snapshotString() const
     return os.str();
 }
 
+std::string
+AluFunctionUnit::compactStateString() const
+{
+    std::ostringstream os;
+    switch (_state) {
+      case State::Idle:     os << "I"; break;
+      case State::Pending:
+        os << "P(";
+        if (_completeEvent.scheduled()) {
+            Tick remaining = _completeEvent.when() - curTick();
+            Tick period = _cpu.clockPeriod();
+            unsigned cyclesLeft =
+                period ? (unsigned)((remaining + period - 1) / period)
+                       : 0;
+            os << cyclesLeft;
+        } else {
+            os << "?";
+        }
+        os << "/" << _scheduledLatency << ")";
+        break;
+      case State::Complete: os << "C"; break;
+    }
+    return os.str();
+}
+
 } // namespace signal3
 } // namespace gem5

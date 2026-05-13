@@ -89,6 +89,8 @@ Fetch::beginCycle()
     _dRedirectPendingNextCycle.reset();
     _redirectAppliedThisCycle = false;
     _streamSquashedThisCycle = false;
+    _issuedAddrThisCycle.reset();
+    _arrivedAddrsThisCycle.clear();
 }
 
 void
@@ -303,6 +305,7 @@ Fetch::absorbStaging()
             continue;
         }
         fifo.insert(it, w);
+        _arrivedAddrsThisCycle.push_back(w.addr);
         DPRINTF(Signal3CPUFetch,
                 "delivered word %#x data=%#x to FIFO (size=%lu)\n",
                 w.addr, w.data, fifo.size());
@@ -591,6 +594,7 @@ Fetch::tryIssuePendingFetch()
     DPRINTF(Signal3CPUMem,
             "icache sent addr=%#x streamId=%u\n",
             pkt->getAddr(), pkt->req->streamId());
+    _issuedAddrThisCycle = pkt->getAddr();
     _cpu.signalStats().requestsIssued++;
     ++_inFlight;
     pendingIssueQueue.pop_front();
@@ -598,21 +602,59 @@ Fetch::tryIssuePendingFetch()
 }
 
 std::string
-Fetch::snapshotString() const
+Fetch::snapshotString(bool /*detailed*/) const
 {
+    // Named-sub-field schema (see DESIGN.md / pipeline.cc legend):
+    //   next=  : next sequential PC F intends to fetch (_fetchPc)
+    //   req=   : addr ACTUALLY issued to icache this cycle, or `.`
+    //   arr=   : word addrs delivered into FIFO this cycle, or `.`
+    //   hold=  : current FIFO contents (addresses; `:s<N>` only
+    //            when the entry's streamId differs from current)
+    //   i=     : in-flight icache requests
+    //   q=     : pending-issue queue depth (suppressed when zero)
     std::ostringstream os;
-    os << "pc=0x" << std::hex << _fetchPc
-       << " fifo[" << std::dec << fifo.size() << "]={";
-    bool first = true;
-    for (const auto &w : fifo) {
-        if (!first) os << ",";
-        os << "0x" << std::hex << w.addr
-           << "(s" << std::dec << w.streamId << ")";
-        first = false;
+    os << "next=0x" << std::hex << _fetchPc;
+
+    os << " req=";
+    if (_issuedAddrThisCycle.has_value())
+        os << "0x" << std::hex << *_issuedAddrThisCycle;
+    else
+        os << ".";
+
+    os << " arr=";
+    if (_arrivedAddrsThisCycle.empty()) {
+        os << ".";
+    } else {
+        os << "[";
+        bool first = true;
+        for (Addr a : _arrivedAddrsThisCycle) {
+            if (!first) os << ",";
+            os << "0x" << std::hex << a;
+            first = false;
+        }
+        os << "]";
     }
-    os << "} flt=" << std::dec << _inFlight
-       << " pq=" << pendingIssueQueue.size()
-       << " min=0x" << std::hex << _wordFifoMinAddr;
+
+    os << " hold=";
+    if (fifo.empty()) {
+        os << ".";
+    } else {
+        const uint32_t curStream = _cpu.currentStreamId();
+        os << "[";
+        bool first = true;
+        for (const auto &w : fifo) {
+            if (!first) os << ",";
+            os << "0x" << std::hex << w.addr;
+            if (w.streamId != curStream)
+                os << ":s" << std::dec << w.streamId;
+            first = false;
+        }
+        os << "]";
+    }
+
+    os << " i=" << std::dec << _inFlight;
+    if (!pendingIssueQueue.empty())
+        os << " q=" << pendingIssueQueue.size();
     return os.str();
 }
 

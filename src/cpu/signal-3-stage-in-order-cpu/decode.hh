@@ -124,8 +124,10 @@ class Decode : public Stage
         return dSlot.in().valid() && dSlot.in().read().has_value();
     }
 
-    /** One-line printable state for the line-trace tables. */
-    std::string snapshotString() const;
+    /** One-line printable state for the line-trace tables.  When
+     *  `detailed=true` (Signal3CPULineTraceDetail), appends the
+     *  full `staticInst->disassemble(pc)` text after `mnem=`. */
+    std::string snapshotString(bool detailed = false) const;
 
   private:
     SignalCPU &_cpu;
@@ -248,6 +250,28 @@ class Decode : public Stage
      *  beginCycle.  Today only used for tracing; D's slot stays in
      *  `dSlot.in()` and naturally re-resolves on the next cycle. */
     std::optional<Addr> _pendingBxLrAddr;
+
+    /* Per-cycle trace state.  Cleared at beginCycle().  Populated
+     * during settle() at the points where a fresh slot is written to
+     * dSlot.in() (the main decode path + macro micro-op path) and at
+     * the points where a decode-side redirect is asserted.  Used only
+     * by snapshotString() so the line-trace shows "what D did this
+     * cycle" rather than just end-of-cycle latch state. */
+    struct DecodeRedirectInfo
+    {
+        const char *tag;     // "eR" / "cR" / "bxlr"
+        Addr branchPc;
+        Addr target;
+    };
+    struct DecodedThisCycle
+    {
+        Addr addr;
+        uint8_t instSize;
+        StaticInstPtr staticInst;
+        bool isLastInMacro;
+    };
+    std::optional<DecodedThisCycle>   _decodedThisCycleInfo;
+    std::optional<DecodeRedirectInfo> _redirectThisCycle;
 
     /* ---- Macro-op micro-op expansion (Minor-style) -----------------
      *

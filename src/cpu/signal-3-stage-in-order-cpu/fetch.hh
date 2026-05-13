@@ -181,8 +181,11 @@ class Fetch : public Stage
         return out;
     }
 
-    /** One-line printable state for the line-trace tables. */
-    std::string snapshotString() const;
+    /** One-line printable state for the line-trace tables.
+     *  `detailed` (true under Signal3CPULineTraceDetail) is unused
+     *  by Fetch — F has no per-inst metadata — but is part of the
+     *  shared snapshotString signature across stages. */
+    std::string snapshotString(bool detailed = false) const;
 
   private:
     SignalCPU &_cpu;
@@ -249,6 +252,14 @@ class Fetch : public Stage
      * Reset on squashStream since the redirect target starts a
      * fresh decode flow. */
     bool                _nextWordLoIsThumb2Tail = false;
+
+    /* Per-cycle trace state.  Cleared at the top of each cycle in
+     * beginCycle(); populated during settle() / scheduleOutgoing() /
+     * absorbStaging().  Used only by snapshotString() / lineTraceEvent
+     * to make the per-cycle line trace describe "what happened this
+     * cycle" rather than just "end-of-cycle state". */
+    std::optional<Addr>      _issuedAddrThisCycle;
+    std::vector<Addr>        _arrivedAddrsThisCycle;
 
     /* Bound by Pipeline ctor to D's d_pop_request output. */
     Signal<bool> *_popRequestInput = nullptr;
